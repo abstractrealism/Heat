@@ -40,10 +40,10 @@ struct MainApp: App {
                                 Text("Selected files will be editable here.")
 
                                 Button("Create New Conversation") {
-                                    Task { try await state.fileCreateConversation() }
+                                    Task { do { try await state.fileCreateConversation() } catch { state.log(error: error) } }
                                 }
                                 Button("Create New Document") {
-                                    Task { try await state.fileCreateDocument() }
+                                    Task { do { try await state.fileCreateDocument() } catch { state.log(error: error) } }
                                 }
                             }
                         }
@@ -70,13 +70,13 @@ struct MainApp: App {
                     ToolbarItem {
                         Menu {
                             Button("New Conversation") {
-                                Task { try await state.fileCreateConversation() }
+                                Task { do { try await state.fileCreateConversation() } catch { state.log(error: error) } }
                             }
                             Button("New Document") {
-                                Task { try await state.fileCreateDocument() }
+                                Task { do { try await state.fileCreateDocument() } catch { state.log(error: error) } }
                             }
                             Button("New Folder") {
-                                Task { try await state.folderCreate() }
+                                Task { do { try await state.folderCreate() } catch { state.log(error: error) } }
                             }
                         } label: {
                             Label("New File", systemImage: "plus")

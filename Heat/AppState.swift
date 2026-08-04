@@ -87,6 +87,20 @@ final class AppState {
         async let filesReady: Void = filesProvider.ready()
         async let logsReady: Void = logsProvider.ready()
         _ = try await [filesReady, logsReady]
+
+        // A fresh install has no files on disk yet. Several features — most
+        // notably "New Conversation" — expect the default instruction files to
+        // exist, so create any that are missing before we're considered ready.
+        try await seedDefaultInstructionsIfNeeded()
+    }
+
+    /// Creates any missing default instruction files. Safe to call repeatedly:
+    /// instructions that already exist are left untouched.
+    private func seedDefaultInstructionsIfNeeded() async throws {
+        for (id, name, instruction) in Defaults.instructions {
+            guard (try? API.shared.file(id)) == nil else { continue }
+            _ = try await fileCreateInstruction(id: id, name: name, instruction: instruction)
+        }
     }
 
     @discardableResult
@@ -104,10 +118,12 @@ final class AppState {
             // Delete all files
             try FileManager.default.removeItems(at: URL.documentsDirectory)
 
-            // Create default instruction files
+            // Recreate default instruction files
             Task {
-                for (id, name, instruction) in Defaults.instructions {
-                    let _ = try await fileCreateInstruction(id: id, name: name, instruction: instruction)
+                do {
+                    try await seedDefaultInstructionsIfNeeded()
+                } catch {
+                    log(error: error)
                 }
             }
         } catch {
