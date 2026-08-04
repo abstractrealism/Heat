@@ -15,18 +15,10 @@
 			</array>
 		</dict>
 	</array>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
-	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Manage your calendar with the Assistant.</string>
-	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Manage your reminders with the Assistant.</string>
-	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.utilities</string>
 </dict>
 </plist>
