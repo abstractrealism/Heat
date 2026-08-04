@@ -78,13 +78,13 @@ final class PhotoPickerModel {
             switch result {
             case .success(let image?):
                 let image = Selection(id: id, state: .success, photo: image.image)
-                self.upsert(image: image)
+                Task { @MainActor in self.upsert(image: image) }
             case .success(nil):
                 let image = Selection(id: id, state: .empty)
-                self.upsert(image: image)
+                Task { @MainActor in self.upsert(image: image) }
             case .failure:
                 let image = Selection(id: id, state: .failure(.transferFailed))
-                self.upsert(image: image)
+                Task { @MainActor in self.upsert(image: image) }
             }
         }
     }

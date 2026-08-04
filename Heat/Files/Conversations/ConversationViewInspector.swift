@@ -43,7 +43,7 @@ struct ConversationViewInspector: View {
                                 Text(text)
                             case .image(let image):
                                 VStack(alignment: .leading) {
-                                    Text("Image: \(image.format)")
+                                    Text(verbatim: "Image: \(image.format)")
                                         .fontWeight(.medium)
                                     Text(image.url.absoluteString)
                                     if let detail = image.detail {
@@ -53,14 +53,14 @@ struct ConversationViewInspector: View {
                                 .foregroundStyle(.secondary)
                             case .audio(let audio):
                                 VStack(alignment: .leading) {
-                                    Text("Audio: \(audio.format)")
+                                    Text(verbatim: "Audio: \(audio.format)")
                                         .fontWeight(.medium)
                                     Text(audio.url.absoluteString)
                                 }
                                 .foregroundStyle(.secondary)
                             case .json(let obj):
                                 VStack(alignment: .leading) {
-                                    Text("JSON: \(obj.kind)")
+                                    Text(verbatim: "JSON: \(obj.kind)")
                                     Text(obj.object)
                                 }
                             case .file(let obj):
