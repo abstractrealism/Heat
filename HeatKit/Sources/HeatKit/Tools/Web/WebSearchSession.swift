@@ -3,7 +3,7 @@ import QuartzCore
 import Fuzi
 
 public actor WebSearchSession {
-    public static var shared = WebSearchSession()
+    public static let shared = WebSearchSession()
 
     private init() {}
 

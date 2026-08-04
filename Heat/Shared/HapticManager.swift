@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 class HapticManager {
-    static var shared = HapticManager()
+    static let shared = HapticManager()
 
     enum FeedbackStyle {
         case heavy, light, medium, rigid, soft
