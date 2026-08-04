@@ -18,6 +18,19 @@ struct MessageList: View {
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
+                    // Inline error when the last generation attempt failed
+                    if let error = conversationViewModel.error {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                            Text(error)
+                        }
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                    }
+
                     // Assistant typing indicator when processing
                     if conversationViewModel.conversation.state == .processing {
                         TypingIndicator()

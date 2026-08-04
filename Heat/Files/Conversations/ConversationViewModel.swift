@@ -31,6 +31,10 @@ final class ConversationViewModel {
         }
     }
 
+    /// A human-readable error from the most recent generation attempt, shown
+    /// inline in the conversation. Cleared whenever a new generation starts.
+    var error: String?
+
     /// Suggested replies the user can use to respond.
     var suggestions: [String] {
         Array((conversation.suggestions).prefix(3))
@@ -73,6 +77,7 @@ final class ConversationViewModel {
 
     /// Generate a response using text as the only input. Add context—often memories—to augment the system prompt. Optionally force a tool call.
     func generate(chat prompt: String, images: [URL] = [], context: [String: Value] = [:], toolChoice: Tool? = nil) async throws {
+        error = nil
         do {
             let (service, model) = try API.shared.preferredChatService()
 
@@ -122,8 +127,28 @@ final class ConversationViewModel {
             try await API.shared.fileUpdate(file.id, object: conversation)
             try await API.shared.fileUpdate(file)
         } catch {
+            // Surface the failure inline and clear any in-progress state so the
+            // typing indicator doesn't spin forever.
+            conversation.state = .none
+            self.error = errorMessage(for: error)
             throw Error.generationError("\(error)")
         }
+    }
+
+    /// Maps an error to a friendly, actionable message for display in the
+    /// conversation. Falls back to the raw description for unexpected errors.
+    private func errorMessage(for error: Swift.Error) -> String {
+        if let apiError = error as? API.Error {
+            switch apiError {
+            case .missingService:
+                return "No default chat service is selected. Choose one in Settings → Services under \"Defaults.\""
+            case .missingModel:
+                return "No chat model is selected for the current service. Pick one in Settings → Services."
+            case .missingConfig:
+                return "Missing configuration. Try restarting the app or resetting data in the menu."
+            }
+        }
+        return "\(error)"
     }
 
     func generateSuggestions() async throws {
