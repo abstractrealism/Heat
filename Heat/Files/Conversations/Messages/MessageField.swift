@@ -120,6 +120,12 @@ struct MessageField: View {
                 }
             }
             .padding(4)
+            // Stay flexible even though the text field has a fixed width:
+            // without a zero minWidth here the rigid field sets a floor on the
+            // window's minimum size, so the window can grow but never shrink.
+            // With it, the window can compress; the measurement below then
+            // updates and the field re-sizes to fit.
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             .sheet(item: $instructionFile) { file in
                 NavigationStack {
                     MessageInstructions(file: file) { (instructions, context, toolIDs) in
