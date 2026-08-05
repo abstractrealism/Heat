@@ -18,12 +18,15 @@ struct MessageView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: horizontalAlignment, spacing: 12) {
            switch message.role {
             case .system:
                SystemContentsView(message.contents)
             case .user:
+               // Constrain user bubbles so they hug their content and sit on the
+               // trailing side of the pane, like a typical messaging app.
                UserContentsView(message.contents)
+                   .frame(maxWidth: 480, alignment: .trailing)
             case .assistant:
                AssistantContentsView(message.contents)
                ForEachToolCall(message.toolCalls) { toolCall in
@@ -33,7 +36,16 @@ struct MessageView: View {
                ToolContentsView(message)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: frameAlignment)
+    }
+
+    /// User messages align to the trailing edge; everything else stays leading.
+    private var horizontalAlignment: HorizontalAlignment {
+        message.role == .user ? .trailing : .leading
+    }
+
+    private var frameAlignment: Alignment {
+        message.role == .user ? .trailing : .leading
     }
 }
 
