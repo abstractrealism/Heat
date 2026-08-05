@@ -28,6 +28,14 @@ struct MessageField: View {
         min(max(inputNaturalHeight, 40), 240)
     }
 
+    /// What the sizing mirror renders. SwiftUI Text ignores a trailing
+    /// newline that NSTextView counts as a line, so pad it with a space to
+    /// keep the caret's empty last line visible.
+    private var mirrorContent: String {
+        if content.isEmpty { return " " }
+        return content.hasSuffix("\n") ? content + " " : content
+    }
+
     init(action: @escaping ActionHandler) {
         self.action = action
     }
@@ -141,12 +149,18 @@ struct MessageField: View {
         // its natural, uncapped size via fixedSize), clamped between one line
         // and a maximum. The editor and placeholder are overlays, so nothing
         // greedy participates in layout.
+        // The mirror, placeholder, and editor share the same font, and the
+        // mirror/placeholder are inset by NSTextView's 5pt line-fragment
+        // padding, so both text engines wrap at the same width and the field
+        // grows right when the editor's own text wraps.
         Color.clear
             .frame(height: inputHeight)
             .frame(maxWidth: .infinity)
             .overlay {
-                Text(content.isEmpty ? " " : content)
+                Text(mirrorContent)
+                    .font(.body)
                     .padding(.vertical, verticalPadding)
+                    .padding(.horizontal, 5)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .opacity(0)
@@ -159,17 +173,19 @@ struct MessageField: View {
             .overlay(alignment: .topLeading) {
                 if content.isEmpty {
                     Text("Message")
+                        .font(.body)
                         .foregroundStyle(.tertiary)
                         .padding(.vertical, verticalPadding)
+                        .padding(.horizontal, 5)
                 }
             }
             .overlay {
                 TextEditor(text: $content)
+                    .font(.body)
                     .textEditorStyle(.plain)
                     .scrollContentBackground(.hidden)
                     .scrollIndicators(.hidden)
                     .padding(.vertical, verticalPadding)
-                    .padding(.horizontal, -5) // cancel NSTextView's line-fragment padding
                     .focused($isFocused)
                     .onKeyPress(keys: [.return], phases: .down) { press in
                         // Return submits; Shift+Return inserts a newline.
