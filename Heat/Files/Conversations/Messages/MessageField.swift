@@ -65,7 +65,6 @@ struct MessageField: View {
                 .buttonStyle(.plain)
 
                 TextField("Message", text: $content, axis: .vertical)
-                    .fixedSize(horizontal: false, vertical: true)
                     .textFieldStyle(.plain)
                     .padding(.vertical, verticalPadding)
                     // Reserve room on the trailing edge so text wraps before the
