@@ -21,7 +21,8 @@ enum ChatDebug {
 
     static func log(_ message: @autoclosure () -> String) {
         #if DEBUG
-        logger.debug("\(message(), privacy: .public)")
+        let text = message()
+        logger.debug("\(text, privacy: .public)")
         #endif
     }
 }
