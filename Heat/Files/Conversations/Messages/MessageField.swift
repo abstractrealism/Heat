@@ -18,9 +18,15 @@ struct MessageField: View {
     @State private var instructionFile: File? = nil
     @State private var photoPickerModel = PhotoPickerModel()
     @State private var showingPhotoPicker = false
-    @State private var containerWidth: CGFloat? = nil
+    @State private var inputNaturalHeight: CGFloat = 0
 
     @FocusState private var isFocused: Bool
+
+    /// Height of the macOS message editor: the mirror text's natural height,
+    /// clamped between a single line and a scrolling maximum.
+    private var inputHeight: CGFloat {
+        min(max(inputNaturalHeight, 40), 240)
+    }
 
     init(action: @escaping ActionHandler) {
         self.action = action
@@ -65,27 +71,7 @@ struct MessageField: View {
                 }
                 .buttonStyle(.plain)
 
-                TextField("Message", text: $content, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .padding(.vertical, verticalPadding)
-                    // Give the field an explicit width so the text always wraps
-                    // inside it. On macOS a vertical-axis TextField can otherwise
-                    // wrap at its own intrinsic width and run beneath the send
-                    // button regardless of the width it is offered.
-                    .frame(width: fieldWidth, alignment: .leading)
-                    .frame(minHeight: minHeight, alignment: .leading)
-                    .focused($isFocused)
-                    #if os(macOS)
-                    .onSubmit {
-                        Task {
-                            do {
-                                try await handleSubmit()
-                            } catch {
-                                print(error)
-                            }
-                        }
-                    }
-                    #endif
+                messageInput
 
                 Spacer(minLength: 8)
 
@@ -120,12 +106,6 @@ struct MessageField: View {
                 }
             }
             .padding(4)
-            // Stay flexible even though the text field has a fixed width:
-            // without a zero minWidth here the rigid field sets a floor on the
-            // window's minimum size, so the window can grow but never shrink.
-            // With it, the window can compress; the measurement below then
-            // updates and the field re-sizes to fit.
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             .sheet(item: $instructionFile) { file in
                 NavigationStack {
                     MessageInstructions(file: file) { (instructions, context, toolIDs) in
@@ -143,19 +123,75 @@ struct MessageField: View {
                 photoLibrary: .shared()
             )
         }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.width
-        } action: { width in
-            containerWidth = width
-        }
     }
 
-    /// Explicit width for the text field: the measured container width minus
-    /// the inline (+) button, the send/stop button, spacing, and padding.
-    /// `nil` until the first layout pass has been measured.
-    private var fieldWidth: CGFloat? {
-        guard let containerWidth else { return nil }
-        return max(50, containerWidth - 8 - inlineButtonSize.width - 8 - primaryButtonSize.width)
+    /// The multiline message input.
+    ///
+    /// On macOS this is a TextEditor (NSTextView) rather than a vertical-axis
+    /// TextField: the NSTextField-backed multiline field wraps at a stale
+    /// intrinsic width in this layout (observed on macOS 15 Sequoia), running
+    /// beneath the send button and ignoring later width changes, while
+    /// NSTextView tracks its container width reliably. The invisible Text
+    /// mirror gives the editor its auto-growing height, since TextEditor does
+    /// not size itself to its content.
+    @ViewBuilder
+    private var messageInput: some View {
+        #if os(macOS)
+        // The layout height comes from the invisible mirror Text (measured at
+        // its natural, uncapped size via fixedSize), clamped between one line
+        // and a maximum. The editor and placeholder are overlays, so nothing
+        // greedy participates in layout.
+        Color.clear
+            .frame(height: inputHeight)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                Text(content.isEmpty ? " " : content)
+                    .padding(.vertical, verticalPadding)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .opacity(0)
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.height
+                    } action: { height in
+                        inputNaturalHeight = height
+                    }
+            }
+            .overlay(alignment: .topLeading) {
+                if content.isEmpty {
+                    Text("Message")
+                        .foregroundStyle(.tertiary)
+                        .padding(.vertical, verticalPadding)
+                }
+            }
+            .overlay {
+                TextEditor(text: $content)
+                    .textEditorStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .scrollIndicators(.hidden)
+                    .padding(.vertical, verticalPadding)
+                    .padding(.horizontal, -5) // cancel NSTextView's line-fragment padding
+                    .focused($isFocused)
+                    .onKeyPress(keys: [.return], phases: .down) { press in
+                        // Return submits; Shift+Return inserts a newline.
+                        guard !press.modifiers.contains(.shift) else { return .ignored }
+                        guard !content.isEmpty else { return .handled }
+                        Task {
+                            do {
+                                try await handleSubmit()
+                            } catch {
+                                print(error)
+                            }
+                        }
+                        return .handled
+                    }
+            }
+        #else
+        TextField("Message", text: $content, axis: .vertical)
+            .textFieldStyle(.plain)
+            .padding(.vertical, verticalPadding)
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
+            .focused($isFocused)
+        #endif
     }
 
     func handleSubmit() async throws {
