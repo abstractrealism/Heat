@@ -6,6 +6,26 @@ import HeatKit
 
 private let logger = Logger(subsystem: "ConversationViewModel", category: "App")
 
+/// Verbose development logging for the chat pipeline: requests, prompts,
+/// streamed responses, and how each resulting message will be displayed.
+///
+/// Active only in Debug builds (what Xcode uses for ⌘R); in Release builds the
+/// calls compile down to nothing, so prompts and responses never leave a
+/// development machine. Output goes to the unified log under subsystem
+/// "ChatDebug" — it appears in Xcode's console while running, or in
+/// Console.app filtered by that subsystem.
+enum ChatDebug {
+    #if DEBUG
+    private static let logger = Logger(subsystem: "ChatDebug", category: "App")
+    #endif
+
+    static func log(_ message: @autoclosure () -> String) {
+        #if DEBUG
+        logger.debug("\(message(), privacy: .public)")
+        #endif
+    }
+}
+
 @Observable @MainActor
 final class ConversationViewModel {
     var file: File
@@ -79,6 +99,10 @@ final class ConversationViewModel {
             var context = context
             context["DATETIME"] = .string(Date.now.formatted())
 
+            ChatDebug.log("→ chat request | model: \(model.id) | tools: \(conversation.toolIDs.sorted().joined(separator: ", ")) | history: \(conversation.messages.count) messages")
+            ChatDebug.log("→ system instructions (\(conversation.instructions.count) chars): \(conversation.instructions)")
+            ChatDebug.log("→ user prompt: \(prompt)")
+
             // New user message
             let imageContent = images.map { Message.Content.image(.init(url: $0, format: .jpeg)) }
             let textContent = Message.Content.text(PromptTemplate(prompt, with: context))
@@ -96,13 +120,16 @@ final class ConversationViewModel {
             req.with(context: context)
 
             // Generate response stream
+            var streamUpdates = 0
             let stream = ChatSession.shared.stream(req)
             for try await message in stream {
                 try Task.checkCancellation()
+                streamUpdates += 1
 
                 if let index = conversation.messages.firstIndex(where: { $0.id == message.id }) {
                     conversation.messages[index] = message
                 } else {
+                    ChatDebug.log("← stream produced new message | role: \(message.role.rawValue) | id: \(message.id)")
                     conversation.messages.append(message)
                 }
                 conversation.state = .streaming
@@ -111,6 +138,16 @@ final class ConversationViewModel {
 
             // Reset conversation state
             conversation.state = .none
+
+            ChatDebug.log("← stream finished after \(streamUpdates) updates | conversation now has \(conversation.messages.count) messages:")
+            for message in conversation.messages.suffix(8) {
+                let toolCallNames = (message.toolCalls ?? []).map { $0.function?.name ?? "?" }
+                ChatDebug.log("""
+                    ← [\(message.role.rawValue)] shownInConversation=\(message.shouldShowInRun) \
+                    runID=\(message.runID ?? "nil") toolCalls=\(toolCallNames) \
+                    content(\(message.content?.count ?? 0) chars): \(message.content?.prefix(2000) ?? "<none>")
+                    """)
+            }
 
             // Generate suggestions
             try await generateSuggestions()
@@ -166,6 +203,8 @@ final class ConversationViewModel {
 
         // Set conversation state
         conversation.state = .none
+
+        ChatDebug.log("← suggestions: \(conversation.suggestions)")
     }
 
     func generateTitle() async throws {
@@ -199,6 +238,8 @@ final class ConversationViewModel {
             file.name = tagIsEmpty ? nil : tag?.content
             file.modified = .now
         }
+
+        ChatDebug.log("← title: \(file.name ?? "<none>")")
     }
 
     func cancel() {
@@ -209,6 +250,7 @@ final class ConversationViewModel {
 
     @Sendable // Determine tool to execute and return response before next turn of the conversation
     private func prepareToolResponse(toolCall: ToolCall) async throws -> ToolCallResponse {
+        ChatDebug.log("→ tool call: \(toolCall.function?.name ?? "unknown") | args: \(toolCall.function?.arguments ?? "<none>")")
         if let tool = Toolbox(name: toolCall.function?.name) {
             switch tool {
             case .generateImages:
