@@ -68,8 +68,10 @@ struct MessageField: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textFieldStyle(.plain)
                     .padding(.vertical, verticalPadding)
-                    .padding(.trailing, showInputPadding ? 16 : 0)
-                    .frame(minWidth: 0, minHeight: minHeight)
+                    // Reserve room on the trailing edge so text wraps before the
+                    // send/stop button instead of rendering underneath it.
+                    .padding(.trailing, showInputPadding ? primaryButtonSize.width + 8 : 0)
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
                     .focused($isFocused)
                     #if os(macOS)
                     .onSubmit {
@@ -82,36 +84,37 @@ struct MessageField: View {
                         }
                     }
                     #endif
-
-                if showStopGenerating {
-                    Button(action: handleStop) {
-                        Image(systemName: "stop.fill")
-                            .fontWeight(.medium)
-                            .frame(width: primaryButtonSize.width, height: primaryButtonSize.height)
-                            .foregroundStyle(.white)
-                            .background(.tint, in: .rect(cornerRadius: 8))
-                            .padding(.vertical, 2)
-                    }
-                    .buttonStyle(.plain)
-                } else if showSubmit {
-                    Button {
-                        Task {
-                            do {
-                                try await handleSubmit()
-                            } catch {
-                                print(error)
+                    .overlay(alignment: .bottomTrailing) {
+                        if showStopGenerating {
+                            Button(action: handleStop) {
+                                Image(systemName: "stop.fill")
+                                    .fontWeight(.medium)
+                                    .frame(width: primaryButtonSize.width, height: primaryButtonSize.height)
+                                    .foregroundStyle(.white)
+                                    .background(.tint, in: .rect(cornerRadius: 8))
+                                    .padding(.vertical, 2)
                             }
+                            .buttonStyle(.plain)
+                        } else if showSubmit {
+                            Button {
+                                Task {
+                                    do {
+                                        try await handleSubmit()
+                                    } catch {
+                                        print(error)
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "arrow.up")
+                                    .fontWeight(.medium)
+                                    .frame(width: primaryButtonSize.width, height: primaryButtonSize.height)
+                                    .foregroundStyle(.white)
+                                    .background(.tint, in: .rect(cornerRadius: 8))
+                                    .padding(.vertical, 2)
+                            }
+                            .buttonStyle(.plain)
                         }
-                    } label: {
-                        Image(systemName: "arrow.up")
-                            .fontWeight(.medium)
-                            .frame(width: primaryButtonSize.width, height: primaryButtonSize.height)
-                            .foregroundStyle(.white)
-                            .background(.tint, in: .rect(cornerRadius: 8))
-                            .padding(.vertical, 2)
                     }
-                    .buttonStyle(.plain)
-                }
             }
             .padding(4)
             .sheet(item: $instructionFile) { file in
