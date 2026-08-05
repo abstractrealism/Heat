@@ -137,6 +137,7 @@ final class AppState {
         try filesProvider.cachedFileObject(type, fileID: fileID)
     }
 
+    @discardableResult
     func folderCreate(id: String = .id) async throws -> String {
         let filename = "\(id)"
         let fileID = try await fileCreate(id: id, filename: filename, mimetype: .directory)
@@ -144,6 +145,7 @@ final class AppState {
         return fileID
     }
 
+    @discardableResult
     func fileCreateConversation(id: String = .id) async throws -> String {
         let instruction = try filesProvider.cachedFileObject(Instruction.self, fileID: Defaults.instructionAssistantID)
         let object = Conversation(
@@ -156,6 +158,7 @@ final class AppState {
         return fileID
     }
 
+    @discardableResult
     func fileCreateDocument(id: String = .id) async throws -> String {
         let object = Document.untitled
         let filename = "\(id).document"
