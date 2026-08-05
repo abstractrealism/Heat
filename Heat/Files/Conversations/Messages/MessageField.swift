@@ -18,6 +18,7 @@ struct MessageField: View {
     @State private var instructionFile: File? = nil
     @State private var photoPickerModel = PhotoPickerModel()
     @State private var showingPhotoPicker = false
+    @State private var containerWidth: CGFloat? = nil
 
     @FocusState private var isFocused: Bool
 
@@ -67,10 +68,12 @@ struct MessageField: View {
                 TextField("Message", text: $content, axis: .vertical)
                     .textFieldStyle(.plain)
                     .padding(.vertical, verticalPadding)
-                    // Reserve room on the trailing edge so text wraps before the
-                    // send/stop button instead of rendering underneath it.
-                    .padding(.trailing, showInputPadding ? primaryButtonSize.width + 8 : 0)
-                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
+                    // Give the field an explicit width so the text always wraps
+                    // inside it. On macOS a vertical-axis TextField can otherwise
+                    // wrap at its own intrinsic width and run beneath the send
+                    // button regardless of the width it is offered.
+                    .frame(width: fieldWidth, alignment: .leading)
+                    .frame(minHeight: minHeight, alignment: .leading)
                     .focused($isFocused)
                     #if os(macOS)
                     .onSubmit {
@@ -83,37 +86,38 @@ struct MessageField: View {
                         }
                     }
                     #endif
-                    .overlay(alignment: .bottomTrailing) {
-                        if showStopGenerating {
-                            Button(action: handleStop) {
-                                Image(systemName: "stop.fill")
-                                    .fontWeight(.medium)
-                                    .frame(width: primaryButtonSize.width, height: primaryButtonSize.height)
-                                    .foregroundStyle(.white)
-                                    .background(.tint, in: .rect(cornerRadius: 8))
-                                    .padding(.vertical, 2)
-                            }
-                            .buttonStyle(.plain)
-                        } else if showSubmit {
-                            Button {
-                                Task {
-                                    do {
-                                        try await handleSubmit()
-                                    } catch {
-                                        print(error)
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: "arrow.up")
-                                    .fontWeight(.medium)
-                                    .frame(width: primaryButtonSize.width, height: primaryButtonSize.height)
-                                    .foregroundStyle(.white)
-                                    .background(.tint, in: .rect(cornerRadius: 8))
-                                    .padding(.vertical, 2)
-                            }
-                            .buttonStyle(.plain)
-                        }
+
+                Spacer(minLength: 8)
+
+                if showStopGenerating {
+                    Button(action: handleStop) {
+                        Image(systemName: "stop.fill")
+                            .fontWeight(.medium)
+                            .frame(width: primaryButtonSize.width, height: primaryButtonSize.height)
+                            .foregroundStyle(.white)
+                            .background(.tint, in: .rect(cornerRadius: 8))
+                            .padding(.vertical, 2)
                     }
+                    .buttonStyle(.plain)
+                } else if showSubmit {
+                    Button {
+                        Task {
+                            do {
+                                try await handleSubmit()
+                            } catch {
+                                print(error)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .fontWeight(.medium)
+                            .frame(width: primaryButtonSize.width, height: primaryButtonSize.height)
+                            .foregroundStyle(.white)
+                            .background(.tint, in: .rect(cornerRadius: 8))
+                            .padding(.vertical, 2)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(4)
             .sheet(item: $instructionFile) { file in
@@ -133,6 +137,19 @@ struct MessageField: View {
                 photoLibrary: .shared()
             )
         }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            containerWidth = width
+        }
+    }
+
+    /// Explicit width for the text field: the measured container width minus
+    /// the inline (+) button, the send/stop button, spacing, and padding.
+    /// `nil` until the first layout pass has been measured.
+    private var fieldWidth: CGFloat? {
+        guard let containerWidth else { return nil }
+        return max(50, containerWidth - 8 - inlineButtonSize.width - 8 - primaryButtonSize.width)
     }
 
     func handleSubmit() async throws {
@@ -148,7 +165,6 @@ struct MessageField: View {
         content = ""
     }
 
-    private var showInputPadding: Bool      { !content.isEmpty }
     private var showStopGenerating: Bool    { false } // TODO: Fix this
     private var showSubmit: Bool            { !content.isEmpty }
 
