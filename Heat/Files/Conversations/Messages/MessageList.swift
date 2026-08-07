@@ -18,18 +18,21 @@ struct MessageList: View {
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
-                    // Assistant indicator while waiting on a response
-                    if conversationViewModel.isAwaitingResponse {
-                        GeneratingIndicator()
+                    // What the assistant is doing, where its answer will appear
+                    switch conversationViewModel.phase {
+                    case .waiting:
+                        GeneratingIndicator("Generating")
+                    case .thinking:
+                        GeneratingIndicator("Thinking")
+                    case .responding, .suggesting, .idle:
+                        EmptyView()
                     }
 
-                    // Suggestions typing indicator when suggesting
-                    if conversationViewModel.conversation.state == .suggesting {
-                        TypingIndicator(foregroundColor: .accentColor)
-                    }
-
-                    // Show suggestions when they are available
-                    if !conversationViewModel.suggestions.isEmpty {
+                    // Suggestions, or a note that they're on their way, in the
+                    // place they'll appear
+                    if conversationViewModel.phase == .suggesting {
+                        GeneratingIndicator("Generating suggestions", alignment: .trailing)
+                    } else if !conversationViewModel.suggestions.isEmpty {
                         SuggestionList(suggestions: conversationViewModel.suggestions) { suggestion in
                             SuggestionView(suggestion: suggestion) { handleSubmit($0) }
                         }

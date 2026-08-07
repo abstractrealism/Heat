@@ -5,11 +5,19 @@ import SwiftUI
 /// modest hardware can take a long time to produce its first token, so this
 /// says plainly that work is happening.
 struct GeneratingIndicator: View {
+    let label: String
+    let alignment: Alignment
+
     @State private var animating = false
+
+    init(_ label: String, alignment: Alignment = .leading) {
+        self.label = label
+        self.alignment = alignment
+    }
 
     var body: some View {
         HStack(spacing: 5) {
-            Text("Generating")
+            Text(label)
             HStack(spacing: 3) {
                 ForEach(0..<3, id: \.self) { index in
                     Circle()
@@ -26,7 +34,7 @@ struct GeneratingIndicator: View {
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: alignment)
         .onAppear { animating = true }
     }
 
