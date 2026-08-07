@@ -18,9 +18,9 @@ struct MessageList: View {
                 }
 
                 VStack(alignment: .leading, spacing: 0) {
-                    // Assistant typing indicator when processing
-                    if conversationViewModel.conversation.state == .processing {
-                        TypingIndicator()
+                    // Assistant indicator while waiting on a response
+                    if conversationViewModel.isAwaitingResponse {
+                        GeneratingIndicator()
                     }
 
                     // Suggestions typing indicator when suggesting
@@ -53,13 +53,7 @@ struct MessageList: View {
     }
 
     func handleSubmit(_ prompt: String) {
-        Task {
-            do {
-                try await conversationViewModel.generate(chat: prompt)
-            } catch {
-                print(error)
-            }
-        }
+        conversationViewModel.submit(chat: prompt)
     }
 }
 
