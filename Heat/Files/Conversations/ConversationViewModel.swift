@@ -33,7 +33,7 @@ final class ConversationViewModel {
     var conversation: Conversation = .init()
 
     private let state = AppState.shared
-    private var generateTask: Task<(), Swift.Error>? = nil
+    private var generateTask: Task<Void, Never>? = nil
 
     enum Error: Swift.Error, CustomStringConvertible {
         case generationError(String)
@@ -59,6 +59,26 @@ final class ConversationViewModel {
     /// Suggested replies the user can use to respond.
     var suggestions: [String] {
         Array((conversation.suggestions).prefix(3))
+    }
+
+    /// True while a turn is in flight and nothing has come back to show yet.
+    /// Once the assistant's text starts arriving the text itself is the
+    /// feedback, so the indicator gets out of the way.
+    var isAwaitingResponse: Bool {
+        switch conversation.state {
+        case .processing:
+            return true
+        case .streaming:
+            return !lastMessageHasVisibleText
+        case .suggesting, .none:
+            return false
+        }
+    }
+
+    private var lastMessageHasVisibleText: Bool {
+        guard let last = conversation.messages.last, last.role == .assistant else { return false }
+        let text = last.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !text.isEmpty
     }
 
     /// The instructions (system prompt) that's sent with every request.'
@@ -95,6 +115,40 @@ final class ConversationViewModel {
     }
 
     // MARK: - Generators
+
+    /// Starts a new turn of the conversation, cancelling whatever is still
+    /// generating from the previous one.
+    ///
+    /// A turn keeps working after its answer arrives — it goes on to request
+    /// suggested replies and a title — and those requests write to the shared
+    /// conversation state. With a slow model they can still be running when
+    /// the user sends the next prompt, at which point their results are stale
+    /// and their writes clobber the new turn's state. Cancelling first means
+    /// only one turn ever owns the conversation.
+    func submit(chat prompt: String, context: [String: Value] = [:], toolIDs: Set<String>? = nil) {
+        generateTask?.cancel()
+        generateTask = Task {
+            do {
+                if conversation.isEmpty {
+                    let stored = try state.file(Conversation.self, fileID: file.id)
+                    read(stored)
+                }
+
+                // Augment the tool set associated with the conversation, it's a better user experience to keep
+                // around tools used with custom instructions so the assistant can use them for followup questions.
+                if let toolIDs {
+                    var stored = try state.file(Conversation.self, fileID: file.id)
+                    stored.toolIDs.formUnion(toolIDs)
+                    try await state.fileUpdate(stored, fileID: file.id)
+                }
+
+                try await generate(chat: prompt, context: context)
+            } catch {
+                guard !Task.isCancelled else { return }
+                state.log(error: error)
+            }
+        }
+    }
 
     /// Generate a response using text as the only input. Add context—often memories—to augment the system prompt. Optionally force a tool call.
     func generate(chat prompt: String, images: [URL] = [], context: [String: Value] = [:], toolChoice: Tool? = nil) async throws {
@@ -165,8 +219,14 @@ final class ConversationViewModel {
             try await API.shared.fileUpdate(file.id, object: conversation)
             try await API.shared.fileUpdate(file)
         } catch {
+            // A turn that was superseded by a newer prompt must not touch the
+            // conversation state or report a failure — the new turn owns the
+            // conversation now, and this cancellation was deliberate. This has
+            // to come first, before anything below writes state.
+            if error is CancellationError || Task.isCancelled { return }
+
             // Surface the failure inline and clear any in-progress state so the
-            // typing indicator doesn't spin forever.
+            // indicator doesn't spin forever.
             conversation.state = .none
             self.error = errorMessage(for: error)
             throw Error.generationError("\(error)")
