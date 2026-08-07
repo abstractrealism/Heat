@@ -61,24 +61,58 @@ final class ConversationViewModel {
         Array((conversation.suggestions).prefix(3))
     }
 
-    /// True while a turn is in flight and nothing has come back to show yet.
-    /// Once the assistant's text starts arriving the text itself is the
-    /// feedback, so the indicator gets out of the way.
-    var isAwaitingResponse: Bool {
+    /// What the assistant is doing right now, for the status indicator.
+    ///
+    /// These are the phases the service actually tells us about. A local model
+    /// being loaded into memory is *not* one of them: Ollama sends nothing at
+    /// all until generation starts, and only reports `load_duration` once the
+    /// response is finished, so loading and prompt evaluation are both just
+    /// `.waiting` from here.
+    enum Phase: Equatable {
+        case idle
+        case waiting      // request sent, nothing streamed back yet
+        case thinking     // streaming reasoning inside an unclosed think tag
+        case responding   // streaming the visible answer
+        case suggesting   // generating follow-up suggestions
+    }
+
+    var phase: Phase {
         switch conversation.state {
         case .processing:
-            return true
+            return .waiting
         case .streaming:
-            return !lastMessageHasVisibleText
-        case .suggesting, .none:
-            return false
+            if isReasoning { return .thinking }
+            return lastMessageHasVisibleText ? .responding : .waiting
+        case .suggesting:
+            return .suggesting
+        case .none:
+            return .idle
         }
+    }
+
+    /// True while a turn is running, used to offer a stop control.
+    var isGenerating: Bool {
+        conversation.state != .none
     }
 
     private var lastMessageHasVisibleText: Bool {
         guard let last = conversation.messages.last, last.role == .assistant else { return false }
         let text = last.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return !text.isEmpty
+    }
+
+    /// True when the assistant has opened a reasoning tag it hasn't closed.
+    /// Reasoning models stream their scratchpad first, which can run for a
+    /// long time and collapses into a "Thinking" block, so the status line
+    /// says that's what's happening rather than implying an answer is coming.
+    private var isReasoning: Bool {
+        guard let last = conversation.messages.last, last.role == .assistant,
+              let content = last.content else { return false }
+        return ["think", "thinking"].contains { tag in
+            let opened = content.components(separatedBy: "<\(tag)>").count - 1
+            let closed = content.components(separatedBy: "</\(tag)>").count - 1
+            return opened > closed
+        }
     }
 
     /// The instructions (system prompt) that's sent with every request.'
@@ -283,7 +317,6 @@ final class ConversationViewModel {
                 .components(separatedBy: .newlines)
 
             conversation.suggestions = suggestions
-            conversation.state = .streaming
             file.modified = .now
         }
 
@@ -328,8 +361,19 @@ final class ConversationViewModel {
         ChatDebug.log("← title: \(file.name ?? "<none>")")
     }
 
+    /// Stops the current turn at the user's request.
+    ///
+    /// Unlike the cancellation that happens when a new prompt supersedes a
+    /// turn, nothing is about to take ownership of the conversation here, so
+    /// this resets the state itself and saves whatever did arrive rather than
+    /// discarding a partial answer.
     func cancel() {
         generateTask?.cancel()
+        generateTask = nil
+        conversation.state = .none
+
+        let snapshot = conversation
+        Task { try? await API.shared.fileUpdate(file.id, object: snapshot) }
     }
 
     // MARK: - Private

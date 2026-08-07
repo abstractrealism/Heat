@@ -223,7 +223,10 @@ struct MessageField: View {
         content = ""
     }
 
-    private var showStopGenerating: Bool    { false } // TODO: Fix this
+    // Stop replaces send only while the field is empty: sending a follow-up
+    // mid-generation is supported (it supersedes the running turn), so typing
+    // must always get the send button back.
+    private var showStopGenerating: Bool    { conversationViewModel.isGenerating && content.isEmpty }
     private var showSubmit: Bool            { !content.isEmpty }
 
     #if os(macOS)
