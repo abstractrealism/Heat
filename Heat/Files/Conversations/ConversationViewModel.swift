@@ -197,6 +197,10 @@ final class ConversationViewModel {
                 file.modified = .now
             }
 
+            // See generateSuggestions: a cancelled stream ends quietly, so
+            // check before touching state or starting follow-up work.
+            try Task.checkCancellation()
+
             // Reset conversation state
             conversation.state = .none
 
@@ -255,6 +259,11 @@ final class ConversationViewModel {
             file.modified = .now
         }
 
+        // Cancelling a turn ends the stream without throwing — the loop body
+        // simply stops running, so its checkCancellation never fires. Test for
+        // it here, before writing state a newer turn may already own.
+        try Task.checkCancellation()
+
         // Set conversation state
         conversation.state = .none
     }
@@ -290,6 +299,9 @@ final class ConversationViewModel {
             file.name = tagIsEmpty ? nil : tag?.content
             file.modified = .now
         }
+
+        // As above: don't let a cancelled turn fall through to saving.
+        try Task.checkCancellation()
     }
 
     /// Stops the current turn at the user's request.
