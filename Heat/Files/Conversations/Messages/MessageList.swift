@@ -23,6 +23,10 @@ struct MessageList: View {
     /// How close to the end still counts as being at the end, for resuming.
     private let endThreshold: CGFloat = 16
 
+    /// Distance from the end as of the last scroll geometry change. Negative
+    /// while the view is rubber-banded past the end.
+    @State private var distanceFromEnd: CGFloat = 0
+
     private struct ScrollState: Equatable {
         var offset: CGFloat
         var distanceFromEnd: CGFloat
@@ -82,6 +86,8 @@ struct MessageList: View {
                         - (geometry.contentOffset.y + geometry.containerSize.height)
                 )
             } action: { old, new in
+                distanceFromEnd = new.distanceFromEnd
+
                 if new.offset < old.offset - scrollUpTolerance {
                     // Moving up is the reader's doing; leave the view put.
                     isFollowing = false
@@ -92,6 +98,13 @@ struct MessageList: View {
             }
             .onChange(of: conversationViewModel.file.modified) { _, _ in
                 guard isFollowing else { return }
+
+                // While the view is rubber-banded past the end there is
+                // nothing below to follow, and scrolling would cancel the
+                // bounce mid-flight — which reads as the view juddering.
+                // Let it settle; following resumes on the next token.
+                guard distanceFromEnd >= 0 else { return }
+
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
             .task(id: conversationViewModel.file.id) {
