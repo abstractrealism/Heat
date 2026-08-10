@@ -36,7 +36,7 @@ struct PermissionForm: View {
 
                 Toggle("Notify when a response finishes", isOn: $notifyOnResponse)
                     .disabled(!hasNotificationPermission)
-                Text("Sent only while Heat isn't the active app, and only for the response itself — not the suggestions that follow it.")
+                Text("Sends only when Heat isn't the active app.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             case .location:

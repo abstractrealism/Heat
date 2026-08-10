@@ -14,6 +14,8 @@ struct MessageField: View {
 
     let action: ActionHandler
 
+    @AppStorage(ChatPreference.thinkingEnabled) private var thinkingEnabled = true
+
     @State private var content = ""
     @State private var instructionFile: File? = nil
     @State private var photoPickerModel = PhotoPickerModel()
@@ -48,6 +50,9 @@ struct MessageField: View {
                     Button("Attach Image") {
                         showingPhotoPicker = true
                     }
+                    Divider()
+                    Toggle("Thinking", isOn: $thinkingEnabled)
+                        .help("Let reasoning models think before answering. Models that can't reason are unaffected.")
                     Divider()
                     ForEach(state.instructions) { file in
                         if let instruction = try? state.file(Instruction.self, fileID: file.id), instruction.kind == .template {

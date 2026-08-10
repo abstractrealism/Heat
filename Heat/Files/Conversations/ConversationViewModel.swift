@@ -6,6 +6,18 @@ import HeatKit
 
 private let logger = Logger(subsystem: "ConversationViewModel", category: "App")
 
+enum ChatPreference {
+    /// Whether reasoning models should think before answering.
+    static let thinkingEnabled = "thinkingEnabled"
+
+    /// On by default, matching what a model does when left alone. Only the
+    /// off state is ever sent: a model that can't reason rejects a request
+    /// asking it to, so staying quiet is what keeps mixed model setups working.
+    static var isThinkingEnabled: Bool {
+        UserDefaults.standard.object(forKey: thinkingEnabled) as? Bool ?? true
+    }
+}
+
 /// Keeps one view model per conversation, alive beyond the view showing it.
 ///
 /// `FileDetail` gives each conversation view an `.id`, so navigating to
@@ -249,6 +261,9 @@ final class ConversationViewModel {
             req.with(history: conversation.messages)
             req.with(tools: Toolbox.get(names: conversation.toolIDs))
             req.with(context: context)
+            if !ChatPreference.isThinkingEnabled {
+                req.with(option: "think", value: .bool(false))
+            }
 
             // Generate response stream
             let stream = ChatSession.shared.stream(req)
