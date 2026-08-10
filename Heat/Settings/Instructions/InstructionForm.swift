@@ -164,8 +164,6 @@ struct InstructionToolsForm: View {
 
     @State private var toolIDs: Set<String> = []
     @State private var selection: String? = nil
-    @State private var newToolID = ""
-    @State private var isAddingTool = false
     @State private var isLoaded = false
     @State private var saveTask: Task<Void, Never>?
 
@@ -173,52 +171,65 @@ struct InstructionToolsForm: View {
         self.fileID = fileID
     }
 
+    /// Tools the app implements that this instruction doesn't already use.
+    /// Anything else in `toolIDs` — hand-edited, or left over from a build
+    /// that had more tools — still lists, so it can be seen and removed.
+    private var addableToolIDs: [String] {
+        Toolbox.allCases
+            .map(\.name)
+            .filter { !toolIDs.contains($0) }
+            .sorted()
+    }
+
     var body: some View {
         VStack {
             List(selection: $selection) {
                 ForEach(Array(toolIDs.sorted(by: <)), id: \.self) { toolID in
-                    Text(toolID)
-                        .tag(toolID)
-                }
-                if isAddingTool {
-                    TextField("Tool ID", text: $newToolID)
-                        .onSubmit {
-                            handleInsertTool()
+                    HStack {
+                        Text(toolID)
+                        if Toolbox(name: toolID) == nil {
+                            // Kept rather than dropped, but it won't do
+                            // anything: no tool answers to this name.
+                            Text("unrecognized")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
+                    }
+                    .tag(toolID)
                 }
             }
             #if os(macOS)
             .listStyle(.bordered)
             #endif
 
-            HStack {
-                ControlGroup {
-                    Button("Decrease", systemImage: "minus") {
-                        if let selection {
-                            toolIDs.remove(selection)
-                        }
+            HStack(spacing: 8) {
+                // A menu rather than a text field: these have to match a tool
+                // the app implements exactly, and there was no way to know the
+                // names by typing.
+                Menu {
+                    ForEach(addableToolIDs, id: \.self) { toolID in
+                        Button(toolID) { toolIDs.insert(toolID) }
                     }
-                    Button("Increase", systemImage: "plus") {
-                        if !newToolID.isEmpty {
-                            handleInsertTool()
-                        }
-                        isAddingTool = true
+                } label: {
+                    Label("Add Tool", systemImage: "plus")
+                }
+                .disabled(addableToolIDs.isEmpty)
+                .fixedSize()
+
+                Button("Remove", systemImage: "minus") {
+                    if let selection {
+                        toolIDs.remove(selection)
+                        self.selection = nil
                     }
                 }
-                .frame(width: 60)
+                .disabled(selection == nil)
+
                 Spacer()
-                Text("Available: \(Toolbox.allCases.map(\.name).sorted().joined(separator: ", "))")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
         }
         .onAppear { load() }
         .onChange(of: toolIDs) { _, _ in scheduleSave() }
-        .onDisappear {
-            // Commit a tool that was typed but never submitted.
-            handleInsertTool()
-            flush()
-        }
+        .onDisappear { flush() }
     }
 
     private func load() {
@@ -259,16 +270,6 @@ struct InstructionToolsForm: View {
         } catch {
             state.log(error: error)
         }
-    }
-
-    private func handleInsertTool() {
-        guard !newToolID.isEmpty else {
-            isAddingTool = false
-            return
-        }
-        toolIDs.insert(newToolID.trimmingCharacters(in: .whitespacesAndNewlines))
-        newToolID = ""
-        isAddingTool = false
     }
 }
 
@@ -332,40 +333,5 @@ struct InstructionTextForm: View {
         } catch {
             state.log(error: error)
         }
-    }
-}
-
-struct InstructionTool: View {
-    @Environment(\.dismiss) var dismiss
-
-    @State var text: String = ""
-
-    let action: (String) -> Void
-
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        Form {
-            TextField("Name", text: $text)
-                .focused($isFocused)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button {
-                            handleSubmit()
-                        } label: {
-                            Text("Done")
-                        }
-                    }
-                }
-        }
-        .onAppear {
-            isFocused = true
-        }
-    }
-
-    func handleSubmit() {
-        action(text.trimmingCharacters(in: .whitespacesAndNewlines))
-        text = ""
-        dismiss()
     }
 }
