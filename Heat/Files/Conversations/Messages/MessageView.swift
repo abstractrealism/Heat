@@ -29,6 +29,7 @@ struct MessageView: View {
                ForEachToolCall(message.toolCalls) { toolCall in
                    ToolCallView(toolCall)
                }
+               MessageUsageView(message)
             case .tool:
                ToolContentsView(message)
             }
@@ -295,5 +296,46 @@ struct ToolResponseName: View {
         } else {
             Text("Unknown tool")
         }
+    }
+}
+
+/// What a response cost, shown quietly beneath it once the service reports it.
+///
+/// The counts cover the whole generation. Reasoning isn't broken out because
+/// no separate figure is reported for it — the service counts every token it
+/// produced together, so splitting them would mean inventing a number.
+struct MessageUsageView: View {
+    let message: Message
+
+    init(_ message: Message) {
+        self.message = message
+    }
+
+    var body: some View {
+        if let summary {
+            Text(summary)
+                .font(.footnote)
+                .foregroundStyle(.tertiary)
+                .textSelection(.enabled)
+        }
+    }
+
+    private var summary: String? {
+        guard let output = message.metadata["outputTokens"]?.intValue else { return nil }
+
+        var parts: [String] = []
+        if let input = message.metadata["inputTokens"]?.intValue {
+            parts.append("\(format(input + output)) tokens (\(format(input)) in, \(format(output)) out)")
+        } else {
+            parts.append("\(format(output)) tokens")
+        }
+        if let seconds = message.metadata["outputSeconds"]?.doubleValue, seconds > 0 {
+            parts.append(String(format: "%.1f tok/s", Double(output) / seconds))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func format(_ count: Int) -> String {
+        count.formatted(.number.grouping(.automatic))
     }
 }
