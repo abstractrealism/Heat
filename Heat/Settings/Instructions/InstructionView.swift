@@ -108,13 +108,20 @@ struct InstructionsView: View {
     }
 
     #if os(macOS)
+    /// Clickable area per button. Sized so the bar keeps roughly the height it
+    /// had when the glyphs sat directly in it.
+    private let buttonSize = CGSize(width: 24, height: 22)
+
     private var controlBar: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             Button {
                 handleCreate()
             } label: {
+                // The glyph alone is a tiny target — a minus is a few points
+                // of horizontal bar — so each button gets an explicit box to
+                // click, made hit-testable as a whole by contentShape.
                 Image(systemName: "plus")
-                    .frame(width: 20)
+                    .frame(width: buttonSize.width, height: buttonSize.height)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
@@ -124,9 +131,9 @@ struct InstructionsView: View {
                 pendingDeletion = selection
             } label: {
                 Image(systemName: "minus")
-                    .frame(width: 20)
-                    .contentShape(.rect)
                     .opacity(isDeletable(selection) ? 1 : 0.3)
+                    .frame(width: buttonSize.width, height: buttonSize.height)
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .disabled(!isDeletable(selection))
@@ -134,8 +141,8 @@ struct InstructionsView: View {
 
             Spacer()
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .padding(.horizontal, 6)
         .background(.linearGradient(colors: [Color(hex: "#FAFAFA"), Color(hex: "#F5F5F5")], startPoint: .top, endPoint: .bottom))
         .padding(1)
         .overlay {
