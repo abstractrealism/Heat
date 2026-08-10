@@ -194,6 +194,22 @@ final class ConversationViewModel {
         self.conversation = conversation
     }
 
+    /// How often a streaming answer is published to the view. Fast enough to
+    /// read as continuous, slow enough that re-rendering a long answer doesn't
+    /// dominate the machine.
+    private let streamPublishInterval: TimeInterval = 0.1
+
+    /// Shows a streamed message, replacing the earlier version of it.
+    private func publish(_ message: Message) {
+        if let index = conversation.messages.firstIndex(where: { $0.id == message.id }) {
+            conversation.messages[index] = message
+        } else {
+            conversation.messages.append(message)
+        }
+        conversation.state = .streaming
+        file.modified = .now
+    }
+
     // MARK: - Generators
 
     /// Starts a new turn of the conversation, cancelling whatever is still
@@ -267,16 +283,35 @@ final class ConversationViewModel {
 
             // Generate response stream
             let stream = ChatSession.shared.stream(req)
+            // Publishing every token re-renders the message, and rendering
+            // means re-parsing the whole answer as markdown and laying it out
+            // again — work that grows with the answer while tokens keep
+            // arriving at a fixed rate. With reasoning shown that text is long
+            // enough to saturate a core. Publishing on an interval keeps the
+            // text visibly moving for a fraction of the work; the stream is
+            // still consumed as fast as it arrives.
+            var pending: Message?
+            var lastPublished = Date.distantPast
+
             for try await message in stream {
                 try Task.checkCancellation()
 
-                if let index = conversation.messages.firstIndex(where: { $0.id == message.id }) {
-                    conversation.messages[index] = message
-                } else {
-                    conversation.messages.append(message)
+                // A new message means the previous one is done, so let its
+                // last tokens through before moving on.
+                if let pending, pending.id != message.id {
+                    publish(pending)
                 }
-                conversation.state = .streaming
-                file.modified = .now
+                pending = message
+
+                if Date().timeIntervalSince(lastPublished) >= streamPublishInterval {
+                    publish(message)
+                    lastPublished = .now
+                }
+            }
+
+            // Whatever the last interval didn't cover.
+            if let pending {
+                publish(pending)
             }
 
             // See generateSuggestions: a cancelled stream ends quietly, so
