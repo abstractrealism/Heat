@@ -6,6 +6,11 @@ struct MessageList: View {
     @Environment(AppState.self) var state
     @Environment(ConversationViewModel.self) var conversationViewModel
 
+    /// Whether the view is sitting at (or very near) the newest content.
+    /// Auto-scrolling only happens while this holds, so scrolling up to read
+    /// during a response isn't fought by every incoming token.
+    @State private var isPinnedToBottom = true
+
     var body: some View {
         ScrollViewReader { proxy in
             MessageListScrollView {
@@ -37,17 +42,36 @@ struct MessageList: View {
                 }
                 .id("bottom")
             }
-            .onChange(of: conversationViewModel.file.modified) { _, _ in
-                proxy.scrollTo("bottom")
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                // A small slack keeps rounding and the bounce at the end of a
+                // scroll from reading as "the user scrolled away".
+                let distanceFromBottom = geometry.contentSize.height
+                    - (geometry.contentOffset.y + geometry.containerSize.height)
+                return distanceFromBottom <= 40
+            } action: { _, pinned in
+                isPinnedToBottom = pinned
             }
-            .onAppear {
-                proxy.scrollTo("bottom")
+            .onChange(of: conversationViewModel.file.modified) { _, _ in
+                guard isPinnedToBottom else { return }
+                proxy.scrollTo("bottom", anchor: .bottom)
+            }
+            .task(id: conversationViewModel.file.id) {
+                // Open a conversation showing its most recent activity.
+                isPinnedToBottom = true
+                proxy.scrollTo("bottom", anchor: .bottom)
+
+                // Message bodies are laid out asynchronously, so the first
+                // scroll can land before the content has its full height.
+                // Settle once more after that work has had a chance to run.
+                try? await Task.sleep(for: .milliseconds(150))
+                guard isPinnedToBottom else { return }
+                proxy.scrollTo("bottom", anchor: .bottom)
             }
             .onOpenURL { url in
                 if let suggestion = url.queryParameters["suggestion"] {
                     handleSubmit(suggestion.replacingOccurrences(of: "+", with: " "))
                 }
-                proxy.scrollTo("bottom")
+                proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
     }

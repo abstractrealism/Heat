@@ -131,6 +131,12 @@ struct MessageField: View {
                 photoLibrary: .shared()
             )
         }
+        .task(id: conversationViewModel.file.id) {
+            // A new conversation opens ready to type into. Existing ones are
+            // left alone so opening one to read doesn't steal the keyboard.
+            guard conversationViewModel.messages.isEmpty else { return }
+            isFocused = true
+        }
     }
 
     /// The multiline message input.
