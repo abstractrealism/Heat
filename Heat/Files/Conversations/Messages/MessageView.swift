@@ -336,10 +336,18 @@ struct MessageUsageView: View {
         guard let output = message.metadata["outputTokens"]?.intValue else { return nil }
 
         var parts: [String] = []
+
+        // The split is approximate — see applyThinkingSplit — so it's marked
+        // with ≈ rather than presented as a counted figure.
+        var outputDetail = "\(format(output)) out"
+        if let thinking = message.metadata["thinkingTokens"]?.intValue, thinking > 0 {
+            outputDetail += " ≈ \(format(thinking)) thinking + \(format(output - thinking)) answer"
+        }
+
         if let input = message.metadata["inputTokens"]?.intValue {
-            parts.append("\(format(input + output)) tokens (\(format(input)) in, \(format(output)) out)")
+            parts.append("\(format(input + output)) tokens (\(format(input)) in, \(outputDetail))")
         } else {
-            parts.append("\(format(output)) tokens")
+            parts.append("\(outputDetail) tokens")
         }
         if let seconds = message.metadata["outputSeconds"]?.doubleValue, seconds > 0 {
             parts.append(String(format: "%.1f tok/s", Double(output) / seconds))

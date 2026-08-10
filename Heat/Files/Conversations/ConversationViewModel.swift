@@ -230,12 +230,22 @@ final class ConversationViewModel {
     /// until then this counts stream deltas — one token each for Ollama — over
     /// elapsed time. It's an estimate, and it gives way to the service's real
     /// figures the moment they arrive.
+    ///
+    /// Timed from the first token rather than from the request, because
+    /// loading the model and reading the prompt happen before any token
+    /// arrives; counting that time makes the rate start far too low and creep
+    /// upwards for the rest of the answer. Measuring only the generating part
+    /// is also what the service's own figure does, so the two agree.
     private(set) var liveTokensPerSecond: Double?
 
     /// Counted on every delta but only read when publishing, so the running
     /// total doesn't drag a re-render along with each token.
     @ObservationIgnored private var streamedDeltas = 0
-    @ObservationIgnored private var streamStartedAt: Date?
+    @ObservationIgnored private var firstDeltaAt: Date?
+
+    /// How many deltas had arrived when the reasoning block closed, used to
+    /// apportion the token total between reasoning and answer.
+    @ObservationIgnored private var deltasAtEndOfThinking: Int?
 
     /// Shows a streamed message, replacing the earlier version of it.
     private func publish(_ message: Message) {
@@ -248,10 +258,31 @@ final class ConversationViewModel {
         conversation.state = .streaming
         file.modified = .now
 
-        if let started = streamStartedAt {
-            let elapsed = Date().timeIntervalSince(started)
-            liveTokensPerSecond = elapsed > 0.5 ? Double(streamedDeltas) / elapsed : nil
+        // n tokens span n-1 gaps, measured from the first one.
+        if let first = firstDeltaAt, streamedDeltas > 1 {
+            let elapsed = Date().timeIntervalSince(first)
+            liveTokensPerSecond = elapsed > 0.5 ? Double(streamedDeltas - 1) / elapsed : nil
         }
+    }
+
+    /// Divides the reported token total between reasoning and answer.
+    ///
+    /// The service counts everything it generated as a single number, so this
+    /// is an approximation: it splits that total in the same proportion as the
+    /// deltas that arrived either side of the reasoning block closing, and
+    /// rounds, because presenting it to the token would claim a precision it
+    /// doesn't have. Enough to see roughly where the time went.
+    private func applyThinkingSplit(to messageID: String?) {
+        guard let messageID,
+              let boundary = deltasAtEndOfThinking,
+              streamedDeltas > 0,
+              let index = conversation.messages.firstIndex(where: { $0.id == messageID }),
+              let total = conversation.messages[index].metadata["outputTokens"]?.intValue
+        else { return }
+
+        let share = Double(boundary) / Double(streamedDeltas)
+        let thinking = Int(((Double(total) * share) / 10).rounded()) * 10
+        conversation.messages[index].metadata["thinkingTokens"] = .int(min(thinking, total))
     }
 
     // MARK: - Generators
@@ -344,13 +375,22 @@ final class ConversationViewModel {
             var lastPublished = Date.distantPast
 
             streamedDeltas = 0
-            streamStartedAt = .now
+            firstDeltaAt = nil
+            deltasAtEndOfThinking = nil
             liveTokensPerSecond = nil
 
             for try await message in stream {
                 try Task.checkCancellation()
                 streamUpdates += 1
                 streamedDeltas += 1
+                if firstDeltaAt == nil { firstDeltaAt = .now }
+
+                // Note where reasoning ended so the totals can be split later.
+                // Only scanned until found, so it costs nothing afterwards.
+                if deltasAtEndOfThinking == nil, let content = message.content,
+                   content.contains("</think>") || content.contains("</thinking>") {
+                    deltasAtEndOfThinking = streamedDeltas
+                }
 
                 // A new message means the previous one is done, so let its
                 // last tokens through before moving on.
@@ -369,6 +409,8 @@ final class ConversationViewModel {
             if let pending {
                 publish(pending)
             }
+            applyThinkingSplit(to: pending?.id)
+            liveTokensPerSecond = nil
 
             // See generateSuggestions: a cancelled stream ends quietly, so
             // check before touching state or starting follow-up work.
