@@ -43,6 +43,7 @@
 		D4FB72882DC04151008CC1DF /* DocumentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FB72872DC04151008CC1DF /* DocumentViewModel.swift */; };
 		D4FBFBEA2CED03E100266BF1 /* App-iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FBFBE92CED03E100266BF1 /* App-iOS.swift */; platformFilter = ios; };
 		D4FECDD32B817A3900E1BA13 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FECDD22B817A3900E1BA13 /* HapticManager.swift */; };
+		A1B2C3D40000000000000001 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000002 /* NotificationManager.swift */; };
 		D8015CC72CB8EDBF0068749D /* MessageInstructions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8015CC62CB8EDBF0068749D /* MessageInstructions.swift */; };
 		D8015CC92CB8F4D60068749D /* RenderAnyTag.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8015CC82CB8F4D60068749D /* RenderAnyTag.swift */; };
 		D80F73B62C95F0E0001B2778 /* AttributedString+.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80F73B52C95F0E0001B2778 /* AttributedString+.swift */; };
@@ -119,6 +120,7 @@
 		D4FB72872DC04151008CC1DF /* DocumentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentViewModel.swift; sourceTree = "<group>"; };
 		D4FBFBE92CED03E100266BF1 /* App-iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App-iOS.swift"; sourceTree = "<group>"; };
 		D4FECDD22B817A3900E1BA13 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
+		A1B2C3D40000000000000002 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		D800BF8D2D8C73F300CD1D99 /* Heat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Heat.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D8015CC62CB8EDBF0068749D /* MessageInstructions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageInstructions.swift; sourceTree = "<group>"; };
 		D8015CC82CB8F4D60068749D /* RenderAnyTag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderAnyTag.swift; sourceTree = "<group>"; };
@@ -222,6 +224,7 @@
 				D4C68E932BCC8AC500EFEF24 /* PhotoPickerModel.swift */,
 				D4713D6F2AEAB9670005597E /* Operators.swift */,
 				D4FECDD22B817A3900E1BA13 /* HapticManager.swift */,
+				A1B2C3D40000000000000002 /* NotificationManager.swift */,
 				D884AAF42BD7F50E00B90E9B /* FloatingPanel.swift */,
 				D884AAFF2BD9B9DE00B90E9B /* LocationManager.swift */,
 				D8271A5B2C7A4E83008C345B /* CodeHighlighter.swift */,
@@ -547,6 +550,7 @@
 				D88D23092B3CFB5100CCCC61 /* MessageView.swift in Sources */,
 				D4F518BF2CAF8BA8005E147E /* RenderOutput.swift in Sources */,
 				D4FECDD32B817A3900E1BA13 /* HapticManager.swift in Sources */,
+				A1B2C3D40000000000000001 /* NotificationManager.swift in Sources */,
 				D4FB72882DC04151008CC1DF /* DocumentViewModel.swift in Sources */,
 				D4B4F9282C8BB17A00C82284 /* RenderReflection.swift in Sources */,
 				D4017C8D2B6EEF70001CE137 /* Squircle.swift in Sources */,

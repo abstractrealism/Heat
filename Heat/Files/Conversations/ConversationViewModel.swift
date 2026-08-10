@@ -118,6 +118,23 @@ final class ConversationViewModel {
         return !text.isEmpty
     }
 
+    /// The opening of the latest answer, for a notification preview.
+    ///
+    /// Anything up to the end of a reasoning block is dropped: a model that
+    /// thinks out loud would otherwise fill the preview with its scratchpad
+    /// instead of the answer that was actually waited for.
+    private var responsePreview: String? {
+        guard var text = conversation.messages.last?.content else { return nil }
+        for tag in ["think", "thinking"] {
+            if let close = text.range(of: "</\(tag)>", options: [.caseInsensitive, .backwards]) {
+                text = String(text[close.upperBound...])
+            }
+        }
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return text.count > 140 ? text.prefix(140).trimmingCharacters(in: .whitespaces) + "…" : text
+    }
+
     /// True when the assistant has opened a reasoning tag it hasn't closed.
     /// Reasoning models stream their scratchpad first, which can run for a
     /// long time and collapses into a "Thinking" block, so the status line
@@ -253,6 +270,13 @@ final class ConversationViewModel {
 
             // Reset conversation state
             conversation.state = .none
+
+            // The answer is what someone stepped away from, so tell them here
+            // rather than after the suggestions and title that follow it.
+            NotificationManager.shared.responseCompleted(
+                conversation: file.name ?? "Heat",
+                preview: responsePreview
+            )
 
             // Generate suggestions
             try await generateSuggestions()
