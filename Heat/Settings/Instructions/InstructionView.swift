@@ -22,7 +22,7 @@ struct InstructionsView: View {
             .environment(\.defaultMinListRowHeight, 32)
             .overlay(alignment: .bottom) {
                 Button {
-                    selection = nil
+                    handleCreate()
                 } label: {
                     HStack {
                         Image(systemName: "plus")
@@ -58,6 +58,33 @@ struct InstructionsView: View {
         }
         .navigationTitle("Instructions")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem {
+                Button("New Instruction", systemImage: "plus") {
+                    handleCreate()
+                }
+            }
+        }
         #endif
+    }
+
+    /// Creates an instruction and selects it so the editor has something to
+    /// work on. The form edits a file in place — it has no draft state of its
+    /// own — so the file has to exist before anything can be typed into it.
+    ///
+    /// New instructions start as templates: that's the kind with no defaults,
+    /// and the one this list exists for. The others are the app's own prompts.
+    func handleCreate() {
+        Task {
+            do {
+                let fileID = try await state.fileCreateInstruction(
+                    name: "Untitled",
+                    instruction: .init(kind: .template, instructions: "")
+                )
+                selection = fileID
+            } catch {
+                state.log(error: error)
+            }
+        }
     }
 }
