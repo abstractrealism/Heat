@@ -11,6 +11,8 @@ struct PermissionForm: View {
 
     let permission: Permission
 
+    @AppStorage(NotificationPreference.notifyOnResponse) private var notifyOnResponse = false
+
     @State private var hasNotificationPermission = false
     @State private var hasLocationPermission = false        // NSLocationWhenInUseUsageDescription
     @State private var hasMusicPermission = false           // NSAppleMusicUsageDescription
@@ -31,6 +33,12 @@ struct PermissionForm: View {
                         }
                     }
                 ))
+
+                Toggle("Notify when a response finishes", isOn: $notifyOnResponse)
+                    .disabled(!hasNotificationPermission)
+                Text("Sent only while Heat isn't the active app, and only for the response itself — not the suggestions that follow it.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             case .location:
                 Toggle("Location", isOn: Binding(get: { hasLocationPermission }, set: { shouldGetPermission in
                     if shouldGetPermission && !hasLocationPermission {
