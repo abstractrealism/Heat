@@ -60,9 +60,9 @@ struct MessageList: View {
                     // What the assistant is doing, where its answer will appear
                     switch conversationViewModel.phase {
                     case .waiting:
-                        GeneratingIndicator("Generating")
+                        GeneratingIndicator("Generating" + liveRateSuffix)
                     case .thinking:
-                        GeneratingIndicator("Thinking")
+                        GeneratingIndicator("Thinking" + liveRateSuffix)
                     case .responding, .suggesting, .idle:
                         EmptyView()
                     }
@@ -126,6 +126,14 @@ struct MessageList: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
+    }
+
+    /// The running rate, once there's been long enough to mean anything. The
+    /// service's own count only lands when the response is finished, so this
+    /// stands in until the figures underneath the message replace it.
+    private var liveRateSuffix: String {
+        guard let rate = conversationViewModel.liveTokensPerSecond else { return "" }
+        return String(format: " · %.0f tok/s", rate)
     }
 
     func handleSubmit(_ prompt: String) {

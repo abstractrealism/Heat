@@ -224,6 +224,19 @@ final class ConversationViewModel {
     /// dominate the machine.
     private let streamPublishInterval: TimeInterval = 0.1
 
+    /// Tokens per second while a turn is still running.
+    ///
+    /// The service only reports its own counts once a response is finished, so
+    /// until then this counts stream deltas — one token each for Ollama — over
+    /// elapsed time. It's an estimate, and it gives way to the service's real
+    /// figures the moment they arrive.
+    private(set) var liveTokensPerSecond: Double?
+
+    /// Counted on every delta but only read when publishing, so the running
+    /// total doesn't drag a re-render along with each token.
+    @ObservationIgnored private var streamedDeltas = 0
+    @ObservationIgnored private var streamStartedAt: Date?
+
     /// Shows a streamed message, replacing the earlier version of it.
     private func publish(_ message: Message) {
         if let index = conversation.messages.firstIndex(where: { $0.id == message.id }) {
@@ -234,6 +247,11 @@ final class ConversationViewModel {
         }
         conversation.state = .streaming
         file.modified = .now
+
+        if let started = streamStartedAt {
+            let elapsed = Date().timeIntervalSince(started)
+            liveTokensPerSecond = elapsed > 0.5 ? Double(streamedDeltas) / elapsed : nil
+        }
     }
 
     // MARK: - Generators
@@ -325,9 +343,14 @@ final class ConversationViewModel {
             var pending: Message?
             var lastPublished = Date.distantPast
 
+            streamedDeltas = 0
+            streamStartedAt = .now
+            liveTokensPerSecond = nil
+
             for try await message in stream {
                 try Task.checkCancellation()
                 streamUpdates += 1
+                streamedDeltas += 1
 
                 // A new message means the previous one is done, so let its
                 // last tokens through before moving on.
