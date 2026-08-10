@@ -212,10 +212,14 @@ final class ConversationViewModel {
 
                 // Augment the tool set associated with the conversation, it's a better user experience to keep
                 // around tools used with custom instructions so the assistant can use them for followup questions.
+                //
+                // These have to go into the conversation held here: the request
+                // is built from it, and so is every save. Merging them into the
+                // stored copy instead left them out of the turn they were
+                // chosen for, and the save at the start of that turn wrote this
+                // copy straight back over them, so they were lost entirely.
                 if let toolIDs {
-                    var stored = try state.file(Conversation.self, fileID: file.id)
-                    stored.toolIDs.formUnion(toolIDs)
-                    try await state.fileUpdate(stored, fileID: file.id)
+                    conversation.toolIDs.formUnion(toolIDs)
                 }
 
                 try await generate(chat: prompt, context: context)
