@@ -16,8 +16,14 @@ struct RenderThinking: View {
             Button {
                 disclosed.toggle()
             } label: {
-                Text("Thinking")
-                    .foregroundStyle(.secondary)
+                // Collapsed by default: reasoning is usually long and isn't
+                // the answer, but it's there when you want to see the working.
+                Label(
+                    disclosed ? "Hide Thinking" : "Show Thinking",
+                    systemImage: disclosed ? "chevron.down" : "chevron.right"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
 
