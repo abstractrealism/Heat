@@ -6,6 +6,48 @@ import HeatKit
 
 private let logger = Logger(subsystem: "ConversationViewModel", category: "App")
 
+/// Keeps one view model per conversation, alive beyond the view showing it.
+///
+/// `FileDetail` gives each conversation view an `.id`, so navigating to
+/// another file tears the view down. When the view model went with it, a turn
+/// that was still generating lost its home: the work carried on (the task
+/// holds the model), but coming back built an empty model and read the
+/// conversation from disk, which the turn hasn't written yet — so the prompt,
+/// the status, and the answer had all apparently vanished. Sharing the model
+/// means returning to a conversation rejoins the turn already in progress.
+@MainActor
+final class ConversationViewModelStore {
+    static let shared = ConversationViewModelStore()
+
+    private var models: [String: ConversationViewModel] = [:]
+
+    /// Caps idle models so browsing many conversations doesn't hold them all
+    /// in memory. A generating model is never evicted, and a view already
+    /// showing an evicted model keeps its own reference.
+    private let idleLimit = 8
+
+    func model(for file: File) -> ConversationViewModel {
+        if let existing = models[file.id] {
+            return existing
+        }
+        evictIdleModelsIfNeeded()
+        let model = ConversationViewModel(file: file)
+        models[file.id] = model
+        return model
+    }
+
+    func removeAll() {
+        models.removeAll()
+    }
+
+    private func evictIdleModelsIfNeeded() {
+        guard models.count >= idleLimit else { return }
+        for (id, model) in models where !model.isGenerating {
+            models.removeValue(forKey: id)
+        }
+    }
+}
+
 @Observable @MainActor
 final class ConversationViewModel {
     var file: File
@@ -175,6 +217,10 @@ final class ConversationViewModel {
             conversation.messages.append(userMessage)
             conversation.suggestions = []
             conversation.state = .processing
+
+            // Save the prompt now rather than only when the whole turn is
+            // done, so it isn't lost if the app stops before the answer lands.
+            try await API.shared.fileUpdate(file.id, object: conversation)
 
             // Initial request
             var req = ChatSessionRequest(service: service, model: model, toolCallback: prepareToolResponse)

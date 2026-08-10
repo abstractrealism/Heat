@@ -7,11 +7,14 @@ struct ConversationView: View {
 
     let fileID: String
 
-    @State var conversationViewModel: ConversationViewModel
+    /// Shared rather than owned: see ConversationViewModelStore. A view model
+    /// created here would be discarded whenever the view is torn down, taking
+    /// an in-progress turn's messages and status with it.
+    let conversationViewModel: ConversationViewModel
 
     init(file: File) {
         self.fileID = file.id
-        self.conversationViewModel = .init(file: file)
+        self.conversationViewModel = ConversationViewModelStore.shared.model(for: file)
     }
 
     var body: some View {
@@ -36,6 +39,10 @@ struct ConversationView: View {
     }
 
     func handleLoad() {
+        // A turn still in flight owns the conversation in memory, and it is
+        // further along than the copy on disk — reading over it would drop
+        // the prompt and the answer arriving right now.
+        guard !conversationViewModel.isGenerating else { return }
         do {
             let conversation = try state.file(Conversation.self, fileID: fileID)
             conversationViewModel.read(conversation)

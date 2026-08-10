@@ -101,6 +101,10 @@ final class AppState {
             filesProvider.reset()
             logsProvider.reset()
 
+            // Drop cached conversation view models so none survives the reset
+            // holding messages that no longer exist on disk.
+            ConversationViewModelStore.shared.removeAll()
+
             // Delete all files
             try FileManager.default.removeItems(at: URL.documentsDirectory)
 
