@@ -83,7 +83,8 @@ final class DocumentViewModel {
         let (service, model) = try API.shared.preferredChatService()
 
         var context: [String: Value] = [:]
-        context["DATETIME"] = .string(Date.now.formatted())
+        // Lowercase to match the {{datetime}} placeholder in the instructions.
+        context["datetime"] = .string(Date.now.formatted())
 
         document.state = .processing
 

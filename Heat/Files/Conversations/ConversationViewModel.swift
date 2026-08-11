@@ -332,7 +332,10 @@ final class ConversationViewModel {
             let (service, model) = try API.shared.preferredChatService()
 
             var context = context
-            context["DATETIME"] = .string(Date.now.formatted())
+            // Lowercase to match {{datetime}} in the instructions. The lookup
+            // is an exact dictionary hit, so DATETIME matched nothing and the
+            // prompt went out reading "The current date is ."
+            context["datetime"] = .string(Date.now.formatted())
 
             ChatDebug.log("→ chat request | model: \(model.id) | tools: \(conversation.toolIDs.sorted().joined(separator: ", ")) | history: \(conversation.messages.count) messages")
             ChatDebug.log("→ system instructions (\(conversation.instructions.count) chars): \(conversation.instructions)")
