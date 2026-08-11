@@ -305,7 +305,10 @@ final class ConversationViewModel {
             let (service, model) = try API.shared.preferredChatService()
 
             var context = context
-            context["DATETIME"] = .string(Date.now.formatted())
+            // Lowercase to match {{datetime}} in the instructions. The lookup
+            // is an exact dictionary hit, so DATETIME matched nothing and the
+            // prompt went out reading "The current date is ."
+            context["datetime"] = .string(Date.now.formatted())
 
             // New user message
             let imageContent = images.map { Message.Content.image(.init(url: $0, format: .jpeg)) }
