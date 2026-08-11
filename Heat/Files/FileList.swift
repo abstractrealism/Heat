@@ -31,12 +31,53 @@ struct FileList: View {
 
     @State private var isEditingFile = false
 
+    /// The list's own selection, which can hold several rows so a range can be
+    /// acted on at once. `selected` remains the single file being shown on the
+    /// right — only one file can be open, however many are highlighted.
+    @State private var selection: Set<String> = []
+
+    @State private var pendingDeletion: Set<String> = []
+
     var body: some View {
-        List(selection: $selected) {
+        List(selection: $selection) {
             ForEach(sortedTree) { tree in
                 FileRow(tree: tree, depth: 0)
                     .tag(tree.id)
             }
+        }
+        .onChange(of: selection) { _, highlighted in
+            // Opening only makes sense for a single row; a wider selection is
+            // for doing something to the group, so leave the open file alone.
+            if highlighted.count == 1, let only = highlighted.first, only != selected {
+                selected = only
+            }
+        }
+        .onChange(of: selected) { _, openFile in
+            // Follow along when something else changes what's open, such as
+            // creating a conversation, without disturbing a wider selection.
+            guard let openFile, !selection.contains(openFile) else { return }
+            selection = [openFile]
+        }
+        .onAppear {
+            if let selected { selection = [selected] }
+        }
+        #if os(macOS)
+        .onDeleteCommand {
+            guard !selection.isEmpty else { return }
+            pendingDeletion = selection
+        }
+        #endif
+        .confirmationDialog(
+            "Delete \(pendingDeletion.count == 1 ? "File" : "\(pendingDeletion.count) Files")",
+            isPresented: Binding(
+                get: { !pendingDeletion.isEmpty },
+                set: { if !$0 { pendingDeletion = [] } }
+            )
+        ) {
+            Button("Delete", role: .destructive) { handleDelete(pendingDeletion) }
+            Button("Cancel", role: .cancel) { pendingDeletion = [] }
+        } message: {
+            Text("This can't be undone.")
         }
         .toolbar {
             ToolbarItem {
@@ -65,7 +106,7 @@ struct FileList: View {
                 Button("Show in Finder") { handleShowFinder(fileIDs) }
                 Button("Edit") { handleEdit(fileIDs) }
                 Divider()
-                Button("Delete", role: .destructive) { handleDelete(fileIDs) }
+                Button("Delete", role: .destructive) { pendingDeletion = fileIDs }
             }
         }
         #endif
@@ -166,9 +207,20 @@ struct FileList: View {
     }
 
     func handleDelete(_ fileIDs: Set<String>) {
+        pendingDeletion = []
         Task {
             for fileID in fileIDs {
-                try await API.shared.fileDelete(fileID)
+                do {
+                    try await API.shared.fileDelete(fileID)
+                } catch {
+                    // Carry on with the rest rather than stopping partway
+                    // through and leaving the outcome unclear.
+                    state.log(error: error)
+                }
+            }
+            selection.subtract(fileIDs)
+            if let open = selected, fileIDs.contains(open) {
+                selected = nil
             }
         }
     }
