@@ -101,7 +101,10 @@ final class ConversationViewModel {
             context["DATETIME"] = .string(Date.now.formatted())
 
             ChatDebug.log("→ chat request | model: \(model.id) | tools: \(conversation.toolIDs.sorted().joined(separator: ", ")) | history: \(conversation.messages.count) messages")
-            ChatDebug.log("→ system instructions (\(conversation.instructions.count) chars): \(conversation.instructions)")
+            // The resolved prompt, not the stored template: logging the
+            // template shows placeholders like {{datetime}} still in place and
+            // says nothing about whether they were filled in.
+            ChatDebug.log("→ system prompt (after substitution): \(PromptTemplate(conversation.instructions, with: context))")
             ChatDebug.log("→ user prompt: \(prompt)")
 
             // New user message
