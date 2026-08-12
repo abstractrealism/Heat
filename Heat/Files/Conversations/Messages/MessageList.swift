@@ -80,6 +80,18 @@ struct MessageList: View {
                     isFollowing = true
                 }
             }
+            .onChange(of: conversationViewModel.messages.count) { _, _ in
+                // Sending is an explicit act, so bring the new prompt and the
+                // status below it into view and start following again. Only
+                // for messages the reader sent: an answer arriving shouldn't
+                // move the view out from under someone reading further up.
+                //
+                // Appending a message doesn't touch file.modified, so the
+                // follow below never saw a send at all.
+                guard conversationViewModel.messages.last?.role == .user else { return }
+                isFollowing = true
+                proxy.scrollTo("bottom", anchor: .bottom)
+            }
             .onChange(of: conversationViewModel.file.modified) { _, _ in
                 guard isFollowing else { return }
 
