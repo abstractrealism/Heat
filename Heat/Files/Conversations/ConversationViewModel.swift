@@ -28,10 +28,20 @@ enum ChatPreference {
 /// the status, and the answer had all apparently vanished. Sharing the model
 /// means returning to a conversation rejoins the turn already in progress.
 @MainActor
+@Observable
 final class ConversationViewModelStore {
     static let shared = ConversationViewModelStore()
 
-    private var models: [String: ConversationViewModel] = [:]
+    /// Which conversations have a turn running, so a list of files can show
+    /// where work is happening without holding on to the view models itself.
+    ///
+    /// Observed, unlike the models below: a view reading this should redraw
+    /// when a turn starts or finishes. The models aren't, because they're
+    /// added while a view is being built, and invalidating from there is
+    /// how you get a redraw loop.
+    private(set) var generatingFileIDs: Set<String> = []
+
+    @ObservationIgnored private var models: [String: ConversationViewModel] = [:]
 
     /// Caps idle models so browsing many conversations doesn't hold them all
     /// in memory. A generating model is never evicted, and a view already
@@ -50,6 +60,17 @@ final class ConversationViewModelStore {
 
     func removeAll() {
         models.removeAll()
+        generatingFileIDs.removeAll()
+    }
+
+    /// No-ops when nothing changes, so the repeated calls a streaming turn
+    /// makes don't each invalidate every view watching this.
+    func setGenerating(_ generating: Bool, for fileID: String) {
+        if generating, !generatingFileIDs.contains(fileID) {
+            generatingFileIDs.insert(fileID)
+        } else if !generating, generatingFileIDs.contains(fileID) {
+            generatingFileIDs.remove(fileID)
+        }
     }
 
     private func evictIdleModelsIfNeeded() {
@@ -67,6 +88,10 @@ final class ConversationViewModel {
 
     private let state = AppState.shared
     private var generateTask: Task<Void, Never>? = nil
+
+    /// Identifies the turn currently in charge, so one that's being replaced
+    /// can tell it no longer speaks for this conversation.
+    @ObservationIgnored private var currentTurn: UUID?
 
     enum Error: Swift.Error, CustomStringConvertible {
         case generationError(String)
@@ -272,7 +297,20 @@ final class ConversationViewModel {
     /// only one turn ever owns the conversation.
     func submit(chat prompt: String, context: [String: Value] = [:], toolIDs: Set<String>? = nil) {
         generateTask?.cancel()
+
+        // A superseded turn keeps unwinding after its replacement has started,
+        // so it can't simply clear the flag on its way out — it would clear
+        // the one the new turn just set. The token says which turn is current.
+        let token = UUID()
+        currentTurn = token
+        ConversationViewModelStore.shared.setGenerating(true, for: file.id)
+
         generateTask = Task {
+            defer {
+                if currentTurn == token {
+                    ConversationViewModelStore.shared.setGenerating(false, for: file.id)
+                }
+            }
             do {
                 if conversation.isEmpty {
                     let stored = try state.file(Conversation.self, fileID: file.id)
@@ -505,6 +543,8 @@ final class ConversationViewModel {
     func cancel() {
         generateTask?.cancel()
         generateTask = nil
+        currentTurn = nil
+        ConversationViewModelStore.shared.setGenerating(false, for: file.id)
         conversation.state = .none
 
         let snapshot = conversation
