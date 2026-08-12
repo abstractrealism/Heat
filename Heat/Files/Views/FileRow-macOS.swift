@@ -29,6 +29,16 @@ struct FileRow: View {
 
                 Spacer()
 
+                // Marks a conversation that's still working, so it's visible
+                // from the list without opening it.
+                if ConversationViewModelStore.shared.generatingFileIDs.contains(tree.id) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.6)
+                        .frame(width: 12, height: 12)
+                        .help("Generating a response")
+                }
+
                 if file.flag == "pin" {
                     Image(systemName: "flag.fill")
                         .imageScale(.small)

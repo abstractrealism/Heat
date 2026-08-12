@@ -14,6 +14,14 @@ struct FileRow: View {
 
                 Spacer()
 
+                // Marks a conversation that's still working, so it's visible
+                // from the list without opening it.
+                if ConversationViewModelStore.shared.generatingFileIDs.contains(tree.id) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .help("Generating a response")
+                }
+
                 if let count = tree.children?.count, count > 0 {
                     Text("\(count) items")
                         .foregroundStyle(.tertiary)
