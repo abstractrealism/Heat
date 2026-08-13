@@ -485,15 +485,13 @@ final class ConversationViewModel {
             // Reset conversation state
             conversation.state = .none
 
-            ChatDebug.log("← stream finished after \(streamUpdates) updates | conversation now has \(conversation.messages.count) messages:")
-            for message in conversation.messages.suffix(8) {
-                let toolCallNames = (message.toolCalls ?? []).map { $0.function?.name ?? "?" }
-                ChatDebug.log("""
-                    ← [\(message.role.rawValue)] shownInConversation=\(message.shouldShowInRun) \
-                    runID=\(message.runID ?? "nil") toolCalls=\(toolCallNames) \
-                    content(\(message.content?.count ?? 0) chars): \(message.content?.prefix(2000) ?? "<none>")
-                    """)
-            }
+            // Just the tally. This used to dump the last eight messages in
+            // full on every turn, which was how a message that had gone
+            // missing from the conversation got found — but it reprints the
+            // whole history once per turn, so the log grew quadratically and
+            // buried the request/response lines worth reading. Each new
+            // message is already announced as it arrives.
+            ChatDebug.log("← stream finished after \(streamUpdates) updates | conversation now has \(conversation.messages.count) messages")
 
             // The answer is what someone stepped away from, so tell them here
             // rather than after the suggestions and title that follow it.
