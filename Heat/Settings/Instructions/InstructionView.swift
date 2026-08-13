@@ -27,7 +27,7 @@ struct InstructionsView: View {
     /// What this screen is for, above the whole pane rather than tucked into
     /// one tab of the editor — it explains the list as much as the form.
     private var explanation: some View {
-        Text("Instructions are prompt text Heat keeps and reuses. **Assistant** is the personality every new conversation starts with; **Title**, **Suggestions** and **Web Search** are prompts Heat runs for itself. Anything you add is a **Template**: a prompt you keep to hand and pick from the **+** menu beside the message field, instead of typing it again. A \"Code Review\" template reading *\"Review this code for bugs and edge cases:\"* turns a request you make often into one click.")
+        Text("Instructions are prompt text Heat keeps and reuses. **Assistant** is the personality every new conversation starts with; **Title**, **Suggestions** and **Web Search** are prompts Heat runs for itself. Anything you add is a **Template**: a reusable prompt you can pick from the message field options menu, instead of typing it again. E.g. a \"Code Review\" template reading *\"Review this code for bugs and edge cases:\"*")
             .font(.footnote)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
