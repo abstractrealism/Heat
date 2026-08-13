@@ -91,6 +91,7 @@ struct FileList: View {
                 } label: {
                     Label("Sort", systemImage: "arrow.up.arrow.down")
                 }
+                .help("Sort")
             }
         }
         #if os(macOS)

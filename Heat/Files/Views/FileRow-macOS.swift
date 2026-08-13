@@ -20,6 +20,7 @@ struct FileRow: View {
                 }
 
                 Text(file.name ?? "Untitled")
+                    .help(file.name ?? "Untitled")
 
                 if file.isDirectory, let count = tree.children?.count, count > 0 {
                     Text("\(count) items")

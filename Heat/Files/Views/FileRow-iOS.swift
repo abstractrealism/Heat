@@ -11,6 +11,7 @@ struct FileRow: View {
         if let file = try? API.shared.file(tree.id) {
             HStack {
                 Text(file.name ?? file.path)
+                    .help(file.name ?? file.path)
 
                 Spacer()
 

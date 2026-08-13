@@ -45,12 +45,18 @@ struct PermissionForm: View {
                         requestLocationPermission()
                     }
                 }))
+                Text("Nothing uses this yet — no tool asks for your location. Granting it changes nothing today. To tell the assistant where you are, put it in Location under General.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             case .music:
                 Toggle("Music", isOn: Binding(get: { hasMusicPermission }, set: { shouldGetPermission in
                     if shouldGetPermission && !hasMusicPermission {
                         requestMusicPermission()
                     }
                 }))
+                Text("Nothing uses this yet — there's no music tool. Granting it changes nothing today.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
         .onAppear {
