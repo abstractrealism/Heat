@@ -4,14 +4,16 @@ import SharedKit
 import GenKit
 import HeatKit
 
-struct InstructionForm: View {
-    @Environment(AppState.self) var state
+/// How long editing pauses before an edit is written. Long enough that typing
+/// doesn't write on every keystroke, short enough that a save is never far
+/// behind what's on screen. Whatever is still pending gets flushed when the
+/// form goes away, so nothing rests on that timer completing.
+private let autosaveDelay: Duration = .milliseconds(400)
 
+struct InstructionForm: View {
     let fileID: String?
 
     @State private var selectedTab: Tab = .profile
-    @State private var newToolName: String = ""
-    @State private var isShowingAlert = false
 
     enum Tab: String, CaseIterable {
         case profile = "Profile"
@@ -24,10 +26,23 @@ struct InstructionForm: View {
     }
 
     var body: some View {
+        if let fileID {
+            editor(fileID)
+        } else {
+            ContentUnavailableView {
+                Label("No instruction selected", systemImage: "text.book.closed")
+            } description: {
+                Text("Pick one from the list, or use + to add a template.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func editor(_ fileID: String) -> some View {
         #if os(macOS)
         TabView(selection: $selectedTab) {
             ForEach(Tab.allCases, id: \.self) { tab in
-                tabContent(for: tab)
+                tabContent(for: tab, fileID: fileID)
                     .padding()
                     .id(fileID)
                     .tag(tab)
@@ -48,25 +63,21 @@ struct InstructionForm: View {
             .pickerStyle(.segmented)
             .padding(.horizontal)
 
-            tabContent(for: selectedTab)
+            tabContent(for: selectedTab, fileID: fileID)
         }
         #endif
     }
 
     @ViewBuilder
-    private func tabContent(for tab: Tab) -> some View {
+    private func tabContent(for tab: Tab, fileID: String) -> some View {
         VStack(alignment: .leading) {
             switch tab {
             case .profile:
                 InstructionProfileForm(fileID)
             case .instructions:
-                if let fileID {
-                    InstructionTextForm(fileID)
-                }
+                InstructionTextForm(fileID)
             case .tools:
-                if let fileID {
-                    InstructionToolsForm(fileID)
-                }
+                InstructionToolsForm(fileID)
             }
         }
     }
@@ -75,22 +86,22 @@ struct InstructionForm: View {
 struct InstructionProfileForm: View {
     @Environment(AppState.self) var state
 
-    let fileID: String?
+    let fileID: String
 
-    @State var name = ""
-    @State var kind = Instruction.Kind.template
+    @State private var name = ""
+    @State private var kind = Instruction.Kind.template
+    @State private var isLoaded = false
+    @State private var saveTask: Task<Void, Never>?
 
-    init(_ fileID: String? = nil) {
+    init(_ fileID: String) {
         self.fileID = fileID
     }
 
     var body: some View {
         Form {
-            if let fileID {
-                TextField("ID", text: .constant(fileID))
-                    .disabled(true)
-            }
-            
+            TextField("ID", text: .constant(fileID))
+                .disabled(true)
+
             TextField("Name", text: $name)
 
             Picker("Kind", selection: $kind) {
@@ -99,47 +110,49 @@ struct InstructionProfileForm: View {
                 }
             }
         }
-        .onAppear {
-            handleAppear()
-        }
-        .onDisappear {
-            handleDisappear()
+        .onAppear { load() }
+        .onChange(of: name) { _, _ in scheduleSave() }
+        .onChange(of: kind) { _, _ in scheduleSave() }
+        .onDisappear { flush() }
+    }
+
+    private func load() {
+        do {
+            kind = try state.file(Instruction.self, fileID: fileID).kind
+            name = try API.shared.file(fileID).name ?? ""
+            isLoaded = true
+        } catch {
+            state.log(error: error)
         }
     }
 
-    func handleAppear() {
-        guard let fileID else { return }
-        Task {
-            do {
-                let data = try await API.shared.fileData(fileID)
-                let instruction = try JSONDecoder().decode(Instruction.self, from: data)
-                kind = instruction.kind
-
-                let file = try API.shared.file(fileID)
-                name = file.name ?? ""
-            } catch {
-                print(error)
-            }
+    private func scheduleSave() {
+        guard isLoaded else { return }
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(for: autosaveDelay)
+            guard !Task.isCancelled else { return }
+            await save()
         }
     }
 
-    func handleDisappear() {
-        guard let fileID else { return }
-        Task {
-            do {
-                // Update file data
-                let data = try await API.shared.fileData(fileID)
-                var instruction = try JSONDecoder().decode(Instruction.self, from: data)
-                instruction.kind = kind
-                try await API.shared.fileUpdate(fileID, object: instruction)
+    private func flush() {
+        saveTask?.cancel()
+        Task { await save() }
+    }
 
-                // Update metadata
-                var file = try API.shared.file(fileID)
-                file.name = name.isEmpty ? nil : name
-                try await API.shared.fileUpdate(file)
-            } catch {
-                print(error)
-            }
+    private func save() async {
+        guard isLoaded else { return }
+        do {
+            var instruction = try state.file(Instruction.self, fileID: fileID)
+            instruction.kind = kind
+            try await API.shared.fileUpdate(fileID, object: instruction)
+
+            var file = try API.shared.file(fileID)
+            file.name = name.isEmpty ? nil : name
+            try await API.shared.fileUpdate(file)
+        } catch {
+            state.log(error: error)
         }
     }
 }
@@ -149,93 +162,114 @@ struct InstructionToolsForm: View {
 
     let fileID: String
 
-    @State var toolIDs: Set<String> = []
-    @State var selection: String? = nil
-    @State var newToolID = ""
-    @State var isAddingTool = false
+    @State private var toolIDs: Set<String> = []
+    @State private var selection: String? = nil
+    @State private var isLoaded = false
+    @State private var saveTask: Task<Void, Never>?
 
     init(_ fileID: String) {
         self.fileID = fileID
+    }
+
+    /// Tools the app implements that this instruction doesn't already use.
+    /// Anything else in `toolIDs` — hand-edited, or left over from a build
+    /// that had more tools — still lists, so it can be seen and removed.
+    private var addableToolIDs: [String] {
+        Toolbox.allCases
+            .map(\.name)
+            .filter { !toolIDs.contains($0) }
+            .sorted()
     }
 
     var body: some View {
         VStack {
             List(selection: $selection) {
                 ForEach(Array(toolIDs.sorted(by: <)), id: \.self) { toolID in
-                    Text(toolID)
-                        .tag(toolID)
-                }
-                if isAddingTool {
-                    TextField("Tool ID", text: $newToolID)
-                        .onSubmit {
-                            handleInsertTool()
+                    HStack {
+                        Text(toolID)
+                        if Toolbox(name: toolID) == nil {
+                            // Kept rather than dropped, but it won't do
+                            // anything: no tool answers to this name.
+                            Text("unrecognized")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
+                    }
+                    .tag(toolID)
                 }
             }
             #if os(macOS)
             .listStyle(.bordered)
             #endif
 
-            Spacer()
-
-            HStack {
-                ControlGroup {
-                    Button("Decrease", systemImage: "minus") {
-                        if let selection {
-                            toolIDs.remove(selection)
-                        }
+            HStack(spacing: 8) {
+                // A menu rather than a text field: these have to match a tool
+                // the app implements exactly, and there was no way to know the
+                // names by typing.
+                Menu {
+                    ForEach(addableToolIDs, id: \.self) { toolID in
+                        Button(toolID) { toolIDs.insert(toolID) }
                     }
-                    Button("Increase", systemImage: "plus") {
-                        if !newToolID.isEmpty {
-                            handleInsertTool()
-                        }
-                        isAddingTool = true
+                } label: {
+                    Label("Add Tool", systemImage: "plus")
+                }
+                .disabled(addableToolIDs.isEmpty)
+                .fixedSize()
+
+                Button("Remove", systemImage: "minus") {
+                    if let selection {
+                        toolIDs.remove(selection)
+                        self.selection = nil
                     }
                 }
-                .frame(width: 60)
+                .disabled(selection == nil)
+
                 Spacer()
             }
         }
-        .onAppear {
-            handleAppear()
-        }
-        .onDisappear {
-            handleDisappear()
-        }
+        .onAppear { load() }
+        .onChange(of: toolIDs) { _, _ in scheduleSave() }
+        .onDisappear { flush() }
     }
 
-    func handleAppear() {
+    private func load() {
         do {
-            let instruction = try state.file(Instruction.self, fileID: fileID)
-            toolIDs = instruction.toolIDs
+            toolIDs = try state.file(Instruction.self, fileID: fileID).toolIDs
+            isLoaded = true
         } catch {
             state.log(error: error)
         }
     }
 
-    func handleDisappear() {
-        Task {
-            do {
-                if !newToolID.isEmpty {
-                    handleInsertTool()
-                }
-                var instruction = try state.file(Instruction.self, fileID: fileID)
-                instruction.toolIDs = toolIDs
-                try await API.shared.fileUpdate(fileID, object: instruction)
-            } catch {
-                state.log(error: error)
-            }
+    private func scheduleSave() {
+        guard isLoaded else { return }
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(for: autosaveDelay)
+            guard !Task.isCancelled else { return }
+            await save()
         }
     }
 
-    func handleInsertTool() {
-        guard !newToolID.isEmpty else {
-            isAddingTool = false
-            return
+    private func flush() {
+        saveTask?.cancel()
+        let toolIDs = toolIDs
+        Task { await save(toolIDs) }
+    }
+
+    private func save() async {
+        await save(toolIDs)
+    }
+
+    private func save(_ toolIDs: Set<String>) async {
+        guard isLoaded else { return }
+        do {
+            var instruction = try state.file(Instruction.self, fileID: fileID)
+            instruction.toolIDs = toolIDs
+            try await API.shared.fileUpdate(fileID, object: instruction)
+        } catch {
+            state.log(error: error)
         }
-        toolIDs.insert(newToolID)
-        newToolID = ""
-        isAddingTool = false
     }
 }
 
@@ -244,7 +278,9 @@ struct InstructionTextForm: View {
 
     let fileID: String
 
-    @State var instructions: String = ""
+    @State private var instructions: String = ""
+    @State private var isLoaded = false
+    @State private var saveTask: Task<Void, Never>?
 
     init(_ fileID: String) {
         self.fileID = fileID
@@ -259,67 +295,43 @@ struct InstructionTextForm: View {
                         .stroke(.separator, lineWidth: 1)
                 }
         }
-        .onAppear {
-            handleAppear()
-        }
-        .onDisappear {
-            handleDisappear()
-        }
+        .onAppear { load() }
+        .onChange(of: instructions) { _, _ in scheduleSave() }
+        .onDisappear { flush() }
     }
 
-    func handleAppear() {
+    private func load() {
         do {
-            let instruction = try state.file(Instruction.self, fileID: fileID)
-            instructions = instruction.instructions
+            instructions = try state.file(Instruction.self, fileID: fileID).instructions
+            isLoaded = true
         } catch {
-            print(error)
+            state.log(error: error)
         }
     }
 
-    func handleDisappear() {
-        Task {
-            do {
-                var instruction = try state.file(Instruction.self, fileID: fileID)
-                instruction.instructions = instructions
-                try await API.shared.fileUpdate(fileID, object: instruction)
-            } catch {
-                print(error)
-            }
-        }
-    }
-}
-
-struct InstructionTool: View {
-    @Environment(\.dismiss) var dismiss
-
-    @State var text: String = ""
-
-    let action: (String) -> Void
-
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        Form {
-            TextField("Name", text: $text)
-                .focused($isFocused)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button {
-                            handleSubmit()
-                        } label: {
-                            Text("Done")
-                        }
-                    }
-                }
-        }
-        .onAppear {
-            isFocused = true
+    private func scheduleSave() {
+        guard isLoaded else { return }
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(for: autosaveDelay)
+            guard !Task.isCancelled else { return }
+            await save()
         }
     }
 
-    func handleSubmit() {
-        action(text.trimmingCharacters(in: .whitespacesAndNewlines))
-        text = ""
-        dismiss()
+    private func flush() {
+        saveTask?.cancel()
+        Task { await save() }
+    }
+
+    private func save() async {
+        guard isLoaded else { return }
+        do {
+            var instruction = try state.file(Instruction.self, fileID: fileID)
+            instruction.instructions = instructions
+            try await API.shared.fileUpdate(fileID, object: instruction)
+        } catch {
+            state.log(error: error)
+        }
     }
 }
