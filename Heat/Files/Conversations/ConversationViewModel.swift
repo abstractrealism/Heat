@@ -575,10 +575,12 @@ final class ConversationViewModel {
         ChatDebug.log("→ suggestions request | model: \(model.id)")
 
         // Generate suggestions stream
+        var lastResponse = ""
         let stream = ChatSession.shared.stream(req)
         for try await message in stream {
             try Task.checkCancellation()
             guard let content = message.content else { continue }
+            lastResponse = content
 
             let name = "suggested_replies"
             let result = try ContentParser.shared.parse(input: content, tags: [name])
@@ -601,7 +603,11 @@ final class ConversationViewModel {
         // Set conversation state
         conversation.state = .none
 
-        ChatDebug.log("← suggestions: \(conversation.suggestions)")
+        if conversation.suggestions.isEmpty {
+            ChatDebug.log("← suggestions: none — no <suggested_replies> tag in the reply: \(unparsed(lastResponse))")
+        } else {
+            ChatDebug.log("← suggestions: \(conversation.suggestions)")
+        }
     }
 
     func generateTitle() async throws {
@@ -628,10 +634,12 @@ final class ConversationViewModel {
         ChatDebug.log("→ title request | model: \(model.id)")
 
         // Generate suggestions stream
+        var lastResponse = ""
         let stream = ChatSession.shared.stream(req)
         for try await message in stream {
             try Task.checkCancellation()
             guard let content = message.content else { continue }
+            lastResponse = content
 
             let name = "title"
             let result = try ContentParser.shared.parse(input: content, tags: [name])
@@ -645,7 +653,27 @@ final class ConversationViewModel {
         // As above: don't let a cancelled turn fall through to saving.
         try Task.checkCancellation()
 
-        ChatDebug.log("← title: \(file.name ?? "<none>")")
+        if let name = file.name {
+            ChatDebug.log("← title: \(name)")
+        } else {
+            ChatDebug.log("← title: none — no <title> tag in the reply: \(unparsed(lastResponse))")
+        }
+    }
+
+    /// What a model actually said, when what it said couldn't be used.
+    ///
+    /// Title and suggestions are read out of `<title>` and `<suggested_replies>`
+    /// tags, and a reply without them yields nothing at all — no error, no
+    /// title, an empty suggestion list. That reads exactly like a request that
+    /// never happened, when in fact it succeeded and the model simply answered
+    /// in prose. Smaller models do this constantly: they write the right title
+    /// and then don't wrap it. Showing the reply makes the difference between
+    /// "the model is unreachable" and "this model can't follow the format"
+    /// obvious at a glance.
+    private func unparsed(_ response: String) -> String {
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "<empty reply>" }
+        return trimmed.count > 300 ? String(trimmed.prefix(300)) + "…" : trimmed
     }
 
     /// Stops the current turn at the user's request.
