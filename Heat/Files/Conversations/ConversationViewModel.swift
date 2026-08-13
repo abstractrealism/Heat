@@ -17,11 +17,25 @@ private let logger = Logger(subsystem: "ConversationViewModel", category: "App")
 enum ChatDebug {
     #if DEBUG
     private static let logger = Logger(subsystem: "ChatDebug", category: "App")
+
+    /// Local time, 24-hour, to the millisecond.
+    ///
+    /// ISO 8601 rather than a localized style: `.dateTime.hour(...)` follows
+    /// the locale's clock, so on a 12-hour Mac 16:53 logs as "04:53" and an
+    /// afternoon reading can't be told from a morning one. Milliseconds
+    /// because the shortest thing worth timing here — a small model returning
+    /// a title — can finish inside a second, which whole seconds would round
+    /// away.
+    private static let clock = Date.ISO8601FormatStyle(timeZone: .current)
+        .time(includingFractionalSeconds: true)
     #endif
 
     static func log(_ message: @autoclosure () -> String) {
         #if DEBUG
-        let text = message()
+        // Stamped into the message rather than left to the console's own
+        // column: it survives a line being copied out, and Xcode hides its
+        // timestamp column by default.
+        let text = "[\(Date.now.formatted(clock))] " + message()
         logger.debug("\(text, privacy: .public)")
         #endif
     }
@@ -560,6 +574,8 @@ final class ConversationViewModel {
         // Indicate we are suggesting
         conversation.state = .suggesting
 
+        ChatDebug.log("→ suggestions request | model: \(model.id)")
+
         // Generate suggestions stream
         let stream = ChatSession.shared.stream(req)
         for try await message in stream {
@@ -606,6 +622,12 @@ final class ConversationViewModel {
         // Initial request
         var req = ChatSessionRequest(service: service, model: model)
         req.with(history: [.init(role: .user, content: content)])
+
+        // The model is logged at the request, not just with the result: this
+        // is the leg that changes when Summarization points somewhere other
+        // than the chat model, and the gap to "← title" covers both loading
+        // that model and generating with it.
+        ChatDebug.log("→ title request | model: \(model.id)")
 
         // Generate suggestions stream
         let stream = ChatSession.shared.stream(req)
