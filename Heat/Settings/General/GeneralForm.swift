@@ -70,6 +70,7 @@ struct ConfigUserForm: View {
                     }
                 }
                 .help("Follow the system setting, or keep Heat light or dark whatever the system does.")
+                    .padding(.bottom, 8)
             } header: {
                 Text("Appearance")
             }

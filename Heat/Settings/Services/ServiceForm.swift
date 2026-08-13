@@ -46,7 +46,7 @@ struct ServiceForm: View {
                 ServiceModelPicker("Speech", service.models, selection: $service.preferredSpeechModel)
                     .help("Reads text aloud.")
                 ServiceModelPicker("Summarization", service.models, selection: $service.preferredSummarizationModel)
-                    .help("Condenses long text. Often worth a smaller, faster model than the one answering you.")
+                    .help("Used for Heat's own short jobs: naming a conversation, drafting follow-up suggestions, and condensing a web page it has read. Worth a smaller, faster model than the one answering you. Falls back to the Chats model when unset.")
             } header: {
                 Text("Models")
             } footer: {

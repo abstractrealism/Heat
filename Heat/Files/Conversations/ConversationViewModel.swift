@@ -528,8 +528,22 @@ final class ConversationViewModel {
         return "\(error)"
     }
 
+    /// The service for Heat's own short jobs — naming a conversation, drafting
+    /// follow-up suggestions.
+    ///
+    /// These are mechanical next to answering someone, and a smaller model
+    /// handles them fine and faster. Settings already has a Summarization
+    /// default for exactly this shape of work, so use it when one is chosen
+    /// and fall back to the chat model when it isn't.
+    private func taskService() throws -> (ChatService, Model) {
+        if let summarization = try? API.shared.preferredSummarizationService() {
+            return summarization
+        }
+        return try API.shared.preferredChatService()
+    }
+
     func generateSuggestions() async throws {
-        let (service, model) = try API.shared.preferredChatService()
+        let (service, model) = try taskService()
 
         // Cached instructions
         let instruction = try state.file(Instruction.self, fileID: Defaults.instructionSuggestionsID)
@@ -579,7 +593,7 @@ final class ConversationViewModel {
     func generateTitle() async throws {
         guard file.name == nil else { return }
 
-        let (service, model) = try API.shared.preferredChatService()
+        let (service, model) = try taskService()
 
         // Cached instructions
         let instruction = try state.file(Instruction.self, fileID: Defaults.instructionTitleID)
