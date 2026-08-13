@@ -6,32 +6,45 @@ struct CodeBlockView: View {
 
     @State private var isCopied = false
 
+    /// The background atom-one-dark is drawn against — the theme the syntax
+    /// highlighter is fixed to, whatever appearance the app is in.
+    ///
+    /// Deliberately an absolute colour. This used to fill with `.primary`,
+    /// which is a hierarchical style: it resolves against whatever foreground
+    /// it inherits rather than naming a colour. Inside a user message, where
+    /// the text is white, it resolved to white — leaving the highlighter's
+    /// light grey code on a white block.
+    private static let background = Color(red: 0.157, green: 0.173, blue: 0.204)
+
+    /// Fixed against that background for the same reason, rather than
+    /// `.secondary` corrected with `.colorInvert()`.
+    private static let chrome = Color.white.opacity(0.6)
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(configuration.language?.capitalized ?? "")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
                 Spacer()
                 Button(action: copyCodeAction) {
                     Image(systemName: isCopied ? "checkmark" : "square.on.square")
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             }
+            .foregroundStyle(Self.chrome)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .colorInvert()
 
-            Divider()
-                .colorInvert()
+            Rectangle()
+                .fill(.white.opacity(0.12))
+                .frame(height: 1)
 
             configuration.label
                 .relativeLineSpacing(.em(0.25))
                 .padding(12)
         }
-        .background(.primary)
+        .background(Self.background)
         .clipShape(.rect(cornerRadius: 5))
         .padding(.horizontal, -12)
     }
