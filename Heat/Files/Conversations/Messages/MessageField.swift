@@ -20,8 +20,23 @@ struct MessageField: View {
     @State private var instructionFile: File? = nil
     @State private var photoPickerModel = PhotoPickerModel()
     @State private var showingPhotoPicker = false
+    @State private var inputNaturalHeight: CGFloat = 0
 
     @FocusState private var isFocused: Bool
+
+    /// Height of the macOS message editor: the mirror text's natural height,
+    /// clamped between a single line and a scrolling maximum.
+    private var inputHeight: CGFloat {
+        min(max(inputNaturalHeight, 40), 240)
+    }
+
+    /// What the sizing mirror renders. SwiftUI Text ignores a trailing
+    /// newline that NSTextView counts as a line, so pad it with a space to
+    /// keep the caret's empty last line visible.
+    private var mirrorContent: String {
+        if content.isEmpty { return " " }
+        return content.hasSuffix("\n") ? content + " " : content
+    }
 
     init(action: @escaping ActionHandler) {
         self.action = action
@@ -69,24 +84,9 @@ struct MessageField: View {
                 }
                 .buttonStyle(.plain)
 
-                TextField("Message", text: $content, axis: .vertical)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textFieldStyle(.plain)
-                    .padding(.vertical, verticalPadding)
-                    .padding(.trailing, showInputPadding ? 16 : 0)
-                    .frame(minWidth: 0, minHeight: minHeight)
-                    .focused($isFocused)
-                    #if os(macOS)
-                    .onSubmit {
-                        Task {
-                            do {
-                                try await handleSubmit()
-                            } catch {
-                                print(error)
-                            }
-                        }
-                    }
-                    #endif
+                messageInput
+
+                Spacer(minLength: 8)
 
                 if showStopGenerating {
                     Button(action: handleStop) {
@@ -136,6 +136,89 @@ struct MessageField: View {
                 photoLibrary: .shared()
             )
         }
+        .task(id: conversationViewModel.file.id) {
+            // A new conversation opens ready to type into. Existing ones are
+            // left alone so opening one to read doesn't steal the keyboard.
+            guard conversationViewModel.messages.isEmpty else { return }
+            isFocused = true
+        }
+    }
+
+    /// The multiline message input.
+    ///
+    /// On macOS this is a TextEditor (NSTextView) rather than a vertical-axis
+    /// TextField: the NSTextField-backed multiline field wraps at a stale
+    /// intrinsic width in this layout (observed on macOS 15 Sequoia), running
+    /// beneath the send button and ignoring later width changes, while
+    /// NSTextView tracks its container width reliably. The invisible Text
+    /// mirror gives the editor its auto-growing height, since TextEditor does
+    /// not size itself to its content.
+    @ViewBuilder
+    private var messageInput: some View {
+        #if os(macOS)
+        // The layout height comes from the invisible mirror Text (measured at
+        // its natural, uncapped size via fixedSize), clamped between one line
+        // and a maximum. The editor and placeholder are overlays, so nothing
+        // greedy participates in layout.
+        // The mirror, placeholder, and editor share the same font, and the
+        // mirror/placeholder are inset by NSTextView's 5pt line-fragment
+        // padding, so both text engines wrap at the same width and the field
+        // grows right when the editor's own text wraps.
+        Color.clear
+            .frame(height: inputHeight)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                Text(mirrorContent)
+                    .font(.body)
+                    .padding(.vertical, verticalPadding)
+                    .padding(.horizontal, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .opacity(0)
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.height
+                    } action: { height in
+                        inputNaturalHeight = height
+                    }
+            }
+            .overlay(alignment: .topLeading) {
+                if content.isEmpty {
+                    Text("Message")
+                        .font(.body)
+                        .foregroundStyle(.tertiary)
+                        .padding(.vertical, verticalPadding)
+                        .padding(.horizontal, 5)
+                }
+            }
+            .overlay {
+                TextEditor(text: $content)
+                    .font(.body)
+                    .textEditorStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .scrollIndicators(.hidden)
+                    .padding(.vertical, verticalPadding)
+                    .focused($isFocused)
+                    .onKeyPress(keys: [.return], phases: .down) { press in
+                        // Return submits; Shift+Return inserts a newline.
+                        guard !press.modifiers.contains(.shift) else { return .ignored }
+                        guard !content.isEmpty else { return .handled }
+                        Task {
+                            do {
+                                try await handleSubmit()
+                            } catch {
+                                print(error)
+                            }
+                        }
+                        return .handled
+                    }
+            }
+        #else
+        TextField("Message", text: $content, axis: .vertical)
+            .textFieldStyle(.plain)
+            .padding(.vertical, verticalPadding)
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
+            .focused($isFocused)
+        #endif
     }
 
     func handleSubmit() async throws {
@@ -151,7 +234,6 @@ struct MessageField: View {
         content = ""
     }
 
-    private var showInputPadding: Bool      { !content.isEmpty }
     // Stop replaces send only while the field is empty: sending a follow-up
     // mid-generation is supported (it supersedes the running turn), so typing
     // must always get the send button back.

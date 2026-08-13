@@ -7,11 +7,14 @@ struct SuggestionList<Content: View>: View {
 
     var body: some View {
         if !suggestions.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
+            // Suggested replies are things the user would send, so align them on
+            // the trailing side to match the right-aligned user message bubbles.
+            VStack(alignment: .trailing, spacing: 2) {
                 ForEach(suggestions, id: \.self) { suggestion in
                     content(suggestion)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 }
