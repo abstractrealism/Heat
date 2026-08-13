@@ -569,6 +569,15 @@ final class ConversationViewModel {
         var req = ChatSessionRequest(service: service, model: model)
         req.with(history: [.init(role: .user, content: content)])
 
+        // Never reason for this, whatever the user's Thinking setting says —
+        // that setting is about answers, and this is housekeeping nobody reads
+        // the working for. On a small model it isn't merely wasteful: asked to
+        // suggest three replies, qwen3.5:0.8b spent 30,000 characters thinking
+        // and then produced no answer at all, which arrives here as an empty
+        // suggestion list an hour later. The same prompt with reasoning off
+        // answers in under five seconds.
+        req.with(option: "think", value: .bool(false))
+
         // Indicate we are suggesting
         conversation.state = .suggesting
 
@@ -626,6 +635,10 @@ final class ConversationViewModel {
         // Initial request
         var req = ChatSessionRequest(service: service, model: model)
         req.with(history: [.init(role: .user, content: content)])
+
+        // As with suggestions: naming a conversation is not worth reasoning
+        // about, and on a small model reasoning is what stops it answering.
+        req.with(option: "think", value: .bool(false))
 
         // The model is logged at the request, not just with the result: this
         // is the leg that changes when Summarization points somewhere other
