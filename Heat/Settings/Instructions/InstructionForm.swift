@@ -110,12 +110,6 @@ struct InstructionProfileForm: View {
                 }
             }
             .help("System: the standing instructions every new conversation starts with. Template: a saved prompt you pick from the + menu when writing a message. Task: a prompt Heat runs for itself, such as naming a conversation.")
-        } header: {
-            Text("Profile")
-        } footer: {
-            Text("An instruction is a piece of prompt text Heat keeps for reuse. \"Assistant\" is the personality behind every new conversation; the others are prompts the app runs on its own. Ones you add are templates: your own saved prompts.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
         }
         .onAppear { load() }
         .onChange(of: name) { _, _ in scheduleSave() }
@@ -305,7 +299,7 @@ struct InstructionTextForm: View {
                         .fill(.clear)
                         .stroke(.separator, lineWidth: 1)
                 }
-            Text("The prompt text itself. {{double braces}} are placeholders Heat fills in — {{datetime}} becomes the current date.")
+            Text("The prompt text itself. Words in {{double braces}} are placeholders Heat fills in. Conversations get {{datetime}}, the current date and time. Heat's own prompts get their own: {{history}} for Title and Suggestions, {{query}} and {{results}} for Web Search.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

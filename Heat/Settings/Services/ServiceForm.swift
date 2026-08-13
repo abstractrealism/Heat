@@ -17,14 +17,14 @@ struct ServiceForm: View {
                 TextField("Host", text: $service.host)
                     .autocorrectionDisabled()
                     .textContentType(.URL)
-                    .help("Where this service is reached. A local Ollama is usually http://127.0.0.1:11434/api; a hosted service is its API address, such as https://api.openai.com/v1. Leave blank to use the service's default.")
+                    .help("Where this service is reached. A local Ollama is usually http://127.0.0.1:11434/api; a hosted service is its API address, such as https://api.openai.com/v1. Heat ships each service with a working address, so there's rarely a reason to change this.")
 
                 TextField("Token", text: $service.token)
                     .autocorrectionDisabled()
                     .submitLabel(.next)
                     .help("The API key for services that require one. A local Ollama needs none — leave it blank.")
             } footer: {
-                Text("Fill in what this service needs, then Load Models to fetch what it offers.")
+                Text("Then Load Models to fetch what it offers.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -63,8 +63,8 @@ struct ServiceForm: View {
             }
         }
         .navigationTitle(service.name)
-        .onAppear {
-            handleLoadModels()
+        .task(id: service.id) {
+            await loadModels()
         }
         .onDisappear {
             handleSave()
@@ -72,14 +72,30 @@ struct ServiceForm: View {
     }
 
     func handleLoadModels() {
-        Task {
-            do {
-                let client = service.modelService(session: nil)
-                service.models = try await client.models()
-                manager.update(service: service)
-            } catch {
-                state.log(error: error)
-            }
+        Task { await loadModels() }
+    }
+
+    /// Fetches the models this service offers.
+    ///
+    /// Run from `.task(id:)` rather than `onAppear` so that selecting another
+    /// service cancels it. An unowned task would carry on and write its result
+    /// back through the manager after the form had moved on, which is how
+    /// clicking between services ends up showing one service's models under
+    /// another's name.
+    func loadModels() async {
+        // Nothing to connect to, and the request would sit there until it
+        // timed out — which is the delay when opening a service you haven't
+        // configured.
+        guard !service.host.isEmpty || !service.token.isEmpty else { return }
+        do {
+            let client = service.modelService(session: nil)
+            let models = try await client.models()
+            guard !Task.isCancelled else { return }
+            service.models = models
+            manager.update(service: service)
+        } catch {
+            guard !Task.isCancelled else { return }
+            state.log(error: error)
         }
     }
 

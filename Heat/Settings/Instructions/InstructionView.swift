@@ -24,8 +24,21 @@ struct InstructionsView: View {
         state.instructions.first { $0.id == fileID }?.name ?? "Untitled"
     }
 
+    /// What this screen is for, above the whole pane rather than tucked into
+    /// one tab of the editor — it explains the list as much as the form.
+    private var explanation: some View {
+        Text("Instructions are prompt text Heat keeps and reuses. **Assistant** is the personality every new conversation starts with; **Title**, **Suggestions** and **Web Search** are prompts Heat runs for itself. Anything you add is a **Template**: a prompt you keep to hand and pick from the **+** menu beside the message field, instead of typing it again. A \"Code Review\" template reading *\"Review this code for bugs and edge cases:\"* turns a request you make often into one click.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 4)
+            .padding(.bottom, 8)
+    }
+
     var body: some View {
         #if os(macOS)
+        VStack(alignment: .leading, spacing: 0) {
+        explanation
         HSplitView {
             List(selection: $selection) {
                 ForEach(state.instructions) { file in
@@ -53,6 +66,7 @@ struct InstructionsView: View {
             .padding(.leading)
             .layoutPriority(1)
         }
+        }
         .confirmationDialog(
             "Delete Instruction",
             isPresented: isConfirmingDeletion,
@@ -65,6 +79,8 @@ struct InstructionsView: View {
         }
         #else
         List {
+            Section { explanation }
+
             ForEach(state.instructions) { file in
                 NavigationLink(file.name ?? "Untitled") {
                     InstructionForm(file.id)

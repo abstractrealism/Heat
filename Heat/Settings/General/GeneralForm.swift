@@ -64,12 +64,14 @@ struct ConfigUserForm: View {
     var body: some View {
         Form {
             Section {
-                Picker("Appearance", selection: $appearance) {
+                Picker("Theme", selection: $appearance) {
                     ForEach(AppAppearance.allCases) { option in
                         Text(option.label).tag(option)
                     }
                 }
                 .help("Follow the system setting, or keep Heat light or dark whatever the system does.")
+            } header: {
+                Text("Appearance")
             }
 
             Section {
