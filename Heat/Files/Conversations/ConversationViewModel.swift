@@ -6,6 +6,27 @@ import HeatKit
 
 private let logger = Logger(subsystem: "ConversationViewModel", category: "App")
 
+/// Verbose development logging for the chat pipeline: requests, prompts,
+/// streamed responses, and how each resulting message will be displayed.
+///
+/// Active only in Debug builds (what Xcode uses for ⌘R); in Release builds the
+/// calls compile down to nothing, so prompts and responses never leave a
+/// development machine. Output goes to the unified log under subsystem
+/// "ChatDebug" — it appears in Xcode's console while running, or in
+/// Console.app filtered by that subsystem.
+enum ChatDebug {
+    #if DEBUG
+    private static let logger = Logger(subsystem: "ChatDebug", category: "App")
+    #endif
+
+    static func log(_ message: @autoclosure () -> String) {
+        #if DEBUG
+        let text = message()
+        logger.debug("\(text, privacy: .public)")
+        #endif
+    }
+}
+
 enum ChatPreference {
     /// Whether reasoning models should think before answering.
     static let thinkingEnabled = "thinkingEnabled"
@@ -109,6 +130,10 @@ final class ConversationViewModel {
             }
         }
     }
+
+    /// A human-readable error from the most recent generation attempt, shown
+    /// inline in the conversation. Cleared whenever a new generation starts.
+    var error: String?
 
     /// Suggested replies the user can use to respond.
     var suggestions: [String] {
@@ -252,6 +277,7 @@ final class ConversationViewModel {
         if let index = conversation.messages.firstIndex(where: { $0.id == message.id }) {
             conversation.messages[index] = message
         } else {
+            ChatDebug.log("← stream produced new message | role: \(message.role.rawValue) | id: \(message.id)")
             conversation.messages.append(message)
         }
         conversation.state = .streaming
@@ -339,6 +365,7 @@ final class ConversationViewModel {
 
     /// Generate a response using text as the only input. Add context—often memories—to augment the system prompt. Optionally force a tool call.
     func generate(chat prompt: String, images: [URL] = [], context: [String: Value] = [:], toolChoice: Tool? = nil) async throws {
+        error = nil
         do {
             let (service, model) = try API.shared.preferredChatService()
 
@@ -354,6 +381,14 @@ final class ConversationViewModel {
             if let profile = state.userProfile {
                 context["MEMORIES"] = .string(profile)
             }
+
+            ChatDebug.log("→ chat request | model: \(model.id) | tools: \(conversation.toolIDs.sorted().joined(separator: ", ")) | history: \(conversation.messages.count) messages")
+            // The resolved prompt, not the stored template: logging the
+            // template shows placeholders like {{datetime}} still in place and
+            // says nothing about whether they were filled in.
+            ChatDebug.log("→ system prompt (after substitution): \(PromptTemplate(conversation.instructions, with: context))")
+            ChatDebug.log("→ user profile: \(state.userProfile ?? "<none set>")")
+            ChatDebug.log("→ user prompt: \(prompt)")
 
             // New user message
             let imageContent = images.map { Message.Content.image(.init(url: $0, format: .jpeg)) }
@@ -379,6 +414,7 @@ final class ConversationViewModel {
             }
 
             // Generate response stream
+            var streamUpdates = 0
             let stream = ChatSession.shared.stream(req)
             // Publishing every token re-renders the message, and rendering
             // means re-parsing the whole answer as markdown and laying it out
@@ -397,6 +433,7 @@ final class ConversationViewModel {
 
             for try await message in stream {
                 try Task.checkCancellation()
+                streamUpdates += 1
                 streamedDeltas += 1
                 if firstDeltaAt == nil { firstDeltaAt = .now }
 
@@ -434,6 +471,16 @@ final class ConversationViewModel {
             // Reset conversation state
             conversation.state = .none
 
+            ChatDebug.log("← stream finished after \(streamUpdates) updates | conversation now has \(conversation.messages.count) messages:")
+            for message in conversation.messages.suffix(8) {
+                let toolCallNames = (message.toolCalls ?? []).map { $0.function?.name ?? "?" }
+                ChatDebug.log("""
+                    ← [\(message.role.rawValue)] shownInConversation=\(message.shouldShowInRun) \
+                    runID=\(message.runID ?? "nil") toolCalls=\(toolCallNames) \
+                    content(\(message.content?.count ?? 0) chars): \(message.content?.prefix(2000) ?? "<none>")
+                    """)
+            }
+
             // The answer is what someone stepped away from, so tell them here
             // rather than after the suggestions and title that follow it.
             NotificationManager.shared.responseCompleted(
@@ -453,10 +500,32 @@ final class ConversationViewModel {
         } catch {
             // A turn that was superseded by a newer prompt must not touch the
             // conversation state or report a failure — the new turn owns the
-            // conversation now, and this cancellation was deliberate.
+            // conversation now, and this cancellation was deliberate. This has
+            // to come first, before anything below writes state.
             if error is CancellationError || Task.isCancelled { return }
+
+            // Surface the failure inline and clear any in-progress state so the
+            // indicator doesn't spin forever.
+            conversation.state = .none
+            self.error = errorMessage(for: error)
             throw Error.generationError("\(error)")
         }
+    }
+
+    /// Maps an error to a friendly, actionable message for display in the
+    /// conversation. Falls back to the raw description for unexpected errors.
+    private func errorMessage(for error: Swift.Error) -> String {
+        if let apiError = error as? API.Error {
+            switch apiError {
+            case .missingService:
+                return "No default chat service is selected. Choose one in Settings → Services under \"Defaults.\""
+            case .missingModel:
+                return "No chat model is selected for the current service. Pick one in Settings → Services."
+            case .missingConfig:
+                return "Missing configuration. Try restarting the app or resetting data in the menu."
+            }
+        }
+        return "\(error)"
     }
 
     /// The service for Heat's own short jobs — naming a conversation, drafting
@@ -517,6 +586,8 @@ final class ConversationViewModel {
 
         // Set conversation state
         conversation.state = .none
+
+        ChatDebug.log("← suggestions: \(conversation.suggestions)")
     }
 
     func generateTitle() async throws {
@@ -553,6 +624,8 @@ final class ConversationViewModel {
 
         // As above: don't let a cancelled turn fall through to saving.
         try Task.checkCancellation()
+
+        ChatDebug.log("← title: \(file.name ?? "<none>")")
     }
 
     /// Stops the current turn at the user's request.
@@ -576,6 +649,7 @@ final class ConversationViewModel {
 
     @Sendable // Determine tool to execute and return response before next turn of the conversation
     private func prepareToolResponse(toolCall: ToolCall) async throws -> ToolCallResponse {
+        ChatDebug.log("→ tool call: \(toolCall.function?.name ?? "unknown") | args: \(toolCall.function?.arguments ?? "<none>")")
         if let tool = Toolbox(name: toolCall.function?.name) {
             switch tool {
             case .generateImages:
