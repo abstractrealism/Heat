@@ -375,11 +375,19 @@ final class ConversationViewModel {
             // prompt went out reading "The current date is ."
             context["datetime"] = .string(Date.now.formatted())
 
+            // Uppercase here on purpose, unlike the lowercase template
+            // placeholders: this key isn't substituted into the instructions,
+            // it's the one GenKit looks for to build the user_context block.
+            if let profile = state.userProfile {
+                context["MEMORIES"] = .string(profile)
+            }
+
             ChatDebug.log("→ chat request | model: \(model.id) | tools: \(conversation.toolIDs.sorted().joined(separator: ", ")) | history: \(conversation.messages.count) messages")
             // The resolved prompt, not the stored template: logging the
             // template shows placeholders like {{datetime}} still in place and
             // says nothing about whether they were filled in.
             ChatDebug.log("→ system prompt (after substitution): \(PromptTemplate(conversation.instructions, with: context))")
+            ChatDebug.log("→ user profile: \(state.userProfile ?? "<none set>")")
             ChatDebug.log("→ user prompt: \(prompt)")
 
             // New user message

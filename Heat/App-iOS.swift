@@ -20,6 +20,8 @@ struct MainApp: App {
     @State private var showingError = false
     @State private var error: (any CustomStringConvertible)? = nil
 
+    @AppStorage(AppAppearance.preferenceKey) private var appearance: AppAppearance = .system
+
     enum Sheet: String, Identifiable {
         case files
         case settings
@@ -98,6 +100,7 @@ struct MainApp: App {
             .onAppear {
                 Task { await appActive() }
             }
+            .preferredColorScheme(appearance.colorScheme)
         }
     }
 

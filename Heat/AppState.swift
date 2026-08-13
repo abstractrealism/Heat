@@ -69,6 +69,28 @@ final class AppState {
         logsProvider.logs
     }
 
+    /// What Settings knows about the person using the app, phrased for the
+    /// model. Nil when nothing has been filled in, so an empty profile adds
+    /// nothing to the prompt.
+    ///
+    /// GenKit puts this in a `user_context` block on the system prompt. The
+    /// fields were being saved and read back by the settings form alone
+    /// before this — the model was never told any of it.
+    var userProfile: String? {
+        let config = config
+        var lines: [String] = []
+        if let name = config.userName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            lines.append("Name: \(name)")
+        }
+        if let location = config.userLocation?.trimmingCharacters(in: .whitespacesAndNewlines), !location.isEmpty {
+            lines.append("Location: \(location)")
+        }
+        if let biography = config.userBiography?.trimmingCharacters(in: .whitespacesAndNewlines), !biography.isEmpty {
+            lines.append("About them: \(biography)")
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
     private init() {
         self.filesProvider = .shared
         self.logsProvider = .shared

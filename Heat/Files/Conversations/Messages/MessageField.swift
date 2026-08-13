@@ -83,6 +83,7 @@ struct MessageField: View {
                         .frame(width: inlineButtonSize.width, height: inlineButtonSize.height)
                 }
                 .buttonStyle(.plain)
+                .help("Attach an image, use a saved prompt, or turn thinking on and off")
 
                 messageInput
 
@@ -98,6 +99,7 @@ struct MessageField: View {
                             .padding(.vertical, 2)
                     }
                     .buttonStyle(.plain)
+                    .help("Stop generating")
                 } else if showSubmit {
                     Button {
                         Task {
@@ -116,6 +118,7 @@ struct MessageField: View {
                             .padding(.vertical, 2)
                     }
                     .buttonStyle(.plain)
+                    .help("Send message")
                 }
             }
             .padding(4)

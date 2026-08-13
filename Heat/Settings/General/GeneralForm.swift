@@ -59,13 +59,33 @@ struct ConfigUserForm: View {
     @State var bio = ""
     @State var location = ""
 
+    @AppStorage(AppAppearance.preferenceKey) private var appearance: AppAppearance = .system
+
     var body: some View {
         Form {
             Section {
+                Picker("Appearance", selection: $appearance) {
+                    ForEach(AppAppearance.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+                .help("Follow the system setting, or keep Heat light or dark whatever the system does.")
+            }
+
+            Section {
                 TextField("Name", text: $name)
+                    .help("What the assistant should call you. Example: Alex")
                 TextField("Location", text: $location)
                     .autocorrectionDisabled(false)
+                    .help("Where you are, for answers that depend on it — time zones, weather, local recommendations. Example: Portland, Oregon")
                 TextField("Bio", text: $bio, axis: .vertical)
+                    .help("Anything the assistant should keep in mind about you. Example: Software developer, learning Swift, prefers concise answers.")
+            } header: {
+                Text("About You")
+            } footer: {
+                Text("Sent with every message, so the assistant knows who it's talking to. Leave blank to send nothing.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
         .onAppear {

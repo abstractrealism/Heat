@@ -17,6 +17,8 @@ struct MainApp: App {
     @State private var showingError = false
     @State private var error: (any CustomStringConvertible)? = nil
 
+    @AppStorage(AppAppearance.preferenceKey) private var appearance: AppAppearance = .system
+
     var body: some Scene {
         Window("Heat", id: "heat") {
             NavigationSplitView {
@@ -61,6 +63,7 @@ struct MainApp: App {
                         Label("New File", systemImage: "plus")
                     }
                     .menuIndicator(.hidden)
+                    .help("New conversation, document, or folder")
                 }
             }
             .alert("Error", isPresented: $showingError, presenting: error) { _ in
@@ -71,6 +74,7 @@ struct MainApp: App {
             .onAppear {
                 Task { await appActive() }
             }
+            .preferredColorScheme(appearance.colorScheme)
         }
         .defaultSize(width: 600, height: 700)
         .defaultPosition(.center)
@@ -103,6 +107,7 @@ struct MainApp: App {
         Settings {
             PreferencesView()
                 .frame(minWidth: 600)
+                .preferredColorScheme(appearance.colorScheme)
         }
         .environment(state)
     }

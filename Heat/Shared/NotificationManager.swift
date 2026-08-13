@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import UserNotifications
 
 #if os(macOS)
@@ -71,5 +72,37 @@ final class NotificationManager {
             trigger: nil
         )
         try? await center.add(request)
+    }
+}
+
+/// Whether the app follows the system appearance or is pinned to one.
+///
+/// Kept alongside the notification preference: both are about this machine
+/// rather than anything in the conversations, so neither belongs in the
+/// config file that travels with them.
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    static let preferenceKey = "appAppearance"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    /// Nil hands the decision back to the system.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
     }
 }

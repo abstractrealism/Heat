@@ -99,15 +99,22 @@ struct InstructionProfileForm: View {
 
     var body: some View {
         Form {
-            TextField("ID", text: .constant(fileID))
-                .disabled(true)
+            Section {
+                TextField("ID", text: .constant(fileID))
+                    .disabled(true)
 
-            TextField("Name", text: $name)
+                TextField("Name", text: $name)
 
-            Picker("Kind", selection: $kind) {
-                ForEach(Instruction.Kind.allCases, id: \.self) {
-                    Text($0.rawValue.capitalized).tag($0)
+                Picker("Kind", selection: $kind) {
+                    ForEach(Instruction.Kind.allCases, id: \.self) {
+                        Text($0.rawValue.capitalized).tag($0)
+                    }
                 }
+                .help("System: the standing instructions every new conversation starts with. Template: a saved prompt you pick from the + menu when writing a message. Task: a prompt Heat runs for itself, such as naming a conversation.")
+            } footer: {
+                Text("An instruction is a piece of prompt text Heat keeps for reuse. \"Assistant\" is the personality behind every new conversation; the others are prompts the app runs on its own. Ones you add are templates: your own saved prompts.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
         .onAppear { load() }
@@ -226,6 +233,10 @@ struct InstructionToolsForm: View {
 
                 Spacer()
             }
+
+            Text("Abilities the assistant may use with this instruction, such as searching the web. It decides when to reach for one.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
         .onAppear { load() }
         .onChange(of: toolIDs) { _, _ in scheduleSave() }
@@ -287,13 +298,16 @@ struct InstructionTextForm: View {
     }
 
     var body: some View {
-        VStack {
+        VStack(alignment: .leading, spacing: 6) {
             TextEditor(text: $instructions)
                 .overlay {
                     Rectangle()
                         .fill(.clear)
                         .stroke(.separator, lineWidth: 1)
                 }
+            Text("The prompt text itself. {{double braces}} are placeholders Heat fills in — {{datetime}} becomes the current date.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
         .onAppear { load() }
         .onChange(of: instructions) { _, _ in scheduleSave() }
