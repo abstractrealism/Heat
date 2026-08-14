@@ -32,6 +32,9 @@ struct ServiceDefaults: View {
         Section {
             Toggle("Thinking on in new conversations", isOn: thinkingBinding)
                 .help("Whether new conversations start with reasoning switched on. Each conversation keeps whatever it started with, so changing this affects conversations begun afterwards and leaves existing ones alone. Any conversation can be switched the other way from the button beside its message field. Models that can't reason are unaffected.")
+
+            Toggle("Remove thinking from prompt context", isOn: stripThinkingBinding)
+                .help("Leaves earlier reasoning out of what's sent back to the model. Reasoning is the model's working, not its answer, and it often runs many times the length of the reply — so keeping it means every later message re-sends all of it, filling the context window and slowing each turn. Your conversation keeps its thinking either way; Show Thinking still works. Turn this off only if you want the model to reread how it got to its earlier answers.")
         } header: {
             Text("Conversations")
         } footer: {
@@ -50,6 +53,17 @@ struct ServiceDefaults: View {
             set: { enabled in
                 var config = state.config
                 config.thinkingByDefault = enabled
+                Task { try? await API.shared.configUpdate(config) }
+            }
+        )
+    }
+
+    private var stripThinkingBinding: Binding<Bool> {
+        Binding(
+            get: { state.config.stripThinkingFromContext },
+            set: { enabled in
+                var config = state.config
+                config.stripThinkingFromContext = enabled
                 Task { try? await API.shared.configUpdate(config) }
             }
         )

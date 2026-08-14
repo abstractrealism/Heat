@@ -88,6 +88,19 @@ extension Config {
         set { metadata["thinkingByDefault"] = .bool(newValue) }
         get { metadata["thinkingByDefault"]?.boolValue ?? true }
     }
+
+    /// Whether earlier reasoning is taken out of the history before it's sent
+    /// back to the model.
+    ///
+    /// On by default. Reasoning is a model's working, not its answer, and it
+    /// can run many times the length of the reply it produced — so leaving it
+    /// in means every later turn re-sends all of it, and a conversation eats
+    /// its own context. The reasoning is only removed from what's sent; the
+    /// stored message keeps it, so Show Thinking still works on old replies.
+    public var stripThinkingFromContext: Bool {
+        set { metadata["stripThinkingFromContext"] = .bool(newValue) }
+        get { metadata["stripThinkingFromContext"]?.boolValue ?? true }
+    }
 }
 
 // MARK: - Service Availability

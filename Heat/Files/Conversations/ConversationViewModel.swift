@@ -379,6 +379,53 @@ final class ConversationViewModel {
     /// deltas that arrived either side of the reasoning block closing, and
     /// rounds, because presenting it to the token would claim a precision it
     /// doesn't have. Enough to see roughly where the time went.
+    /// The conversation as it goes out to the model, with earlier reasoning
+    /// left behind when Settings says so.
+    ///
+    /// Only what's sent is affected. The stored messages keep their reasoning,
+    /// so Show Thinking still opens on replies from weeks ago — this is about
+    /// not making the model re-read its own scratch work on every turn.
+    ///
+    /// Assistant turns only. A user is entitled to write `<think>` in a
+    /// message — quoting a transcript, asking about the tag itself — and
+    /// rewriting what somebody typed is not on.
+    private func historyForRequest() -> [Message] {
+        guard state.config.stripThinkingFromContext else { return conversation.messages }
+        return conversation.messages.map { message in
+            guard message.role == .assistant else { return message }
+            var message = message
+            // Mapped rather than replaced wholesale: a message can carry
+            // images and files alongside its text, and those have to survive.
+            message.contents = message.contents?.map { content in
+                guard case .text(let text) = content else { return content }
+                return .text(removingThinking(from: text))
+            }
+            return message
+        }
+    }
+
+    /// Strips `<think>` and `<thinking>` blocks, including one left open.
+    ///
+    /// The unterminated case is the one that matters: a model that reasons
+    /// and never gets to an answer leaves the tag hanging, and everything
+    /// after it is working rather than reply — that whole message is what
+    /// would otherwise be sent back as though it were something the assistant
+    /// had said.
+    private func removingThinking(from text: String) -> String {
+        var out = text
+        for tag in ["think", "thinking"] {
+            while let open = out.range(of: "<\(tag)>", options: [.caseInsensitive]) {
+                if let close = out.range(of: "</\(tag)>", options: [.caseInsensitive],
+                                         range: open.upperBound..<out.endIndex) {
+                    out.removeSubrange(open.lowerBound..<close.upperBound)
+                } else {
+                    out.removeSubrange(open.lowerBound..<out.endIndex)
+                }
+            }
+        }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func applyThinkingSplit(to messageID: String?) {
         guard let messageID,
               let boundary = deltasAtEndOfThinking,
@@ -489,7 +536,7 @@ final class ConversationViewModel {
             // Initial request
             var req = ChatSessionRequest(service: service, model: model, toolCallback: prepareToolResponse)
             req.with(system: PromptTemplate(conversation.instructions, with: context))
-            req.with(history: conversation.messages)
+            req.with(history: historyForRequest())
             req.with(tools: Toolbox.get(names: conversation.toolIDs))
             req.with(context: context)
             if !isThinkingEnabled {
