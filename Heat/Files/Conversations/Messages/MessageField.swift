@@ -14,8 +14,6 @@ struct MessageField: View {
 
     let action: ActionHandler
 
-    @AppStorage(ChatPreference.thinkingEnabled) private var thinkingEnabled = true
-
     @State private var content = ""
     @State private var instructionFile: File? = nil
     @State private var photoPickerModel = PhotoPickerModel()
@@ -137,7 +135,7 @@ struct MessageField: View {
             )
 
             MessageFieldControls()
-                .padding(.horizontal, 8)
+                .padding(.trailing, 8)
                 .padding(.bottom, 6)
         }
         .task(id: conversationViewModel.file.id) {
