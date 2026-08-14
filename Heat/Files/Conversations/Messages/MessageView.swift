@@ -337,6 +337,13 @@ struct MessageUsageView: View {
 
         var parts: [String] = []
 
+        // First, because it's the thing that makes the rest mean something:
+        // a conversation can change model between messages, so tokens and
+        // tok/s can't be compared without knowing what produced them.
+        if let model = message.metadata["model"]?.stringValue, !model.isEmpty {
+            parts.append(model)
+        }
+
         // The split is approximate — see applyThinkingSplit — so it's marked
         // with ≈ rather than presented as a counted figure.
         var outputDetail = "\(format(output)) out"
