@@ -74,6 +74,22 @@ extension Config {
     }
 }
 
+// MARK: - Conversation Defaults
+
+extension Config {
+
+    /// Whether new conversations start with reasoning switched on.
+    ///
+    /// On unless said otherwise, matching what a model does when left alone.
+    /// Only ever the starting point: a conversation that has been toggled
+    /// keeps its own answer, so changing this moves the ones nobody has
+    /// touched and leaves the rest alone.
+    public var thinkingByDefault: Bool {
+        set { metadata["thinkingByDefault"] = .bool(newValue) }
+        get { metadata["thinkingByDefault"]?.boolValue ?? true }
+    }
+}
+
 // MARK: - Service Availability
 
 extension Config {
