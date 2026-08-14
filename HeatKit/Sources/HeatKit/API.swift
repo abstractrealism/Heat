@@ -154,6 +154,23 @@ extension API {
         return (try service.summarizationService(session: session), model)
     }
 
+    /// The chat service for an explicitly chosen model.
+    ///
+    /// Falls back to the configured default whenever the choice can't be
+    /// honoured — nothing chosen, or a service or model that has since been
+    /// removed or renamed. A conversation pinned to a model that no longer
+    /// exists should keep working rather than refuse to send.
+    public func chatService(serviceID: String?, modelID: String?) throws -> (ChatService, Model) {
+        guard let serviceID, let modelID,
+              let service = try? get(serviceID: serviceID, config: config),
+              let model = try? get(modelID: modelID, service: service),
+              config.isEnabled(service)
+        else {
+            return try preferredChatService()
+        }
+        return (try service.chatService(session: session), model)
+    }
+
     public func get(serviceID: String?, config: Config) throws -> Service {
         guard let service = config.services.first(where: { $0.id == serviceID }) else {
             throw Error.missingService

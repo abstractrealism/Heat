@@ -73,3 +73,40 @@ extension Config {
         get { metadata["serviceSummarizationDefault"]?.stringValue }
     }
 }
+
+// MARK: - Service Availability
+
+extension Config {
+
+    /// Services the user has switched off, and doesn't want offered.
+    ///
+    /// Stored as the exceptions rather than as a flag on each service: a
+    /// service added later is then usable without having to be enabled first,
+    /// and this is an app-level display preference, not something belonging to
+    /// GenKit's shared `Service` type.
+    ///
+    /// Distinct from `Service.status`, which reports whether a service *can*
+    /// work — no host, no token. This is about whether it should be offered at
+    /// all, so a configured account you don't want cluttering the model list
+    /// can be hidden without deleting its credentials.
+    public var disabledServiceIDs: Set<String> {
+        set {
+            metadata["disabledServiceIDs"] = newValue.isEmpty ? nil : .array(newValue.sorted().map { .string($0) })
+        }
+        get {
+            guard case .array(let values)? = metadata["disabledServiceIDs"] else { return [] }
+            return Set(values.compactMap(\.stringValue))
+        }
+    }
+
+    public func isEnabled(_ service: Service) -> Bool {
+        !disabledServiceIDs.contains(service.id)
+    }
+
+    /// Services worth offering a model from: switched on, and holding models
+    /// to offer. A service that has never had its models loaded contributes
+    /// nothing to a picker, so it's left out rather than listed empty.
+    public var selectableServices: [Service] {
+        services.filter { isEnabled($0) && !$0.models.isEmpty }
+    }
+}

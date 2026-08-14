@@ -14,6 +14,16 @@ struct ServiceForm: View {
     var body: some View {
         Form {
             Section {
+                Toggle("Enabled", isOn: enabledBinding)
+                    .help("Whether to offer this service's models when picking one for a conversation. Turning it off hides them without discarding the host or token, so a service you're not using now stays configured for later.")
+            }
+
+            #if os(macOS)
+            Divider()
+                .padding(.vertical)
+            #endif
+
+            Section {
                 TextField("Host", text: $service.host)
                     .autocorrectionDisabled()
                     .textContentType(.URL)
@@ -69,6 +79,25 @@ struct ServiceForm: View {
         .onDisappear {
             handleSave()
         }
+    }
+
+    /// Written straight through to the config rather than held in `service`,
+    /// which is a local copy saved only on the way out. Hiding a service should
+    /// take effect in the model picker immediately, not whenever this form
+    /// happens to be dismissed.
+    private var enabledBinding: Binding<Bool> {
+        Binding(
+            get: { state.config.isEnabled(service) },
+            set: { isEnabled in
+                var config = state.config
+                if isEnabled {
+                    config.disabledServiceIDs.remove(service.id)
+                } else {
+                    config.disabledServiceIDs.insert(service.id)
+                }
+                Task { try? await API.shared.configUpdate(config) }
+            }
+        )
     }
 
     func handleLoadModels() {
