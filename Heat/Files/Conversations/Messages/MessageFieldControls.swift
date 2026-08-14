@@ -15,12 +15,30 @@ struct MessageFieldControls: View {
 
     @AppStorage(ChatPreference.thinkingEnabled) private var thinkingEnabled = true
 
+    /// Lines the row up under the + button above it.
+    ///
+    /// The + glyph is centred in a square button, so its left edge sits at the
+    /// field's own padding plus half the leftover width — not at the button's
+    /// edge. Matching that by eye would drift the moment either size changed,
+    /// so it's derived from the same numbers MessageField uses.
+    private var leadingInset: CGFloat {
+        #if os(macOS)
+        let buttonWidth: CGFloat = 34
+        #else
+        let buttonWidth: CGFloat = 44
+        #endif
+        let fieldPadding: CGFloat = 4
+        let glyphWidth: CGFloat = 13
+        return fieldPadding + (buttonWidth - glyphWidth) / 2
+    }
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 11) {
             modelPicker
             thinkingToggle
             Spacer(minLength: 0)
         }
+        .padding(.leading, leadingInset)
     }
 
     // MARK: - Model
@@ -91,11 +109,20 @@ struct MessageFieldControls: View {
 
     // MARK: - Thinking
 
+    /// Whether the chosen model can reason at all.
+    ///
+    /// Unknown counts as yes: only Ollama reports this, so gating on a missing
+    /// answer would grey the button out for every hosted service.
+    private var modelCanThink: Bool {
+        conversationViewModel.selectedModel?.supports(.thinking) ?? true
+    }
+
     /// Filled and tinted when on, plain when off — the state has to be
     /// readable without opening anything, which is the whole reason it moved
     /// out of the + menu.
     @ViewBuilder
     private var thinkingToggle: some View {
+        let isOn = thinkingEnabled && modelCanThink
         Button {
             thinkingEnabled.toggle()
         } label: {
@@ -104,15 +131,28 @@ struct MessageFieldControls: View {
                 .labelStyle(.titleAndIcon)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
-                .foregroundStyle(thinkingEnabled ? Color.white : Color.secondary)
+                .foregroundStyle(isOn ? Color.white : Color.secondary)
                 .background(
-                    thinkingEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
+                    isOn ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
                     in: .capsule
                 )
         }
         .buttonStyle(.plain)
-        .help(thinkingEnabled
-              ? "Reasoning is on. Models that can't reason are unaffected."
-              : "Reasoning is off. Models that can't reason are unaffected.")
+        .disabled(!modelCanThink)
+        // Shown greyed and unclickable rather than hidden: a control that
+        // vanishes reads as a bug, while one that's visibly unavailable
+        // explains itself — and it comes back when the model changes.
+        .opacity(modelCanThink ? 1 : 0.5)
+        .help(thinkingHelp)
+    }
+
+    private var thinkingHelp: String {
+        guard modelCanThink else {
+            let name = conversationViewModel.selectedModelName
+            return "\(name) can't reason, so there's nothing to turn on. Pick a model that supports thinking to use this."
+        }
+        return thinkingEnabled
+            ? "Reasoning is on. The model thinks before answering."
+            : "Reasoning is off. The model answers directly."
     }
 }
