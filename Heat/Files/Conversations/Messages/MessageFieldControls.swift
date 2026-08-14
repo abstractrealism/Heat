@@ -13,8 +13,6 @@ struct MessageFieldControls: View {
     @Environment(AppState.self) var state
     @Environment(ConversationViewModel.self) var conversationViewModel
 
-    @AppStorage(ChatPreference.thinkingEnabled) private var thinkingEnabled = true
-
     /// Lines the row up under the + button above it.
     ///
     /// The + glyph is centred in a square button, so its left edge sits at the
@@ -122,9 +120,9 @@ struct MessageFieldControls: View {
     /// out of the + menu.
     @ViewBuilder
     private var thinkingToggle: some View {
-        let isOn = thinkingEnabled && modelCanThink
+        let isOn = conversationViewModel.isThinkingEnabled && modelCanThink
         Button {
-            thinkingEnabled.toggle()
+            conversationViewModel.setThinkingEnabled(!conversationViewModel.isThinkingEnabled)
         } label: {
             Label("Thinking", systemImage: "brain")
                 .font(.footnote)
@@ -151,8 +149,8 @@ struct MessageFieldControls: View {
             let name = conversationViewModel.selectedModelName
             return "\(name) can't reason, so there's nothing to turn on. Pick a model that supports thinking to use this."
         }
-        return thinkingEnabled
-            ? "Reasoning is on. The model thinks before answering."
-            : "Reasoning is off. The model answers directly."
+        return conversationViewModel.isThinkingEnabled
+            ? "Reasoning is on for this conversation. The model thinks before answering."
+            : "Reasoning is off for this conversation. The model answers directly."
     }
 }

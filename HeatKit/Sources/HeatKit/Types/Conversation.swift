@@ -23,6 +23,14 @@ public struct Conversation: Codable, Sendable {
     public var serviceID: String?
     public var modelID: String?
 
+    /// Whether the model reasons before answering here, when this
+    /// conversation has been told one way or the other.
+    ///
+    /// Unset means follow the default in Settings, on the same terms as
+    /// `serviceID`: a conversation nobody has decided about should move when
+    /// that default moves.
+    public var thinkingEnabled: Bool?
+
     public enum State: Codable, Sendable {
         case processing
         case streaming
@@ -31,7 +39,8 @@ public struct Conversation: Codable, Sendable {
     }
 
     public init(instructions: String = "", suggestions: [String] = [], toolIDs: Set<String> = [], state: State = .none,
-                messages: [Message] = [], serviceID: String? = nil, modelID: String? = nil) {
+                messages: [Message] = [], serviceID: String? = nil, modelID: String? = nil,
+                thinkingEnabled: Bool? = nil) {
         self.instructions = instructions
         self.suggestions = suggestions
         self.toolIDs = toolIDs
@@ -39,6 +48,7 @@ public struct Conversation: Codable, Sendable {
         self.messages = messages
         self.serviceID = serviceID
         self.modelID = modelID
+        self.thinkingEnabled = thinkingEnabled
     }
 
     public var isEmpty: Bool {

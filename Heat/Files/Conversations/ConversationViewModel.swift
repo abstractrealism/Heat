@@ -41,18 +41,6 @@ enum ChatDebug {
     }
 }
 
-enum ChatPreference {
-    /// Whether reasoning models should think before answering.
-    static let thinkingEnabled = "thinkingEnabled"
-
-    /// On by default, matching what a model does when left alone. Only the
-    /// off state is ever sent: a model that can't reason rejects a request
-    /// asking it to, so staying quiet is what keeps mixed model setups working.
-    static var isThinkingEnabled: Bool {
-        UserDefaults.standard.object(forKey: thinkingEnabled) as? Bool ?? true
-    }
-}
-
 /// Keeps one view model per conversation, alive beyond the view showing it.
 ///
 /// `FileDetail` gives each conversation view an `.id`, so navigating to
@@ -262,6 +250,20 @@ final class ConversationViewModel {
         conversation.serviceID != nil && conversation.modelID != nil
     }
 
+    /// Whether the model reasons before answering here — this conversation's
+    /// own answer, or the default when it hasn't got one.
+    var isThinkingEnabled: Bool {
+        conversation.thinkingEnabled ?? state.config.thinkingByDefault
+    }
+
+    /// Settles the question for this conversation, so it stops following the
+    /// default. Turning it back to match the default doesn't resume following
+    /// it: an explicit choice stays explicit, which is the point of making it.
+    func setThinkingEnabled(_ enabled: Bool) {
+        conversation.thinkingEnabled = enabled
+        persistConversation()
+    }
+
     /// Records a model against this conversation, so it keeps answering with
     /// the same one. Summarization is untouched: naming a conversation and
     /// suggesting replies follow their own default, and there's no reason
@@ -463,7 +465,7 @@ final class ConversationViewModel {
             req.with(history: conversation.messages)
             req.with(tools: Toolbox.get(names: conversation.toolIDs))
             req.with(context: context)
-            if !ChatPreference.isThinkingEnabled {
+            if !isThinkingEnabled {
                 req.with(option: "think", value: .bool(false))
             }
 
