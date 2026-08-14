@@ -154,20 +154,30 @@ extension API {
         return (try service.summarizationService(session: session), model)
     }
 
-    /// The chat service for an explicitly chosen model.
+    /// Which service and model an explicit choice actually resolves to.
     ///
     /// Falls back to the configured default whenever the choice can't be
     /// honoured — nothing chosen, or a service or model that has since been
-    /// removed or renamed. A conversation pinned to a model that no longer
-    /// exists should keep working rather than refuse to send.
-    public func chatService(serviceID: String?, modelID: String?) throws -> (ChatService, Model) {
-        guard let serviceID, let modelID,
-              let service = try? get(serviceID: serviceID, config: config),
-              let model = try? get(modelID: modelID, service: service),
-              config.isEnabled(service)
-        else {
-            return try preferredChatService()
+    /// removed, switched off or renamed. A conversation pinned to a model that
+    /// no longer exists should keep working rather than refuse to send.
+    ///
+    /// Separate from `chatService` so a caller can record what it's about to
+    /// use, which needs the identifiers rather than the ready-made client.
+    public func resolvedChatService(serviceID: String?, modelID: String?) throws -> (Service, Model) {
+        if let serviceID, let modelID,
+           let service = try? get(serviceID: serviceID, config: config),
+           let model = try? get(modelID: modelID, service: service),
+           config.isEnabled(service) {
+            return (service, model)
         }
+        let service = try get(serviceID: config.serviceChatDefault, config: config)
+        let model = try get(modelID: service.preferredChatModel, service: service)
+        return (service, model)
+    }
+
+    /// The chat service for an explicitly chosen model, falling back as above.
+    public func chatService(serviceID: String?, modelID: String?) throws -> (ChatService, Model) {
+        let (service, model) = try resolvedChatService(serviceID: serviceID, modelID: modelID)
         return (try service.chatService(session: session), model)
     }
 
