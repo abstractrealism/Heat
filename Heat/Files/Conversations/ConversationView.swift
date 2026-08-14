@@ -20,9 +20,6 @@ struct ConversationView: View {
     var body: some View {
         MessageList()
             .navigationTitle(conversationViewModel.title)
-            #if os(macOS)
-            .navigationSubtitle(conversationViewModel.subtitle)
-            #endif
             .safeAreaInset(edge: .bottom, alignment: .center) {
                 MessageField { (prompt, context, toolIDs) in
                     handleSubmit(prompt, context: context, toolIDs: toolIDs)

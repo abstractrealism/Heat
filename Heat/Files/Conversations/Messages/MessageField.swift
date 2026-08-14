@@ -66,9 +66,6 @@ struct MessageField: View {
                         showingPhotoPicker = true
                     }
                     Divider()
-                    Toggle("Thinking", isOn: $thinkingEnabled)
-                        .help("Let reasoning models think before answering. Models that can't reason are unaffected.")
-                    Divider()
                     ForEach(state.instructions) { file in
                         if let instruction = try? state.file(Instruction.self, fileID: file.id), instruction.kind == .template {
                             Button(file.name ?? "Untitled") {
@@ -83,7 +80,7 @@ struct MessageField: View {
                         .frame(width: inlineButtonSize.width, height: inlineButtonSize.height)
                 }
                 .buttonStyle(.plain)
-                .help("Attach an image, use a saved prompt, or turn thinking on and off")
+                .help("Attach an image or use a saved prompt")
 
                 messageInput
 
@@ -138,6 +135,10 @@ struct MessageField: View {
                 matching: .images,
                 photoLibrary: .shared()
             )
+
+            MessageFieldControls()
+                .padding(.horizontal, 8)
+                .padding(.bottom, 6)
         }
         .task(id: conversationViewModel.file.id) {
             // A new conversation opens ready to type into. Existing ones are

@@ -245,9 +245,49 @@ final class ConversationViewModel {
         file.name ?? "Heat"
     }
 
-    var subtitle: String {
-        guard let (_, model) = try? API.shared.preferredChatService() else { return "Unknown model" }
+    /// The model answering here, whether chosen for this conversation or
+    /// inherited from the default.
+    var selectedModel: Model? {
+        try? chatService().1
+    }
+
+    var selectedModelName: String {
+        guard let model = selectedModel else { return "No model" }
         return model.name ?? model.id
+    }
+
+    /// Whether a model was picked for this conversation, as opposed to it
+    /// following whatever Settings has as the default.
+    var hasSelectedModel: Bool {
+        conversation.serviceID != nil && conversation.modelID != nil
+    }
+
+    /// Records a model against this conversation, so it keeps answering with
+    /// the same one. Summarization is untouched: naming a conversation and
+    /// suggesting replies follow their own default, and there's no reason
+    /// picking a bigger model to answer with should drag those along.
+    func selectModel(serviceID: String, modelID: String) {
+        conversation.serviceID = serviceID
+        conversation.modelID = modelID
+        persistConversation()
+    }
+
+    /// Hands the conversation back to whatever Settings has as the default.
+    func clearSelectedModel() {
+        conversation.serviceID = nil
+        conversation.modelID = nil
+        persistConversation()
+    }
+
+    private func persistConversation() {
+        let snapshot = conversation
+        Task { try? await API.shared.fileUpdate(file.id, object: snapshot) }
+    }
+
+    /// The service answering this conversation: its own choice when it has
+    /// one, the configured default otherwise.
+    private func chatService() throws -> (ChatService, Model) {
+        try API.shared.chatService(serviceID: conversation.serviceID, modelID: conversation.modelID)
     }
 
     init(file: File) {
@@ -381,7 +421,7 @@ final class ConversationViewModel {
     func generate(chat prompt: String, images: [URL] = [], context: [String: Value] = [:], toolChoice: Tool? = nil) async throws {
         error = nil
         do {
-            let (service, model) = try API.shared.preferredChatService()
+            let (service, model) = try chatService()
 
             var context = context
             // Lowercase to match {{datetime}} in the instructions. The lookup
