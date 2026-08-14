@@ -95,9 +95,9 @@ struct MessageFieldControls: View {
 
     private var modelHelp: String {
         if conversationViewModel.hasSelectedModel {
-            return "The model answering in this conversation. Chosen here, so it stays put if you change the default in Settings. Titles and suggestions are unaffected — they follow the Summarization default."
+            return "The model answering in this conversation. It stays put if you change the default in Settings. Titles and suggestions are unaffected — they follow the Summarization default."
         }
-        return "The model answering in this conversation. Following the default in Settings until you pick one."
+        return "The model answering in this conversation. Taken from the default in Settings, and fixed here once the first message is sent."
     }
 
     private func isSelected(service: Service, model: Model) -> Bool {

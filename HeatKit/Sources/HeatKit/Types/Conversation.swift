@@ -9,26 +9,31 @@ public struct Conversation: Codable, Sendable {
     public var state: State
     public var messages: [Message]
 
-    /// The model answering in this conversation, when one was picked for it.
+    /// The model answering in this conversation.
     ///
-    /// Left empty until somebody actually chooses, rather than stamped with
-    /// the default when the conversation is created. A conversation nobody has
-    /// made a decision about should follow the default in Settings, including
-    /// after that default changes — copying the value in at creation would
-    /// freeze every existing conversation onto whatever was configured that
-    /// day, which is how `toolIDs` behaves and is not worth repeating.
+    /// Empty only before the conversation has sent anything: an unused
+    /// conversation follows the defaults, so a new one always starts from
+    /// current settings, and its first message writes down what it actually
+    /// used. After that the conversation keeps it, whether it was chosen by
+    /// hand or inherited.
+    ///
+    /// Not stamped at creation, and not left to follow the defaults forever —
+    /// both get this wrong from opposite directions. Stamping at creation
+    /// freezes conversations onto whatever was configured the day they were
+    /// made, which is how `toolIDs` behaves. Following indefinitely means
+    /// changing a default reaches back into conversations that had already
+    /// been having a different one.
     ///
     /// Both halves or neither: a model id means nothing without knowing which
     /// service it belongs to, since two services can offer the same name.
     public var serviceID: String?
     public var modelID: String?
 
-    /// Whether the model reasons before answering here, when this
-    /// conversation has been told one way or the other.
+    /// Whether the model reasons before answering here.
     ///
-    /// Unset means follow the default in Settings, on the same terms as
-    /// `serviceID`: a conversation nobody has decided about should move when
-    /// that default moves.
+    /// Settled on the same terms as `serviceID`: follows the default until the
+    /// conversation is used or the toggle is touched, and is its own from then
+    /// on.
     public var thinkingEnabled: Bool?
 
     public enum State: Codable, Sendable {

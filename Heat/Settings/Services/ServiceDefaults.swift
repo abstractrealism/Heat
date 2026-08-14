@@ -31,11 +31,11 @@ struct ServiceDefaults: View {
 
         Section {
             Toggle("Thinking on in new conversations", isOn: thinkingBinding)
-                .help("Whether new conversations start with reasoning switched on. Each conversation can be switched the other way from the button beside its message field, and keeps that answer afterwards — changing this moves only the conversations nobody has decided about. Models that can't reason are unaffected.")
+                .help("Whether new conversations start with reasoning switched on. Each conversation keeps whatever it started with, so changing this affects conversations begun afterwards and leaves existing ones alone. Any conversation can be switched the other way from the button beside its message field. Models that can't reason are unaffected.")
         } header: {
             Text("Conversations")
         } footer: {
-            Text("Where new conversations start. Heat's own prompts — naming a conversation, drafting suggestions — never reason, whatever this says.")
+            Text("Where new conversations start. Existing ones keep what they began with. Heat's own prompts — naming a conversation, drafting suggestions — never reason, whatever this says.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

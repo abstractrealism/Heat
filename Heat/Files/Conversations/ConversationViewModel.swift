@@ -281,6 +281,32 @@ final class ConversationViewModel {
         persistConversation()
     }
 
+    /// Writes down what this conversation is using, the first time it sends.
+    ///
+    /// Until a conversation has said anything it follows the defaults, so a
+    /// new one always starts from current settings. From its first message it
+    /// keeps what it started with: changing the default model or the reasoning
+    /// setting afterwards would otherwise reach back into conversations that
+    /// had already been having a different one, and a thread you return to a
+    /// week later should behave the way it did when you left it.
+    ///
+    /// The values written are the ones resolved for this very turn, not the
+    /// raw defaults, so what gets recorded is what actually answered — even
+    /// where a stale choice had to fall back.
+    private func pinCurrentDefaults() {
+        if conversation.serviceID == nil || conversation.modelID == nil,
+           let (service, model) = try? API.shared.resolvedChatService(
+            serviceID: conversation.serviceID,
+            modelID: conversation.modelID
+           ) {
+            conversation.serviceID = service.id
+            conversation.modelID = model.id
+        }
+        if conversation.thinkingEnabled == nil {
+            conversation.thinkingEnabled = state.config.thinkingByDefault
+        }
+    }
+
     private func persistConversation() {
         let snapshot = conversation
         Task { try? await API.shared.fileUpdate(file.id, object: snapshot) }
@@ -424,6 +450,7 @@ final class ConversationViewModel {
         error = nil
         do {
             let (service, model) = try chatService()
+            pinCurrentDefaults()
 
             var context = context
             // Lowercase to match {{datetime}} in the instructions. The lookup
