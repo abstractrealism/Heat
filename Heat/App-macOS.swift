@@ -106,9 +106,21 @@ struct MainApp: App {
 
         Settings {
             PreferencesView()
-                .frame(minWidth: 600)
+                // An ideal size as well as a floor. Without one the window
+                // opens at the smallest size that fits, which is how the
+                // longest pane ended up with its last control below the
+                // bottom edge and no way to reach it.
+                .frame(
+                    minWidth: 600, idealWidth: 760, maxWidth: .infinity,
+                    minHeight: 420, idealHeight: 640, maxHeight: .infinity
+                )
                 .preferredColorScheme(appearance.colorScheme)
         }
+        // A Settings window sizes itself to its content and stays that way
+        // unless told otherwise, so a pane that outgrows it can't be scrolled
+        // or dragged open. contentMinSize keeps the floor above and lets it be
+        // made as large as wanted.
+        .windowResizability(.contentMinSize)
         .environment(state)
     }
 

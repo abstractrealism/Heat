@@ -34,7 +34,10 @@ struct PreferencesView: View {
                 }
             }
         }
-        .frame(minHeight: 400)
+        // Grows into whatever the window is given. The floor and the starting
+        // size are set on the Settings scene, so nothing here fixes a height
+        // that would stop the window being dragged taller.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("Settings")
         .scenePadding()
     }
