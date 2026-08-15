@@ -112,7 +112,7 @@ struct MainApp: App {
                 // was already too tall shorter still.
                 .frame(
                     minWidth: 600, maxWidth: .infinity,
-                    minHeight: 480, maxHeight: .infinity
+                    minHeight: 552, maxHeight: .infinity
                 )
                 .preferredColorScheme(appearance.colorScheme)
         }
