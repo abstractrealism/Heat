@@ -40,18 +40,28 @@ struct ServicesView: View {
                 }
             }
 
-            Group {
-                if let service = manager.get(selection) {
-                    ServiceForm(service: service)
-                        .id(service.id)
-                } else {
-                    Form {
-                        ServiceDefaults()
+            // The pane scrolls, because the form inside it doesn't. macOS
+            // gives a Form the columns style by default, which lays its rows
+            // out at full height and has no scroller of its own — so a pane
+            // taller than the window was simply cut off, with nothing to drag
+            // and nothing to scroll. Wrapping it here rather than switching to
+            // the grouped style keeps these panes looking as they do.
+            ScrollView {
+                Group {
+                    if let service = manager.get(selection) {
+                        ServiceForm(service: service)
+                            .id(service.id)
+                    } else {
+                        Form {
+                            ServiceDefaults()
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 32)
+                .padding(.vertical, 12)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .padding(.horizontal, 32)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .layoutPriority(1)
         }
         .onAppear {

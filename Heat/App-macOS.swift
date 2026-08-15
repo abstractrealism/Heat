@@ -106,13 +106,13 @@ struct MainApp: App {
 
         Settings {
             PreferencesView()
-                // An ideal size as well as a floor. Without one the window
-                // opens at the smallest size that fits, which is how the
-                // longest pane ended up with its last control below the
-                // bottom edge and no way to reach it.
+                // A floor and no ceiling, but deliberately no ideal: naming
+                // one pinned the window to that height instead of letting it
+                // take the size its content asked for, which made a pane that
+                // was already too tall shorter still.
                 .frame(
-                    minWidth: 600, idealWidth: 760, maxWidth: .infinity,
-                    minHeight: 420, idealHeight: 640, maxHeight: .infinity
+                    minWidth: 600, maxWidth: .infinity,
+                    minHeight: 480, maxHeight: .infinity
                 )
                 .preferredColorScheme(appearance.colorScheme)
         }
