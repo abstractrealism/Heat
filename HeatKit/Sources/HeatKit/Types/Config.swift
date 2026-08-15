@@ -103,6 +103,51 @@ extension Config {
     }
 }
 
+// MARK: - Context Length
+
+extension Config {
+
+    /// Context lengths chosen for particular models, keyed by service and
+    /// model together.
+    ///
+    /// Per model rather than per service or per conversation. It's a property
+    /// of the model and the machine running it — how much memory a context
+    /// costs depends on the model's size — so the same answer applies wherever
+    /// that model is used, and a different one applies to the model next to it.
+    ///
+    /// Only the exceptions are stored. A model with no entry sends nothing and
+    /// gets whatever the server would have given it anyway, which is what
+    /// should happen to a model nobody has had an opinion about.
+    private var contextLengths: [String: Int] {
+        get {
+            guard case .object(let entries)? = metadata["contextLengthByModel"] else { return [:] }
+            return entries.compactMapValues(\.intValue)
+        }
+        set {
+            metadata["contextLengthByModel"] = newValue.isEmpty
+                ? nil
+                : .object(newValue.mapValues { .int($0) })
+        }
+    }
+
+    /// Keyed by both halves: two services can offer the same model name, and
+    /// they won't be the same installation or the same machine.
+    private func contextKey(serviceID: String, modelID: String) -> String {
+        "\(serviceID)\u{1F}\(modelID)"
+    }
+
+    public func contextLength(serviceID: String, modelID: String) -> Int? {
+        contextLengths[contextKey(serviceID: serviceID, modelID: modelID)]
+    }
+
+    /// Passing nil hands the model back to the server's default.
+    public mutating func setContextLength(_ length: Int?, serviceID: String, modelID: String) {
+        var lengths = contextLengths
+        lengths[contextKey(serviceID: serviceID, modelID: modelID)] = length
+        contextLengths = lengths
+    }
+}
+
 // MARK: - Service Availability
 
 extension Config {

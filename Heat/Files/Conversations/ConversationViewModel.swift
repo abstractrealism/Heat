@@ -379,6 +379,22 @@ final class ConversationViewModel {
     /// deltas that arrived either side of the reasoning block closing, and
     /// rounds, because presenting it to the token would claim a precision it
     /// doesn't have. Enough to see roughly where the time went.
+    /// The context this conversation's model will actually be given.
+    ///
+    /// In order of how much they're worth believing: a length chosen for this
+    /// model, which is sent with the request and so decides the matter; what
+    /// the model was last seen loaded with; and failing both, the maximum it
+    /// was built for — which the server will very likely not grant, so it's a
+    /// last resort rather than an answer.
+    var effectiveContextLength: Int? {
+        guard let model = selectedModel else { return nil }
+        if let serviceID = conversation.serviceID,
+           let chosen = state.config.contextLength(serviceID: serviceID, modelID: model.id) {
+            return chosen
+        }
+        return model.loadedContextWindow ?? model.contextWindow
+    }
+
     /// How much of the model's context this conversation is occupying.
     ///
     /// Counted from what the server reported rather than estimated: every
@@ -391,7 +407,7 @@ final class ConversationViewModel {
     /// service that doesn't report a context length. Better nothing than a bar
     /// showing a number nobody can stand behind.
     var contextUsage: (used: Int, limit: Int)? {
-        guard let limit = selectedModel?.contextWindow, limit > 0 else { return nil }
+        guard let limit = effectiveContextLength, limit > 0 else { return nil }
         guard let last = conversation.messages.last(where: { $0.role == .assistant }),
               let input = last.metadata["inputTokens"]?.intValue,
               let output = last.metadata["outputTokens"]?.intValue
@@ -569,6 +585,13 @@ final class ConversationViewModel {
             req.with(history: historyForRequest())
             req.with(tools: Toolbox.get(names: conversation.toolIDs))
             req.with(context: context)
+            // Only when one was chosen for this model. Saying nothing is what
+            // lets the server apply its own default, and naming a value costs
+            // a reload whenever it differs from what's already loaded.
+            if let serviceID = conversation.serviceID,
+               let contextLength = state.config.contextLength(serviceID: serviceID, modelID: model.id) {
+                req.with(option: "num_ctx", value: .int(contextLength))
+            }
             if !isThinkingEnabled {
                 req.with(option: "think", value: .bool(false))
             }
