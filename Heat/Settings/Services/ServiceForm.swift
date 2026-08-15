@@ -71,6 +71,8 @@ struct ServiceForm: View {
                 }
                 .disabled(service.token.isEmpty && service.host.isEmpty)
             }
+
+            contextLengthSection
         }
         .navigationTitle(service.name)
         .task(id: service.id) {
@@ -79,6 +81,96 @@ struct ServiceForm: View {
         .onDisappear {
             handleSave()
         }
+    }
+
+    // MARK: - Context length
+
+    /// The model this section is about: the one this service answers with.
+    private var chatModel: Model? {
+        service.models.first { $0.id == service.preferredChatModel }
+    }
+
+    /// Context lengths are powers of two, and the useful range spans two
+    /// orders of magnitude — so the slider moves in exponents. Linear, the
+    /// bottom half of the range would be unreachable by hand.
+    private static let minExponent = 11.0   // 2,048
+    private static let maxExponent = 20.0   // 1,048,576
+
+    private func exponentRange(for model: Model) -> ClosedRange<Double> {
+        let ceiling = model.contextWindow.map { Double(log2(Double($0))) } ?? Self.maxExponent
+        return Self.minExponent...max(Self.minExponent + 1, min(ceiling, Self.maxExponent))
+    }
+
+    @ViewBuilder
+    private var contextLengthSection: some View {
+        Section {
+            if let model = chatModel {
+                let chosen = state.config.contextLength(serviceID: service.id, modelID: model.id)
+
+                Slider(
+                    value: contextExponentBinding(for: model),
+                    in: exponentRange(for: model),
+                    step: 1
+                )
+                .help("How much context to load \(model.name ?? model.id) with. Larger holds more conversation before the oldest messages start dropping out, and costs memory — the cache scales with length, so a big model at full context can need several gigabytes on top of its weights. Changing it makes the model reload on the next message.")
+
+                LabeledContent("Context length") {
+                    HStack(spacing: 8) {
+                        Text(contextLengthCaption(for: model))
+                            .monospacedDigit()
+                            .foregroundStyle(chosen == nil ? .secondary : .primary)
+                        if chosen != nil {
+                            Button("Use Default") {
+                                updateContextLength(nil, for: model)
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text("Pick a Chats model above to set its context length.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Context Length for the Current Model")
+        } footer: {
+            Text("Remembered per model, so each one keeps its own. Left alone, the server decides — which is usually well below what the model could take.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func contextLengthCaption(for model: Model) -> String {
+        if let chosen = state.config.contextLength(serviceID: service.id, modelID: model.id) {
+            return chosen.formatted(.number.grouping(.automatic)) + " tokens"
+        }
+        if let loaded = model.loadedContextWindow {
+            return "Server default (\(loaded.formatted(.number.grouping(.automatic))))"
+        }
+        return "Server default"
+    }
+
+    /// Starts where the model already is, so dragging adjusts from what's in
+    /// force rather than jumping to some arbitrary point on the scale.
+    private func contextExponentBinding(for model: Model) -> Binding<Double> {
+        Binding(
+            get: {
+                let current = state.config.contextLength(serviceID: service.id, modelID: model.id)
+                    ?? model.loadedContextWindow
+                    ?? model.contextWindow
+                    ?? 8192
+                return log2(Double(max(current, 2048)))
+            },
+            set: { exponent in
+                updateContextLength(Int(pow(2, exponent.rounded())), for: model)
+            }
+        )
+    }
+
+    private func updateContextLength(_ length: Int?, for model: Model) {
+        var config = state.config
+        config.setContextLength(length, serviceID: service.id, modelID: model.id)
+        Task { try? await API.shared.configUpdate(config) }
     }
 
     /// Written straight through to the config rather than held in `service`,
