@@ -34,9 +34,66 @@ struct MessageFieldControls: View {
         HStack(spacing: 11) {
             modelPicker
             thinkingToggle
+            contextGauge
             Spacer(minLength: 0)
         }
         .padding(.leading, leadingInset)
+    }
+
+    // MARK: - Context
+
+    /// How full the model's context is, as a bar and a percentage.
+    ///
+    /// Absent rather than empty when there's nothing to report — before the
+    /// first reply, or against a service that doesn't publish a context
+    /// length. An empty bar would read as "plenty of room", which is a claim,
+    /// not the absence of one.
+    @ViewBuilder
+    private var contextGauge: some View {
+        if let usage = conversationViewModel.contextUsage {
+            let fraction = min(1, Double(usage.used) / Double(usage.limit))
+            HStack(spacing: 5) {
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(.quaternary)
+                    GeometryReader { proxy in
+                        Capsule()
+                            .fill(gaugeColor(fraction))
+                            .frame(width: max(2, proxy.size.width * fraction))
+                    }
+                }
+                .frame(width: 44, height: 4)
+
+                Text("\(Int((fraction * 100).rounded()))%")
+                    .font(.footnote)
+                    .monospacedDigit()
+                    .foregroundStyle(fraction >= 0.9 ? AnyShapeStyle(gaugeColor(fraction)) : AnyShapeStyle(.secondary))
+            }
+            .help("""
+                Context used: \(usage.used.formatted(.number.grouping(.automatic))) of \
+                \(usage.limit.formatted(.number.grouping(.automatic))) tokens.
+
+                Measured from the last reply's own reported prompt size, so it \
+                covers the conversation up to that point, not what you're \
+                typing now. When it fills, the oldest messages stop reaching \
+                the model.
+
+                The limit is read when a service is opened in Settings — from \
+                what the model was loaded with if it was running at the time, \
+                and from the maximum it advertises otherwise, which can be \
+                several times larger than it will actually be given.
+                """)
+        }
+    }
+
+    /// Neutral while there's room, and only insistent once it's nearly gone —
+    /// a gauge that shouts at 60% teaches you to stop reading it.
+    private func gaugeColor(_ fraction: Double) -> Color {
+        switch fraction {
+        case ..<0.75: .secondary
+        case ..<0.9: .orange
+        default: .red
+        }
     }
 
     // MARK: - Model
