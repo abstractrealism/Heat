@@ -379,6 +379,36 @@ final class ConversationViewModel {
     /// deltas that arrived either side of the reasoning block closing, and
     /// rounds, because presenting it to the token would claim a precision it
     /// doesn't have. Enough to see roughly where the time went.
+    /// How much of the model's context this conversation is occupying.
+    ///
+    /// Counted from what the server reported rather than estimated: every
+    /// response carries the prompt size it was evaluated against, so the last
+    /// one says exactly how much context the conversation took, and adding its
+    /// own output gives what the next prompt starts from. No tokenizer, and no
+    /// guessing at a model's particular one.
+    ///
+    /// Nil until there's something to measure against — no reply yet, or a
+    /// service that doesn't report a context length. Better nothing than a bar
+    /// showing a number nobody can stand behind.
+    var contextUsage: (used: Int, limit: Int)? {
+        guard let limit = selectedModel?.contextWindow, limit > 0 else { return nil }
+        guard let last = conversation.messages.last(where: { $0.role == .assistant }),
+              let input = last.metadata["inputTokens"]?.intValue,
+              let output = last.metadata["outputTokens"]?.intValue
+        else { return nil }
+
+        // Reasoning counts against the reply that produced it but won't be
+        // sent again, so it shouldn't count towards what the next turn costs.
+        // The split is approximate — see applyThinkingSplit — which is why
+        // this is a gauge rather than a readout.
+        var carried = output
+        if state.config.stripThinkingFromContext,
+           let thinking = last.metadata["thinkingTokens"]?.intValue {
+            carried = max(0, output - thinking)
+        }
+        return (used: input + carried, limit: limit)
+    }
+
     /// The conversation as it goes out to the model, with earlier reasoning
     /// left behind when Settings says so.
     ///
