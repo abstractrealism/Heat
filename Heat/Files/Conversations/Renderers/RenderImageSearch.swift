@@ -59,59 +59,83 @@ struct FoundImage: Identifiable, Hashable {
     }
 }
 
-/// A row of pictures, with one preview panel between them.
+/// A row of pictures, each opening in a sheet.
 ///
-/// Not one per thumbnail. QuickLook's panel is a single shared object, so ten
-/// thumbnails each binding their own preview all reach for the same panel and
-/// whichever gets there first answers for the rest — which is why every
-/// thumbnail opened the same picture.
+/// Deliberately not QuickLook. Its panel is a single shared object that a view
+/// has to win control of, and two attempts at driving it from here produced
+/// the same two failures: `QLPreviewPanel ... has no controller` in the log,
+/// and every thumbnail opening whichever picture got to the panel first. It
+/// also previews files rather than addresses, so each picture had to be
+/// downloaded to a temporary file before it would show at all.
+///
+/// A sheet has none of that. The state is one optional, held here, and the
+/// picture it shows is the one that was clicked because nothing else can be.
 struct ImageStripView: View {
     let images: [FoundImage]
 
-    @State private var previewURL: URL?
-    @State private var loadingID: URL?
+    @State private var preview: FoundImage?
 
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 6) {
                 ForEach(images) { found in
-                    RenderImageView(found: found, isLoading: loadingID == found.id) {
-                        Task { await preview(found.image) }
-                    }
+                    RenderImageView(found: found) { preview = found }
+                        .id(found.id)
                 }
             }
             .frame(height: 200)
         }
         .scrollIndicators(.hidden)
         .clipShape(.rect(cornerRadius: 5))
-        .quickLookPreview($previewURL)
-    }
-
-    /// Fetches the picture to a file before previewing it.
-    ///
-    /// QuickLook previews files, not addresses: handed an https URL it tries to
-    /// stat it as a path, fails to find it, and reports that the document
-    /// couldn't be previewed — which reads as a broken image rather than as the
-    /// wrong kind of URL.
-    private func preview(_ url: URL) async {
-        loadingID = url
-        defer { loadingID = nil }
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true else {
-                return
-            }
-            // Named for what it is: QuickLook picks its renderer from the
-            // extension, and a file without one previews as nothing.
-            let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
-            let file = URL.temporaryDirectory.appending(path: "heat-preview-\(UUID().uuidString).\(ext)")
-            try data.write(to: file)
-            previewURL = file
-        } catch {
-            // Nothing to say that the thumbnail doesn't already show. A
-            // picture that won't fetch is the source's business, and a search
-            // returns plenty of them.
+        .sheet(item: $preview) { found in
+            ImagePreviewSheet(found: found)
         }
+    }
+}
+
+/// One picture, as large as the sheet allows.
+private struct ImagePreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+
+    let found: FoundImage
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Fitted rather than filled: this is the view for looking at the
+            // whole picture, unlike the thumbnail, which crops to a square on
+            // purpose.
+            AsyncImage(url: found.image) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } placeholder: {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(12)
+
+            Divider()
+
+            HStack {
+                if let host = found.source?.host() {
+                    Text(host)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                if let source = found.source {
+                    Button("Open Source Page") { openURL(source) }
+                }
+                Button("Open Image") { openURL(found.image) }
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
+        }
+        .frame(minWidth: 480, idealWidth: 720, minHeight: 360, idealHeight: 560)
     }
 }
 
@@ -119,7 +143,6 @@ struct RenderImageView: View {
     @Environment(\.openURL) private var openURL
 
     let found: FoundImage
-    var isLoading = false
     let action: () -> Void
 
     var body: some View {
@@ -132,22 +155,20 @@ struct RenderImageView: View {
                     RoundedRectangle(cornerRadius: 5)
                         .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                 }
-                .overlay {
-                    if isLoading {
-                        ProgressView()
-                            .controlSize(.small)
-                            .padding(6)
-                            .background(.thinMaterial, in: .rect(cornerRadius: 6))
-                    }
-                }
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            if let source = found.source {
-                Button("Open Source Page") { openURL(source) }
-            }
-            Button("Open Image") { openURL(found.image) }
-        }
+        // Bound to this picture explicitly rather than read from whatever the
+        // view happens to hold when the menu is built, which is how every
+        // thumbnail ended up offering the first result's links.
+        .contextMenu { menu(for: found) }
         .help(found.source?.host().map { "From \($0)" } ?? found.image.absoluteString)
+    }
+
+    @ViewBuilder
+    private func menu(for found: FoundImage) -> some View {
+        if let source = found.source {
+            Button("Open Source Page") { openURL(source) }
+        }
+        Button("Open Image") { openURL(found.image) }
     }
 }
