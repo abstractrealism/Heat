@@ -165,12 +165,15 @@ struct MessageFieldControls: View {
                 }
             }
         }
-        .menuStyle(.borderlessButton)
+        // Drawn as a button rather than a borderless menu. The borderless style
+        // doesn't render the label it's given: AppKit takes an image and a
+        // title out of it and draws its own control, which silently discarded
+        // the count, the capsule, and every font and scale modifier — the
+        // reason the wrench stayed a size too large whatever it was asked for.
+        // As a button the label is drawn by SwiftUI, the same as Thinking.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
-        // A menu sizes its own label to the control size it was given, which is
-        // what made this read a size larger than the button beside it despite
-        // asking for the same font.
-        .controlSize(.small)
         .fixedSize()
         .disabled(!modelCanUseTools)
         .opacity(modelCanUseTools ? 1 : 0.5)
