@@ -196,9 +196,19 @@ private struct ImagePreviewSheet: View {
     }
 }
 
+/// A thumbnail that opens the picture.
+///
+/// No context menu. One was here offering the source page and the image, and
+/// it acted on the first result whichever thumbnail it was raised from —
+/// through two attempts at fixing it, including giving each thumbnail an
+/// explicit identity. `contextMenu` on items inside a horizontal `ScrollView`
+/// builds its menu against the wrong item, and passing the picture into the
+/// menu explicitly doesn't change that.
+///
+/// Both actions live in the sheet the thumbnail opens, where they work. A menu
+/// that quietly acts on something other than what was clicked is worse than no
+/// menu, and this one was redundant the moment the sheet gained the buttons.
 struct RenderImageView: View {
-    @Environment(\.openURL) private var openURL
-
     let found: FoundImage
     let action: () -> Void
 
@@ -214,18 +224,6 @@ struct RenderImageView: View {
                 }
         }
         .buttonStyle(.plain)
-        // Bound to this picture explicitly rather than read from whatever the
-        // view happens to hold when the menu is built, which is how every
-        // thumbnail ended up offering the first result's links.
-        .contextMenu { menu(for: found) }
-        .help(found.source?.host().map { "From \($0)" } ?? found.image.absoluteString)
-    }
-
-    @ViewBuilder
-    private func menu(for found: FoundImage) -> some View {
-        if let source = found.source {
-            Button("Open Source Page") { openURL(source) }
-        }
-        Button("Open Image") { openURL(found.image) }
+        .help(found.source?.host().map { "From \($0) — click to open" } ?? found.image.absoluteString)
     }
 }
