@@ -895,8 +895,23 @@ final class ConversationViewModel {
         // Set conversation state
         conversation.state = .none
 
+        // Suggestions are a list, so a salvaged tag has to hold more than one
+        // line — otherwise a model that answered in prose would have its one
+        // sentence offered as a reply to send.
+        if conversation.suggestions.isEmpty, let salvaged = salvagedTag(from: lastResponse) {
+            let lines = salvaged.content
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if lines.count > 1 {
+                conversation.suggestions = lines
+                file.modified = .now
+                ChatDebug.log("← suggestions taken from <\(salvaged.name)>, which isn't <suggested_replies>")
+            }
+        }
+
         if conversation.suggestions.isEmpty {
-            ChatDebug.log("← suggestions: none — no <suggested_replies> tag in the reply: \(unparsed(lastResponse))")
+            ChatDebug.log("← suggestions: none — no usable tag in the reply: \(unparsed(lastResponse))")
         } else {
             ChatDebug.log("← suggestions: \(conversation.suggestions)")
         }
@@ -949,11 +964,58 @@ final class ConversationViewModel {
         // As above: don't let a cancelled turn fall through to saving.
         try Task.checkCancellation()
 
+        // A title is one short line, so a salvaged tag has to look like one.
+        // Without that, a model that wrapped a paragraph in <answer> would name
+        // the conversation with the paragraph.
+        if file.name == nil, let salvaged = salvagedTag(from: lastResponse),
+           !salvaged.content.contains("\n"), salvaged.content.count <= 120 {
+            file.name = salvaged.content
+            file.modified = .now
+            ChatDebug.log("← title: \(salvaged.content) — taken from <\(salvaged.name)>, which isn't <title>")
+        }
+
         if let name = file.name {
             ChatDebug.log("← title: \(name)")
         } else {
-            ChatDebug.log("← title: none — no <title> tag in the reply: \(unparsed(lastResponse))")
+            ChatDebug.log("← title: none — no usable tag in the reply: \(unparsed(lastResponse))")
         }
+    }
+
+    /// Content from whatever tag a reply used, when it didn't use the one it
+    /// was asked for.
+    ///
+    /// A model that can't quite hold a format usually produces the right answer
+    /// in the wrong wrapper — `<topic>` where `<title>` was asked for,
+    /// `<replies>` for `<suggested_replies>`. Both were seen from models in
+    /// ordinary use. Taking the tag it did use turns a near miss into a result
+    /// instead of nothing at all.
+    ///
+    /// Run once, after a stream has ended having found nothing, so it costs a
+    /// single pass over a short reply rather than a pass per token.
+    ///
+    /// Reasoning tags are skipped: that's the model's working, and a model that
+    /// reasoned and then failed to tag its answer would otherwise have its
+    /// scratch notes promoted to the answer.
+    private func salvagedTag(from response: String) -> (name: String, content: String)? {
+        let ignored: Set<String> = ["think", "thinking", "reflection", "scratchpad", "reasoning"]
+        var remainder = Substring(response)
+
+        while let open = remainder.firstMatch(of: /<([A-Za-z][A-Za-z0-9_-]*)>/) {
+            let name = String(open.1)
+            let afterOpen = remainder[open.range.upperBound...]
+
+            // An unclosed tag tells us nothing about where its content ends.
+            guard let close = afterOpen.range(of: "</\(name)>") else {
+                remainder = afterOpen
+                continue
+            }
+            let content = afterOpen[..<close.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !ignored.contains(name.lowercased()), !content.isEmpty {
+                return (name, content)
+            }
+            remainder = afterOpen[close.upperBound...]
+        }
+        return nil
     }
 
     /// What a model actually said, when what it said couldn't be used.
