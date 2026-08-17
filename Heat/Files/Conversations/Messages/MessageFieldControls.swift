@@ -60,6 +60,13 @@ struct MessageFieldControls: View {
         activeToolIDs.filter { Toolbox(name: $0) == nil }.sorted()
     }
 
+    private func binding(for toolID: String) -> Binding<Bool> {
+        Binding(
+            get: { activeToolIDs.contains(toolID) },
+            set: { conversationViewModel.setTool(toolID, enabled: $0) }
+        )
+    }
+
     /// A count rather than a label, because the interesting question is whether
     /// anything is armed. Which ones is a menu away; that something is, has to
     /// be readable without opening anything — the same reason Thinking left the
@@ -69,26 +76,17 @@ struct MessageFieldControls: View {
         let count = activeToolIDs.count
         let isArmed = count > 0 && modelCanUseTools
         Menu {
+            // Toggles rather than buttons: a menu Toggle draws the platform's
+            // own checkmark, which is what says a tool is on. A Button with a
+            // checkmark image beside its title has to be read to be understood.
             ForEach(Toolbox.allCases, id: \.name) { tool in
-                Button {
-                    conversationViewModel.setTool(tool.name, enabled: !activeToolIDs.contains(tool.name))
-                } label: {
-                    if activeToolIDs.contains(tool.name) {
-                        Label(tool.label, systemImage: "checkmark")
-                    } else {
-                        Text(tool.label)
-                    }
-                }
+                Toggle(tool.label, isOn: binding(for: tool.name))
             }
             if !unrecognizedToolIDs.isEmpty {
                 Divider()
                 Section("Unrecognized") {
                     ForEach(unrecognizedToolIDs, id: \.self) { toolID in
-                        Button {
-                            conversationViewModel.setTool(toolID, enabled: false)
-                        } label: {
-                            Label(toolID, systemImage: "checkmark")
-                        }
+                        Toggle(toolID, isOn: binding(for: toolID))
                     }
                 }
             }
@@ -102,7 +100,10 @@ struct MessageFieldControls: View {
             }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "wrench.and.screwdriver")
+                // Built the same way as Thinking, so the glyph is sized against
+                // its own text rather than standing alone at full weight.
+                Label("Tools", systemImage: "wrench.and.screwdriver")
+                    .labelStyle(.titleAndIcon)
                 if count > 0 {
                     Text("\(count)")
                         .monospacedDigit()
