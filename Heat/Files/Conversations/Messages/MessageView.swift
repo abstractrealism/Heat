@@ -101,6 +101,18 @@ struct ToolContentsView: View {
         self.message = message
     }
 
+    /// Pictures a search found, carried on the message rather than in its
+    /// content — see WebSearchTool for why they aren't content.
+    private var foundImages: [(image: URL, source: URL?)] {
+        guard let entries = message.metadata["images"]?.arrayValue else { return [] }
+        return entries.compactMap { entry in
+            guard let fields = entry.objectValue,
+                  let image = fields["image"]?.stringValue.flatMap(URL.init(string:))
+            else { return nil }
+            return (image, fields["source"]?.stringValue.flatMap(URL.init(string:)))
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
@@ -110,6 +122,22 @@ struct ToolContentsView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+
+            // Outside the disclosure. A search for pictures that shows none
+            // until something is clicked has not really answered, and the
+            // model has already told the user they are here.
+            if !foundImages.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 6) {
+                        ForEach(foundImages, id: \.image) { found in
+                            RenderImageView(url: found.image, source: found.source)
+                        }
+                    }
+                    .frame(height: 200)
+                }
+                .scrollIndicators(.hidden)
+                .clipShape(.rect(cornerRadius: 5))
+            }
 
             if isDisclosed {
                 ContentsView(message.contents)

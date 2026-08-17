@@ -20,7 +20,7 @@ struct RenderImageSearch: View {
                 HStack(spacing: 6) {
                     ForEach(results.prefix(10).indices, id: \.self) { index in
                         if let url = results[index].image {
-                            RenderImageView(url: url)
+                            RenderImageView(url: url, source: results[index].url)
                         }
                     }
                 }
@@ -53,7 +53,14 @@ struct RenderImageSearch: View {
 }
 
 struct RenderImageView: View {
+    @Environment(\.openURL) private var openURL
+
     let url: URL
+
+    /// The page the picture came from, where that's known. Offered as a
+    /// secondary action rather than the click: someone clicking a thumbnail
+    /// wants to see the picture larger, not leave for a website.
+    var source: URL?
 
     @State private var previewURL: URL? = nil
 
@@ -72,5 +79,12 @@ struct RenderImageView: View {
         }
         .buttonStyle(.plain)
         .quickLookPreview($previewURL)
+        .contextMenu {
+            if let source {
+                Button("Open Source Page") { openURL(source) }
+            }
+            Button("Open Image") { openURL(url) }
+        }
+        .help(source?.host().map { "From \($0)" } ?? url.absoluteString)
     }
 }

@@ -77,14 +77,15 @@ extension WebSearchTool {
                 )]
             case .image:
                 let searchResponse = try await WebSearchSession.shared.searchImages(query: args.query)
+                let found = Array(searchResponse.results.prefix(10))
                 let response = Response(
                     kind: .image,
                     instructions: """
-                        Search complete. Showing \(searchResponse.results.count) images. DO NOT repeat any of the \
-                        image URLs here. Let the user know you found \(searchResponse.results.count) images, each
-                        one will take the user to the website it originates from. Do not respond with any more URLs.
+                        Search complete. \(found.count) images are being shown to the user beneath your reply. \
+                        DO NOT repeat any of the image URLs — the user can already see the pictures. Simply say \
+                        what you found. Do not respond with any more URLs.
                         """,
-                    results: Array(searchResponse.results.prefix(10))
+                    results: found
                 )
                 let data = try JSONEncoder().encode(response)
                 let content = String(data: data, encoding: .utf8)
@@ -93,7 +94,26 @@ extension WebSearchTool {
                     content: content,
                     toolCallID: toolCall.id,
                     name: toolCall.function?.name,
-                    metadata: ["label": .string("Searched web images for '\(args.query)'")]
+                    metadata: [
+                        "label": .string("Searched web images for '\(args.query)'"),
+
+                        // Carried in metadata rather than as image content on
+                        // the message. Content goes back to the model on every
+                        // later turn, and the Ollama encoder downloads each
+                        // image to send it — so a search for pictures would
+                        // re-fetch all ten of them before every subsequent
+                        // message, and hand them to a model that may not read
+                        // images at all. Metadata is stored and displayed but
+                        // never sent.
+                        "images": .array(found.compactMap { result in
+                            guard let image = result.image else { return nil }
+                            return .object([
+                                "image": .string(image.absoluteString),
+                                "source": .string(result.url.absoluteString),
+                                "title": .string(result.title ?? ""),
+                            ])
+                        }),
+                    ]
                 )]
             }
             

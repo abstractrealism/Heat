@@ -1,6 +1,23 @@
 import Foundation
 import Fuzi
 
+/// Google search by scraping. **Nothing calls this.**
+///
+/// `WebSearchSession` uses `DuckSearch` for both text and images. The web path
+/// here has been unreferenced for some time; the image path was in use until
+/// Google stopped serving results to it.
+///
+/// Both request Google's legacy no-JavaScript rendering (`gbv=1`) and read
+/// results out of the markup, which is the part that broke: the request still
+/// succeeds and returns a page correctly titled for the query, containing none
+/// of the `/imgres` links `extractImageResults` looks for. So it fails as an
+/// empty result list rather than as an error, which is the worst way for a
+/// search to fail — indistinguishable from the web having no answer.
+///
+/// Kept rather than deleted, as somewhere to start from if Google is worth
+/// another attempt, or if DuckDuckGo ever needs a fallback. Anything reviving
+/// it should expect to replace the `gbv=1` approach entirely, not repair the
+/// selectors.
 public struct GoogleSearch: WebSearch, WebImageSearch {
 
     let host = "https://www.google.com/search"
