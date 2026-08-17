@@ -599,10 +599,12 @@ final class ConversationViewModel {
     /// the user sends the next prompt, at which point their results are stale
     /// and their writes clobber the new turn's state. Cancelling first means
     /// only one turn ever owns the conversation.
-    func submit(chat prompt: String, context: [String: Value] = [:], toolIDs: Set<String>? = nil) {
+    func submit(chat prompt: String, images: [URL] = [], context: [String: Value] = [:], toolIDs: Set<String>? = nil) {
         // Intercepted before a message is made from it: these act on the
-        // conversation rather than being said in it.
-        if let command = SlashCommand(prompt) {
+        // conversation rather than being said in it. Not when something is
+        // attached, though — a picture with "/clear" typed beside it is a
+        // message, and running the command would throw the picture away.
+        if images.isEmpty, let command = SlashCommand(prompt) {
             perform(command)
             return
         }
@@ -644,7 +646,7 @@ final class ConversationViewModel {
                     conversation.toolIDs.formUnion(toolIDs)
                 }
 
-                try await generate(chat: prompt, context: context)
+                try await generate(chat: prompt, images: images, context: context)
             } catch {
                 guard !Task.isCancelled else { return }
                 state.log(error: error)
@@ -681,7 +683,10 @@ final class ConversationViewModel {
             ChatDebug.log("→ user prompt: \(prompt)")
 
             // New user message
-            let imageContent = images.map { Message.Content.image(.init(url: $0, format: .jpeg)) }
+            // PNG because that's what the picker writes. The format travels
+            // with the image as its media type, so claiming JPEG describes the
+            // file wrongly to any service that reads it.
+            let imageContent = images.map { Message.Content.image(.init(url: $0, format: .png)) }
             let textContent = Message.Content.text(PromptTemplate(prompt, with: context))
 
             let userMessage = Message(role: .user, contents: [textContent] + imageContent)

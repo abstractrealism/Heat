@@ -30,8 +30,13 @@ final class PhotoPickerModel {
         didSet { handleSelectionChange() }
     }
 
-    func writeAll() throws -> [String] {
-        var out = [String]()
+    /// Writes the picked images to disk and hands back where they went.
+    ///
+    /// URLs rather than filenames: a message stores the location of an image,
+    /// so returning names left every caller to rebuild the same path. Nothing
+    /// called this at all, which is why picked images were never sent.
+    func writeAll() throws -> [URL] {
+        var out = [URL]()
         for selected in selections {
             guard let image = selected.photo else {
                 throw PhotoPickerError.missingPhoto
@@ -46,7 +51,7 @@ final class PhotoPickerModel {
                 throw PhotoPickerError.missingResourceURL
             }
             try data.write(to: url)
-            out.append(filename)
+            out.append(url)
         }
         return out
     }

@@ -10,7 +10,7 @@ struct MessageField: View {
     @Environment(ConversationViewModel.self) var conversationViewModel
     @Environment(\.colorScheme) var colorScheme
 
-    typealias ActionHandler = (String, [String: String]?, Set<String>?) -> Void
+    typealias ActionHandler = (String, [URL], [String: String]?, Set<String>?) -> Void
 
     let action: ActionHandler
 
@@ -120,7 +120,11 @@ struct MessageField: View {
             .sheet(item: $instructionFile) { file in
                 NavigationStack {
                     MessageInstructions(file: file) { (instructions, context, toolIDs) in
-                        action(instructions, context, toolIDs)
+                        // Anything attached goes with a template too. Picking a
+                        // saved prompt while a picture is waiting shouldn't
+                        // silently drop the picture.
+                        let images = (try? photoPickerModel.writeAll()) ?? []
+                        action(instructions, images, context, toolIDs)
                         clear()
                     }
                 }
@@ -224,7 +228,11 @@ struct MessageField: View {
     }
 
     func handleSubmit() async throws {
-        action(content, nil, nil)
+        // Written here, at the point of sending, rather than when they were
+        // picked: a picture that's chosen and then removed before sending
+        // shouldn't leave a file behind.
+        let images = (try? photoPickerModel.writeAll()) ?? []
+        action(content, images, nil, nil)
         clear()
     }
 
@@ -234,13 +242,19 @@ struct MessageField: View {
 
     private func clear() {
         content = ""
+        photoPickerModel.removeAll()
     }
+
+    /// Whether there's anything to send. A picture on its own counts — asking
+    /// what something is, with no words, is a reasonable thing to want, and
+    /// the send button was hidden until text was typed.
+    private var hasContent: Bool { !content.isEmpty || !photoPickerModel.selections.isEmpty }
 
     // Stop replaces send only while the field is empty: sending a follow-up
     // mid-generation is supported (it supersedes the running turn), so typing
     // must always get the send button back.
-    private var showStopGenerating: Bool    { conversationViewModel.isGenerating && content.isEmpty }
-    private var showSubmit: Bool            { !content.isEmpty }
+    private var showStopGenerating: Bool    { conversationViewModel.isGenerating && !hasContent }
+    private var showSubmit: Bool            { hasContent }
 
     #if os(macOS)
     private var minHeight: CGFloat = 0

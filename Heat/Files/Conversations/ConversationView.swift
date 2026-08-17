@@ -21,8 +21,8 @@ struct ConversationView: View {
         MessageList()
             .navigationTitle(conversationViewModel.title)
             .safeAreaInset(edge: .bottom, alignment: .center) {
-                MessageField { (prompt, context, toolIDs) in
-                    handleSubmit(prompt, context: context, toolIDs: toolIDs)
+                MessageField { (prompt, images, context, toolIDs) in
+                    handleSubmit(prompt, images: images, context: context, toolIDs: toolIDs)
                 }
                 .background(.background)
             }
@@ -48,9 +48,10 @@ struct ConversationView: View {
         }
     }
 
-    func handleSubmit(_ prompt: String, context: [String: String]? = nil, toolIDs: Set<String>? = nil) {
+    func handleSubmit(_ prompt: String, images: [URL] = [], context: [String: String]? = nil, toolIDs: Set<String>? = nil) {
         conversationViewModel.submit(
             chat: prompt,
+            images: images,
             context: context?.mapValues { Value.string($0) } ?? [:],
             toolIDs: toolIDs
         )
