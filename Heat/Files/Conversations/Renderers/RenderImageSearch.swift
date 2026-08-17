@@ -73,69 +73,126 @@ struct FoundImage: Identifiable, Hashable {
 struct ImageStripView: View {
     let images: [FoundImage]
 
-    @State private var preview: FoundImage?
+    /// Which picture the sheet is showing, kept apart from whether the sheet is
+    /// up. Presenting on the item itself would tie the sheet's identity to the
+    /// picture, so stepping to the next one would dismiss and re-present rather
+    /// than simply change what's inside.
+    @State private var previewIndex = 0
+    @State private var isPreviewing = false
 
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 6) {
                 ForEach(images) { found in
-                    RenderImageView(found: found) { preview = found }
-                        .id(found.id)
+                    RenderImageView(found: found) {
+                        previewIndex = images.firstIndex(of: found) ?? 0
+                        isPreviewing = true
+                    }
+                    .id(found.id)
                 }
             }
             .frame(height: 200)
         }
         .scrollIndicators(.hidden)
         .clipShape(.rect(cornerRadius: 5))
-        .sheet(item: $preview) { found in
-            ImagePreviewSheet(found: found)
+        .sheet(isPresented: $isPreviewing) {
+            ImagePreviewSheet(images: images, index: $previewIndex)
         }
     }
 }
 
-/// One picture, as large as the sheet allows.
+/// One picture at a time, as large as the sheet allows, with the rest of the
+/// results a keypress away.
 private struct ImagePreviewSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
-    let found: FoundImage
+    let images: [FoundImage]
+    @Binding var index: Int
+
+    private var found: FoundImage? {
+        images.indices.contains(index) ? images[index] : images.first
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Fitted rather than filled: this is the view for looking at the
-            // whole picture, unlike the thumbnail, which crops to a square on
-            // purpose.
-            AsyncImage(url: found.image) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } placeholder: {
-                ProgressView()
-                    .controlSize(.small)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(12)
-
-            Divider()
-
-            HStack {
-                if let host = found.source?.host() {
-                    Text(host)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+            if let found {
+                // Fitted rather than filled: this is the view for looking at
+                // the whole picture, unlike the thumbnail, which crops to a
+                // square on purpose.
+                AsyncImage(url: found.image) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    ProgressView()
+                        .controlSize(.small)
                 }
-                Spacer()
-                if let source = found.source {
-                    Button("Open Source Page") { openURL(source) }
-                }
-                Button("Open Image") { openURL(found.image) }
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
+                // Keyed to the picture so moving on doesn't briefly show the
+                // previous one at the new one's size while it loads.
+                .id(found.id)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(12)
+
+                Divider()
+                controls(for: found)
             }
-            .padding(12)
         }
         .frame(minWidth: 480, idealWidth: 720, minHeight: 360, idealHeight: 560)
+    }
+
+    @ViewBuilder
+    private func controls(for found: FoundImage) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                step(-1)
+            } label: {
+                Image(systemName: "chevron.left")
+            }
+            .disabled(index <= 0)
+            // No modifier, so the arrow keys work on their own. Attached to the
+            // buttons rather than watched separately, which keeps the shortcut
+            // and the control that performs it in one place and greys the key
+            // out at the ends along with the button.
+            .keyboardShortcut(.leftArrow, modifiers: [])
+            .help("Previous image")
+
+            Button {
+                step(1)
+            } label: {
+                Image(systemName: "chevron.right")
+            }
+            .disabled(index >= images.count - 1)
+            .keyboardShortcut(.rightArrow, modifiers: [])
+            .help("Next image")
+
+            Text("\(index + 1) of \(images.count)")
+                .font(.footnote)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+
+            if let host = found.source?.host() {
+                Text(host)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 12)
+
+            if let source = found.source {
+                Button("Open Source Page") { openURL(source) }
+            }
+            Button("Open Image") { openURL(found.image) }
+            Button("Done") { dismiss() }
+                .keyboardShortcut(.defaultAction)
+        }
+        .padding(12)
+    }
+
+    private func step(_ delta: Int) {
+        index = min(max(index + delta, 0), images.count - 1)
     }
 }
 
