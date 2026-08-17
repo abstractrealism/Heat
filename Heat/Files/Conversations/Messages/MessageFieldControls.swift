@@ -295,7 +295,13 @@ struct MessageFieldControls: View {
             .font(.footnote)
             .foregroundStyle(.secondary)
         }
-        .menuStyle(.borderlessButton)
+        // As with the tools menu: the borderless style hands the label to
+        // AppKit, which draws the chevron below as an icon on the left and adds
+        // an indicator of its own on the right — two of them, neither where the
+        // code puts one. Drawn as a button, the label appears as written.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help(modelHelp)
     }
