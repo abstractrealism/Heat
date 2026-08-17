@@ -4,35 +4,20 @@ import HeatKit
 
 extension Message {
 
+    /// Whether this message appears without the run having to be expanded.
+    ///
+    /// Tool calls and their responses show. They don't render their contents —
+    /// each is a single line ("Browsing website...", "Browsed website") that
+    /// discloses its own detail when clicked, and an assistant message calling
+    /// a tool carries its own Show Thinking. Hiding them put a second
+    /// disclosure around things that already had one, so a run reported that
+    /// there was work to see while the work was one line long.
+    ///
+    /// Left as a real question rather than always true: a message with nothing
+    /// to show for itself should still be able to say so, and the run collapses
+    /// again the moment anything answers false.
     var shouldShowInRun: Bool {
-
-        // Only show some tool responses
-        if role == .tool, let name = name, let toolName = Toolbox(name: name) {
-            switch toolName {
-            case .generateImages:
-                return true
-            case .searchCalendar:
-                return false
-            case .searchWeb:
-                return false
-            case .browseWeb:
-                return false
-            }
-        }
-
-        if role == .assistant, let toolCalls = toolCalls {
-            for toolCall in toolCalls {
-                switch Toolbox(name: toolCall.function?.name) {
-                case .generateImages:
-                    return false
-                default:
-                    return false
-                }
-            }
-        }
-
-        // When in doubt, show message
-        return true
+        true
     }
 
     var hasImage: Bool {

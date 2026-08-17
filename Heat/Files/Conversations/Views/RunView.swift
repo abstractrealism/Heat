@@ -11,24 +11,31 @@ struct RunView: View {
         self.run = run
     }
 
+    /// Whether this run is holding anything back.
+    ///
+    /// The button used to appear whenever a run had more than one message,
+    /// which counted tool calls and their responses — both of which show
+    /// anyway, and each of which already discloses its own detail. So a run
+    /// offered to reveal work that was in front of you the whole time, under a
+    /// label that never changed to say it had been pressed.
+    private var hasHiddenMessages: Bool {
+        run.messages.contains { !$0.shouldShowInRun }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if run.messages.count > 1 {
+            if hasHiddenMessages {
                 Button {
                     showAllMessages.toggle()
                 } label: {
-                    Text("Show Work")
+                    Text(showAllMessages ? "Hide Work" : "Show Work")
                 }
                 .buttonStyle(.bordered)
             }
 
             ForEach(run.messages) { message in
-                if showAllMessages {
+                if showAllMessages || message.shouldShowInRun {
                     MessageView(message)
-                } else {
-                    if message.shouldShowInRun {
-                        MessageView(message)
-                    }
                 }
             }
         }
