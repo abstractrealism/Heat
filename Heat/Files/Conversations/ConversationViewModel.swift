@@ -281,6 +281,30 @@ final class ConversationViewModel {
         persistConversation()
     }
 
+    /// Takes a fresh copy of the Assistant instruction while the conversation
+    /// still hasn't said anything.
+    ///
+    /// A conversation carries its own copy of the system prompt and tool set,
+    /// taken when the file was created — and ⌘N creates the file before a word
+    /// is typed. So an untouched conversation sitting in the sidebar from last
+    /// week was holding last week's prompt, and editing the instruction in
+    /// Settings appeared to do nothing until a conversation was made after the
+    /// edit. Refreshing here puts these on the same footing as the model and
+    /// the reasoning setting: current until first used, then fixed.
+    ///
+    /// Still fixed from the first message rather than followed forever. The
+    /// answers in a conversation were produced under particular instructions,
+    /// and rewriting them afterwards would leave a transcript that no longer
+    /// makes sense as a whole.
+    private func refreshInstructionIfUnused() {
+        guard conversation.messages.isEmpty else { return }
+        guard let instruction = try? state.file(Instruction.self, fileID: Defaults.instructionAssistantID) else {
+            return
+        }
+        conversation.instructions = instruction.instructions
+        conversation.toolIDs = instruction.toolIDs
+    }
+
     /// Writes down what this conversation is using, the first time it sends.
     ///
     /// Until a conversation has said anything it follows the defaults, so a
@@ -572,6 +596,11 @@ final class ConversationViewModel {
                     let stored = try state.file(Conversation.self, fileID: file.id)
                     read(stored)
                 }
+
+                // Before the tools below are merged in, or a template's tools
+                // would be wiped by the refresh on the very turn they were
+                // chosen for.
+                refreshInstructionIfUnused()
 
                 // Augment the tool set associated with the conversation, it's a better user experience to keep
                 // around tools used with custom instructions so the assistant can use them for followup questions.
