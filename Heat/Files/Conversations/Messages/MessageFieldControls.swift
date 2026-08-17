@@ -34,10 +34,105 @@ struct MessageFieldControls: View {
         HStack(spacing: 11) {
             modelPicker
             thinkingToggle
+            toolsMenu
             contextGauge
             Spacer(minLength: 0)
         }
         .padding(.leading, leadingInset)
+    }
+
+    // MARK: - Tools
+
+    private var activeToolIDs: Set<String> {
+        conversationViewModel.conversation.toolIDs
+    }
+
+    /// Whether the chosen model can call a tool at all. Unknown counts as yes,
+    /// as with reasoning — only Ollama reports this.
+    private var modelCanUseTools: Bool {
+        conversationViewModel.selectedModel?.supports(.tools) ?? true
+    }
+
+    /// Tool ids on this conversation that no tool answers to — hand-edited, or
+    /// left over from a build that had more of them. Listed so they can be seen
+    /// and switched off rather than sitting there invisibly.
+    private var unrecognizedToolIDs: [String] {
+        activeToolIDs.filter { Toolbox(name: $0) == nil }.sorted()
+    }
+
+    /// A count rather than a label, because the interesting question is whether
+    /// anything is armed. Which ones is a menu away; that something is, has to
+    /// be readable without opening anything — the same reason Thinking left the
+    /// + menu.
+    @ViewBuilder
+    private var toolsMenu: some View {
+        let count = activeToolIDs.count
+        let isArmed = count > 0 && modelCanUseTools
+        Menu {
+            ForEach(Toolbox.allCases, id: \.name) { tool in
+                Button {
+                    conversationViewModel.setTool(tool.name, enabled: !activeToolIDs.contains(tool.name))
+                } label: {
+                    if activeToolIDs.contains(tool.name) {
+                        Label(tool.label, systemImage: "checkmark")
+                    } else {
+                        Text(tool.label)
+                    }
+                }
+            }
+            if !unrecognizedToolIDs.isEmpty {
+                Divider()
+                Section("Unrecognized") {
+                    ForEach(unrecognizedToolIDs, id: \.self) { toolID in
+                        Button {
+                            conversationViewModel.setTool(toolID, enabled: false)
+                        } label: {
+                            Label(toolID, systemImage: "checkmark")
+                        }
+                    }
+                }
+            }
+            if count > 0 {
+                Divider()
+                Button("Turn All Off") {
+                    for toolID in activeToolIDs {
+                        conversationViewModel.setTool(toolID, enabled: false)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "wrench.and.screwdriver")
+                if count > 0 {
+                    Text("\(count)")
+                        .monospacedDigit()
+                }
+            }
+            .font(.footnote)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .foregroundStyle(isArmed ? Color.white : Color.secondary)
+            .background(
+                isArmed ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
+                in: .capsule
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(!modelCanUseTools)
+        .opacity(modelCanUseTools ? 1 : 0.5)
+        .help(toolsHelp)
+    }
+
+    private var toolsHelp: String {
+        guard modelCanUseTools else {
+            return "\(conversationViewModel.selectedModelName) can't call tools, so none are offered to it. Pick a model that supports them to use this."
+        }
+        if activeToolIDs.isEmpty {
+            return "Abilities the assistant may use in this conversation, such as searching the web. None are on. Changing this affects this conversation only — Settings › Instructions › Assistant sets the default for new ones."
+        }
+        return "Abilities the assistant may use in this conversation. It decides when to reach for one. Changing this affects this conversation only — Settings › Instructions › Assistant sets the default for new ones."
     }
 
     // MARK: - Context

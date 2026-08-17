@@ -41,6 +41,20 @@ public enum Toolbox: CaseIterable, Sendable {
     public var name: String {
         tool.function?.name ?? ""
     }
+
+    /// What to call this when offering it to somebody.
+    ///
+    /// Separate from `name`, which is written for the model and may change with
+    /// the prompting — a menu shouldn't read `browse_web`, and shouldn't shift
+    /// wording because a function was renamed.
+    public var label: String {
+        switch self {
+        case .generateImages: "Generate Images"
+        case .searchCalendar: "Search Calendar"
+        case .searchWeb: "Search the Web"
+        case .browseWeb: "Browse Web Pages"
+        }
+    }
     
     public static func get(names: Set<String>) -> [Tool] {
         return Toolbox.allCases

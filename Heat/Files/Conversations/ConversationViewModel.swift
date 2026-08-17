@@ -256,6 +256,24 @@ final class ConversationViewModel {
         conversation.thinkingEnabled ?? state.config.thinkingByDefault
     }
 
+    /// Switches a tool on or off for this conversation alone.
+    ///
+    /// Until now a conversation could only gain tools — a template's set was
+    /// merged in and nothing took it out again, so one use of a template armed
+    /// a tool for the life of the conversation. The Assistant instruction is
+    /// still where the default for new conversations lives; this doesn't touch
+    /// it, so turning something off here doesn't quietly rewrite a setting that
+    /// applies everywhere else.
+    func setTool(_ toolID: String, enabled: Bool) {
+        if enabled {
+            conversation.toolIDs.insert(toolID)
+        } else {
+            conversation.toolIDs.remove(toolID)
+        }
+        file.modified = .now
+        persistConversation()
+    }
+
     /// Settles the question for this conversation, so it stops following the
     /// default. Turning it back to match the default doesn't resume following
     /// it: an explicit choice stays explicit, which is the point of making it.
