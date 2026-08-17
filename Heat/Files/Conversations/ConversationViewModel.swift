@@ -270,8 +270,13 @@ final class ConversationViewModel {
         } else {
             conversation.toolIDs.remove(toolID)
         }
+        // Marks the set as this conversation's own, so the refresh that keeps an
+        // unused conversation current stops overwriting it.
+        conversation.toolsChosen = true
         file.modified = .now
         persistConversation()
+        let names = conversation.toolIDs.sorted().joined(separator: ", ")
+        ChatDebug.log("⚒︎ tools for this conversation: \(names.isEmpty ? "none" : names)")
     }
 
     /// Settles the question for this conversation, so it stops following the
@@ -320,7 +325,14 @@ final class ConversationViewModel {
             return
         }
         conversation.instructions = instruction.instructions
-        conversation.toolIDs = instruction.toolIDs
+
+        // Unless somebody has already picked for this conversation. Refreshing
+        // over an explicit choice was worse than the staleness it was meant to
+        // fix: switching a tool on in a new conversation and sending lost the
+        // choice between the click and the request.
+        if conversation.toolsChosen != true {
+            conversation.toolIDs = instruction.toolIDs
+        }
     }
 
     /// Writes down what this conversation is using, the first time it sends.

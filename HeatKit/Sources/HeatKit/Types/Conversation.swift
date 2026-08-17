@@ -36,6 +36,16 @@ public struct Conversation: Codable, Sendable {
     /// on.
     public var thinkingEnabled: Bool?
 
+    /// Whether the tool set was chosen for this conversation rather than
+    /// inherited from the Assistant instruction.
+    ///
+    /// An untouched conversation re-reads that instruction until its first
+    /// message, so editing the default reaches conversations created before the
+    /// edit. Without this, that refresh also overwrote a set somebody had just
+    /// picked by hand — switch a tool on in a new conversation, send, and the
+    /// choice was gone before the request was built.
+    public var toolsChosen: Bool?
+
     /// Notes standing in for the messages up to and including
     /// `compactedThroughMessageID`.
     ///

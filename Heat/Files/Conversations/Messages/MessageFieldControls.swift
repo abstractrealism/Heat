@@ -50,8 +50,23 @@ struct MessageFieldControls: View {
     /// label and the other a Menu's. Anything either of them needs — font,
     /// symbol scale, padding, tinting — belongs here, so the only difference
     /// left is the word and the glyph.
+    /// How a pill shows that it's on.
+    ///
+    /// Thinking is on or off, and filling it says so plainly. Tools is a set
+    /// that happens to be non-empty, which is a weaker claim — an outline reads
+    /// as available rather than engaged, and keeps two adjacent blue pills from
+    /// looking like the same kind of state.
+    private enum PillEmphasis {
+        case filled
+        case outlined
+    }
+
     @ViewBuilder
-    private func pill<Content: View>(isOn: Bool, @ViewBuilder content: () -> Content) -> some View {
+    private func pill<Content: View>(
+        isOn: Bool,
+        emphasis: PillEmphasis = .filled,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         content()
             .font(.footnote)
             // Pinned explicitly: a symbol otherwise takes its size from the
@@ -60,11 +75,22 @@ struct MessageFieldControls: View {
             .imageScale(.small)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .foregroundStyle(isOn ? Color.white : Color.secondary)
-            .background(
-                isOn ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
-                in: .capsule
-            )
+            .foregroundStyle(pillForeground(isOn: isOn, emphasis: emphasis))
+            .background {
+                switch (isOn, emphasis) {
+                case (true, .filled):
+                    Capsule().fill(.tint)
+                case (true, .outlined):
+                    Capsule().strokeBorder(.tint, lineWidth: 1)
+                case (false, _):
+                    Capsule().fill(.quaternary)
+                }
+            }
+    }
+
+    private func pillForeground(isOn: Bool, emphasis: PillEmphasis) -> AnyShapeStyle {
+        guard isOn else { return AnyShapeStyle(.secondary) }
+        return emphasis == .filled ? AnyShapeStyle(Color.white) : AnyShapeStyle(.tint)
     }
 
     // MARK: - Tools
@@ -125,14 +151,17 @@ struct MessageFieldControls: View {
                 }
             }
         } label: {
-            pill(isOn: isArmed) {
+            pill(isOn: isArmed, emphasis: .outlined) {
                 HStack(spacing: 4) {
                     Label("Tools", systemImage: "wrench.and.screwdriver")
                         .labelStyle(.titleAndIcon)
-                    if count > 0 {
-                        Text("\(count)")
-                            .monospacedDigit()
-                    }
+                    // Always laid out, hidden when there's nothing to count, so
+                    // the pill keeps its width and the row doesn't shift as
+                    // tools are switched on and off.
+                    Text("\(max(count, 1))")
+                        .monospacedDigit()
+                        .opacity(count > 0 ? 1 : 0)
+                        .accessibilityHidden(count == 0)
                 }
             }
         }
