@@ -1009,13 +1009,30 @@ final class ConversationViewModel {
                 remainder = afterOpen
                 continue
             }
-            let content = afterOpen[..<close.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+            let content = plainText(afterOpen[..<close.lowerBound])
             if !ignored.contains(name.lowercased()), !content.isEmpty {
                 return (name, content)
             }
             remainder = afterOpen[close.upperBound...]
         }
         return nil
+    }
+
+    /// The text inside a salvaged tag, without any markup it wrapped.
+    ///
+    /// The outer tag is the answer's wrapper; anything nested inside it is
+    /// decoration the model added, and taking the content whole would put
+    /// `<b>THIS</b> is a title` in the sidebar. Only well-formed tags are
+    /// removed, so a title that genuinely reads "a < b" keeps its bracket.
+    ///
+    /// Runs of spaces are collapsed where a tag used to sit, but line breaks
+    /// are left alone — suggestions are one per line, and joining them would
+    /// turn a list into a sentence.
+    private func plainText(_ content: some StringProtocol) -> String {
+        String(content)
+            .replacing(/<\/?[A-Za-z][A-Za-z0-9_-]*(\s[^>]*)?>/, with: "")
+            .replacing(/[ \t]{2,}/, with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// What a model actually said, when what it said couldn't be used.
