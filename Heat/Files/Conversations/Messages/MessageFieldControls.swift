@@ -41,6 +41,32 @@ struct MessageFieldControls: View {
         .padding(.leading, leadingInset)
     }
 
+    // MARK: - Shared look
+
+    /// The look shared by Thinking and Tools.
+    ///
+    /// One definition rather than two matching ones, because they didn't match:
+    /// the same requested font came out a size apart, one being a Button's
+    /// label and the other a Menu's. Anything either of them needs — font,
+    /// symbol scale, padding, tinting — belongs here, so the only difference
+    /// left is the word and the glyph.
+    @ViewBuilder
+    private func pill<Content: View>(isOn: Bool, @ViewBuilder content: () -> Content) -> some View {
+        content()
+            .font(.footnote)
+            // Pinned explicitly: a symbol otherwise takes its size from the
+            // surrounding control, and `wrench.and.screwdriver` carries more
+            // ink than `brain` at the same point size.
+            .imageScale(.small)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .foregroundStyle(isOn ? Color.white : Color.secondary)
+            .background(
+                isOn ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
+                in: .capsule
+            )
+    }
+
     // MARK: - Tools
 
     private var activeToolIDs: Set<String> {
@@ -99,27 +125,23 @@ struct MessageFieldControls: View {
                 }
             }
         } label: {
-            HStack(spacing: 4) {
-                // Built the same way as Thinking, so the glyph is sized against
-                // its own text rather than standing alone at full weight.
-                Label("Tools", systemImage: "wrench.and.screwdriver")
-                    .labelStyle(.titleAndIcon)
-                if count > 0 {
-                    Text("\(count)")
-                        .monospacedDigit()
+            pill(isOn: isArmed) {
+                HStack(spacing: 4) {
+                    Label("Tools", systemImage: "wrench.and.screwdriver")
+                        .labelStyle(.titleAndIcon)
+                    if count > 0 {
+                        Text("\(count)")
+                            .monospacedDigit()
+                    }
                 }
             }
-            .font(.footnote)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .foregroundStyle(isArmed ? Color.white : Color.secondary)
-            .background(
-                isArmed ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
-                in: .capsule
-            )
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        // A menu sizes its own label to the control size it was given, which is
+        // what made this read a size larger than the button beside it despite
+        // asking for the same font.
+        .controlSize(.small)
         .fixedSize()
         .disabled(!modelCanUseTools)
         .opacity(modelCanUseTools ? 1 : 0.5)
@@ -277,16 +299,10 @@ struct MessageFieldControls: View {
         Button {
             conversationViewModel.setThinkingEnabled(!conversationViewModel.isThinkingEnabled)
         } label: {
-            Label("Thinking", systemImage: "brain")
-                .font(.footnote)
-                .labelStyle(.titleAndIcon)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .foregroundStyle(isOn ? Color.white : Color.secondary)
-                .background(
-                    isOn ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
-                    in: .capsule
-                )
+            pill(isOn: isOn) {
+                Label("Thinking", systemImage: "brain")
+                    .labelStyle(.titleAndIcon)
+            }
         }
         .buttonStyle(.plain)
         .disabled(!modelCanThink)
