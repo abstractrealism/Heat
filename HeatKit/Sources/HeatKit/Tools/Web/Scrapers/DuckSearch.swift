@@ -1,5 +1,8 @@
 import Foundation
+import OSLog
 import Fuzi
+
+private let logger = Logger(subsystem: "DuckSearch", category: "HeatKit")
 
 public struct DuckSearch: WebSearch {
 
@@ -29,12 +32,34 @@ extension DuckSearch {
         // Do not use the code path `Fuzi.HTMLDocument(string:)` because it will lead to silent parsing failures
         // only on release builds. There be demons in this package.
         let doc = try parse(data: data)
-        let results = doc.css("#links .result").map {
-            WebSearchResult(
-                url: .init(string: $0.firstChild(css: "h2 a")?.attr("href") ?? "")!,
-                title: $0.firstChild(css: "h2 a")?.stringValue ?? "",
-                description: $0.firstChild(css: ".result__snippet")?.stringValue ?? ""
+        let elements = doc.css("#links .result")
+
+        // A result with no usable link is skipped rather than crashed on. These
+        // selectors describe somebody else's markup, which changes without
+        // notice and carries rows that were never search results to begin with;
+        // one of those should cost a result, not the app. The previous
+        // force-unwrap fell back to an empty string, and URL("") is nil.
+        let results = elements.compactMap { element -> WebSearchResult? in
+            guard let link = element.firstChild(css: "h2 a"),
+                  let href = link.attr("href"),
+                  let url = URL(string: href)
+            else { return nil }
+
+            return WebSearchResult(
+                url: url,
+                title: link.stringValue,
+                description: element.firstChild(css: ".result__snippet")?.stringValue ?? ""
             )
+        }
+
+        // Said out loud, because the alternative is indistinguishable from the
+        // web having no answer: a scraper that has stopped matching returns
+        // nothing and reports success, and the assistant faithfully relays that
+        // it found nothing.
+        if elements.isEmpty {
+            logger.warning("No results matched the page layout — either the search found nothing, or the markup changed")
+        } else if results.count < elements.count {
+            logger.warning("Skipped \(elements.count - results.count, privacy: .public) of \(elements.count, privacy: .public) results with no usable link")
         }
         return WebSearchResponse(query: query, results: results)
     }
