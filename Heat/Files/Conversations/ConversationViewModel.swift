@@ -425,6 +425,54 @@ final class ConversationViewModel {
         return (used: input + carried, limit: limit)
     }
 
+    /// The messages still sent in full: everything after the compaction point.
+    ///
+    /// Nothing is deleted, so a boundary pointing at a message that has gone
+    /// leaves the whole conversation active rather than silently hiding it.
+    var activeMessages: [Message] {
+        guard let boundary = conversation.compactedThroughMessageID,
+              let index = conversation.messages.firstIndex(where: { $0.id == boundary })
+        else { return conversation.messages }
+        return Array(conversation.messages.dropFirst(index + 1))
+    }
+
+    /// The run the compaction point falls in, so the transcript can mark where
+    /// the model's view of the conversation begins.
+    var compactedThroughRunID: String? {
+        guard let boundary = conversation.compactedThroughMessageID else { return nil }
+        return runs.first { run in run.messages.contains { $0.id == boundary } }?.id
+    }
+
+    /// Whether there is anything worth compacting: messages the model is still
+    /// being sent in full.
+    var canCompact: Bool {
+        !activeMessages.isEmpty && !isGenerating
+    }
+
+    /// The system prompt, with anything compacted away described in it.
+    ///
+    /// Carried in the system prompt rather than as a message in the history.
+    /// It isn't something anybody said, and putting it in the transcript means
+    /// choosing a role to attribute it to — either inventing a user turn that
+    /// would sit next to a real one, or putting words in the assistant's mouth.
+    private func systemForRequest(context: [String: Value]) -> String {
+        let instructions = PromptTemplate(conversation.instructions, with: context)
+        guard let summary = conversation.contextSummary?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !summary.isEmpty
+        else { return instructions }
+
+        return """
+            \(instructions)
+
+            <conversation_summary>
+            The earlier part of this conversation isn't shown in full. These are \
+            notes on what happened, for your use:
+
+            \(summary)
+            </conversation_summary>
+            """
+    }
+
     /// The conversation as it goes out to the model, with earlier reasoning
     /// left behind when Settings says so.
     ///
@@ -436,8 +484,9 @@ final class ConversationViewModel {
     /// message — quoting a transcript, asking about the tag itself — and
     /// rewriting what somebody typed is not on.
     private func historyForRequest() -> [Message] {
-        guard state.config.stripThinkingFromContext else { return conversation.messages }
-        return conversation.messages.map { message in
+        let messages = activeMessages
+        guard state.config.stripThinkingFromContext else { return messages }
+        return messages.map { message in
             guard message.role == .assistant else { return message }
             var message = message
             // Mapped rather than replaced wholesale: a message can carry
@@ -497,6 +546,12 @@ final class ConversationViewModel {
     /// and their writes clobber the new turn's state. Cancelling first means
     /// only one turn ever owns the conversation.
     func submit(chat prompt: String, context: [String: Value] = [:], toolIDs: Set<String>? = nil) {
+        // Intercepted before a message is made from it: these act on the
+        // conversation rather than being said in it.
+        if let command = SlashCommand(prompt) {
+            perform(command)
+            return
+        }
         generateTask?.cancel()
 
         // A superseded turn keeps unwinding after its replacement has started,
@@ -562,7 +617,7 @@ final class ConversationViewModel {
             // The resolved prompt, not the stored template: logging the
             // template shows placeholders like {{datetime}} still in place and
             // says nothing about whether they were filled in.
-            ChatDebug.log("→ system prompt (after substitution): \(PromptTemplate(conversation.instructions, with: context))")
+            ChatDebug.log("→ system prompt (after substitution): \(systemForRequest(context: context))")
             ChatDebug.log("→ user profile: \(state.userProfile ?? "<none set>")")
             ChatDebug.log("→ user prompt: \(prompt)")
 
@@ -581,7 +636,7 @@ final class ConversationViewModel {
 
             // Initial request
             var req = ChatSessionRequest(service: service, model: model, toolCallback: prepareToolResponse)
-            req.with(system: PromptTemplate(conversation.instructions, with: context))
+            req.with(system: systemForRequest(context: context))
             req.with(history: historyForRequest())
             req.with(tools: Toolbox.get(names: conversation.toolIDs))
             req.with(context: context)
@@ -856,6 +911,137 @@ final class ConversationViewModel {
         let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return "<empty reply>" }
         return trimmed.count > 300 ? String(trimmed.prefix(300)) + "…" : trimmed
+    }
+
+    // MARK: - Commands
+
+    func perform(_ command: SlashCommand) {
+        switch command {
+        case .compact(let guidance):
+            compact(guidance: guidance)
+        case .clear:
+            clearContext()
+        }
+    }
+
+    /// Folds everything sent so far into notes, and starts the model reading
+    /// from after them.
+    ///
+    /// The transcript is untouched. What changes is where the model begins, so
+    /// scrolling back still shows the whole conversation while the next request
+    /// carries notes in place of it.
+    func compact(guidance: String? = nil) {
+        guard canCompact else { return }
+
+        error = nil
+        generateTask?.cancel()
+
+        let token = UUID()
+        currentTurn = token
+        ConversationViewModelStore.shared.setGenerating(true, for: file.id)
+
+        generateTask = Task {
+            defer {
+                if currentTurn == token {
+                    ConversationViewModelStore.shared.setGenerating(false, for: file.id)
+                }
+            }
+            do {
+                try await generateCompaction(guidance: guidance)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                conversation.state = .none
+                self.error = errorMessage(for: error)
+                state.log(error: error)
+            }
+        }
+    }
+
+    /// Hands the model a blank slate without summarizing anything.
+    ///
+    /// Immediate and local: there's nothing to generate, so it doesn't go
+    /// through a turn. The messages stay put, as with compaction — this only
+    /// says the model shouldn't be shown them.
+    func clearContext() {
+        guard !isGenerating, let last = conversation.messages.last else { return }
+        conversation.compactedThroughMessageID = last.id
+        conversation.contextSummary = nil
+        conversation.suggestions = []
+        file.modified = .now
+        persistConversation()
+        ChatDebug.log("✂︎ context cleared | \(conversation.messages.count) messages left in the transcript, none sent")
+    }
+
+    private func generateCompaction(guidance: String?) async throws {
+        let (service, model) = try taskService()
+        let instruction = try state.file(Instruction.self, fileID: Defaults.instructionCompactionID)
+
+        // What the model is currently being sent, plus any notes already
+        // standing in for what came before — so compacting twice folds the
+        // earlier notes in rather than dropping them.
+        var history = preparePlainTextHistory(activeMessages)
+        if let existing = conversation.contextSummary, !existing.isEmpty {
+            history = """
+                Notes on the conversation before this point:
+                \(existing)
+
+                \(history)
+                """
+        }
+
+        // Phrased here rather than in the template so the prompt reads as
+        // ordinary prose when nobody asked for anything in particular.
+        let guidanceSection = guidance.map {
+            "\nThe user has asked you to be sure to carry over the following: \($0)\n"
+        } ?? ""
+
+        let content = PromptTemplate(instruction.instructions, with: [
+            "history": .string(history),
+            "guidance": .string(guidanceSection),
+        ])
+
+        var req = ChatSessionRequest(service: service, model: model)
+        req.with(history: [.init(role: .user, content: content)])
+        req.with(option: "think", value: .bool(false))
+
+        conversation.state = .suggesting
+        ChatDebug.log("→ compaction request | model: \(model.id) | folding \(activeMessages.count) messages")
+
+        var summary: String?
+        var lastResponse = ""
+        let stream = ChatSession.shared.stream(req)
+        for try await message in stream {
+            try Task.checkCancellation()
+            guard let content = message.content else { continue }
+            lastResponse = content
+
+            let result = try ContentParser.shared.parse(input: content, tags: ["summary"])
+            if let text = result.first(tag: "summary")?.content, !text.isEmpty {
+                summary = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        try Task.checkCancellation()
+
+        conversation.state = .none
+
+        // A conversation is not worth losing to a model that wouldn't answer in
+        // the requested shape. Nothing moves unless there are notes to move it
+        // to, and the log says what came back instead.
+        guard let summary, !summary.isEmpty else {
+            ChatDebug.log("← compaction produced no <summary> tag, nothing compacted: \(unparsed(lastResponse))")
+            error = "Couldn't compact: the model didn't return a summary. Try again, or use a more capable Summarization model."
+            return
+        }
+
+        conversation.contextSummary = summary
+        conversation.compactedThroughMessageID = conversation.messages.last?.id
+        conversation.suggestions = []
+        file.modified = .now
+        persistConversation()
+
+        ChatDebug.log("← compaction: folded away \(conversation.messages.count) messages into \(summary.count) characters")
     }
 
     /// Stops the current turn at the user's request.

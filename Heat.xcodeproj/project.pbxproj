@@ -44,6 +44,7 @@
 		D4FBFBEA2CED03E100266BF1 /* App-iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FBFBE92CED03E100266BF1 /* App-iOS.swift */; platformFilter = ios; };
 		D4FECDD32B817A3900E1BA13 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FECDD22B817A3900E1BA13 /* HapticManager.swift */; };
 		A1B2C3D40000000000000001 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000002 /* NotificationManager.swift */; };
+		A1B2C3D40000000000000005 /* SlashCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000006 /* SlashCommand.swift */; };
 		A1B2C3D40000000000000003 /* MessageFieldControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000004 /* MessageFieldControls.swift */; };
 		D8015CC72CB8EDBF0068749D /* MessageInstructions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8015CC62CB8EDBF0068749D /* MessageInstructions.swift */; };
 		D8015CC92CB8F4D60068749D /* RenderAnyTag.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8015CC82CB8F4D60068749D /* RenderAnyTag.swift */; };
@@ -122,6 +123,7 @@
 		D4FBFBE92CED03E100266BF1 /* App-iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "App-iOS.swift"; sourceTree = "<group>"; };
 		D4FECDD22B817A3900E1BA13 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000002 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
+		A1B2C3D40000000000000006 /* SlashCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommand.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000004 /* MessageFieldControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFieldControls.swift; sourceTree = "<group>"; };
 		D800BF8D2D8C73F300CD1D99 /* Heat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Heat.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D8015CC62CB8EDBF0068749D /* MessageInstructions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageInstructions.swift; sourceTree = "<group>"; };
@@ -252,6 +254,7 @@
 				D41E193A2AE4C759002516C1 /* ConversationView.swift */,
 				D838D6A62B0A65F100988FDD /* ConversationViewModel.swift */,
 				D85FAE442C852E1100DA153F /* ConversationViewInspector.swift */,
+				A1B2C3D40000000000000006 /* SlashCommand.swift */,
 			);
 			path = Conversations;
 			sourceTree = "<group>";
@@ -564,6 +567,7 @@
 				D88D230D2B3CFB5D00CCCC61 /* TypingIndicator.swift in Sources */,
 				D41E194C2AE591EA002516C1 /* GeneralView.swift in Sources */,
 				D85FAE452C852E1100DA153F /* ConversationViewInspector.swift in Sources */,
+				A1B2C3D40000000000000005 /* SlashCommand.swift in Sources */,
 				D8015CC72CB8EDBF0068749D /* MessageInstructions.swift in Sources */,
 				A1B2C3D40000000000000003 /* MessageFieldControls.swift in Sources */,
 				D45CC1FA2B8A5C1A009DFDF4 /* Suggestions.swift in Sources */,

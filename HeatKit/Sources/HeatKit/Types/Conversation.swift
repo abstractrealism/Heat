@@ -36,6 +36,22 @@ public struct Conversation: Codable, Sendable {
     /// on.
     public var thinkingEnabled: Bool?
 
+    /// Notes standing in for the messages up to and including
+    /// `compactedThroughMessageID`.
+    ///
+    /// Nil after clearing, which folds the same messages away without keeping
+    /// anything in their place.
+    public var contextSummary: String?
+
+    /// The last message no longer sent in full.
+    ///
+    /// Compaction is deliberately not destructive: the messages stay exactly
+    /// where they are and the transcript reads as it always did. This only
+    /// moves where the model starts reading, so the conversation someone can
+    /// scroll back through and the conversation the model is given stop being
+    /// the same thing.
+    public var compactedThroughMessageID: String?
+
     public enum State: Codable, Sendable {
         case processing
         case streaming
@@ -45,7 +61,10 @@ public struct Conversation: Codable, Sendable {
 
     public init(instructions: String = "", suggestions: [String] = [], toolIDs: Set<String> = [], state: State = .none,
                 messages: [Message] = [], serviceID: String? = nil, modelID: String? = nil,
-                thinkingEnabled: Bool? = nil) {
+                thinkingEnabled: Bool? = nil, contextSummary: String? = nil,
+                compactedThroughMessageID: String? = nil) {
+        self.contextSummary = contextSummary
+        self.compactedThroughMessageID = compactedThroughMessageID
         self.instructions = instructions
         self.suggestions = suggestions
         self.toolIDs = toolIDs

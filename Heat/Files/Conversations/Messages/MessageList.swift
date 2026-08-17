@@ -40,6 +40,11 @@ struct MessageList: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(conversationViewModel.runs) { run in
                         RunView(run)
+                        // Drawn after the run it falls in, so everything above
+                        // it is what the model no longer reads.
+                        if run.id == conversationViewModel.compactedThroughRunID {
+                            ContextBoundaryView(summary: conversationViewModel.conversation.contextSummary)
+                        }
                     }
                 }
 
@@ -155,6 +160,63 @@ struct MessageList: View {
 
 /// Wrapper for scrolling message views. Using a `List` has much better scrolling performance on macOS.
 /// On iOS the `List` studders when text is streaming and the scroll position is updated.
+/// Marks where the model's view of the conversation begins.
+///
+/// Visible on purpose. Compaction is lossy, so the failure it invites is
+/// assuming the model still remembers something it was only ever told in
+/// summary — and that's much easier to reason about when you can see the line
+/// and read what was kept.
+struct ContextBoundaryView: View {
+    let summary: String?
+
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                line
+                Button {
+                    if summary != nil { isExpanded.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: summary == nil ? "eraser" : "arrow.down.right.and.arrow.up.left")
+                        Text(summary == nil ? "Context cleared" : "Context compacted")
+                        if summary != nil {
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption2)
+                        }
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(summary == nil)
+                line
+            }
+
+            if isExpanded, let summary {
+                Text(summary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+            }
+        }
+        .padding(.vertical, 4)
+        .help(summary == nil
+              ? "Messages above this line are no longer sent to the model. They stay in the conversation."
+              : "Messages above this line are no longer sent to the model — it's given these notes instead. They stay in the conversation.")
+    }
+
+    private var line: some View {
+        Rectangle()
+            .fill(.quaternary)
+            .frame(height: 1)
+    }
+}
+
 struct MessageListScrollView<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
