@@ -63,6 +63,14 @@ struct MessageField: View {
                     Button("Attach Image") {
                         showingPhotoPicker = true
                     }
+                    // Offered only where it can be looked at. Unknown counts as
+                    // yes, as elsewhere — only Ollama reports this, so gating
+                    // on a missing answer would withdraw attachments from every
+                    // hosted service.
+                    .disabled(!modelCanSeeImages)
+                    .help(modelCanSeeImages
+                          ? "Attach a picture to your message"
+                          : "\(conversationViewModel.selectedModelName) can't read images. Pick a model that supports them to attach one.")
                     Divider()
                     ForEach(state.instructions) { file in
                         if let instruction = try? state.file(Instruction.self, fileID: file.id), instruction.kind == .template {
@@ -123,8 +131,7 @@ struct MessageField: View {
                         // Anything attached goes with a template too. Picking a
                         // saved prompt while a picture is waiting shouldn't
                         // silently drop the picture.
-                        let images = (try? photoPickerModel.writeAll()) ?? []
-                        action(instructions, images, context, toolIDs)
+                        action(instructions, attachedImages(), context, toolIDs)
                         clear()
                     }
                 }
@@ -228,12 +235,30 @@ struct MessageField: View {
     }
 
     func handleSubmit() async throws {
-        // Written here, at the point of sending, rather than when they were
-        // picked: a picture that's chosen and then removed before sending
-        // shouldn't leave a file behind.
-        let images = (try? photoPickerModel.writeAll()) ?? []
-        action(content, images, nil, nil)
+        action(content, attachedImages(), nil, nil)
         clear()
+    }
+
+    /// Writes anything attached to disk and returns where it went.
+    ///
+    /// Written here, at the point of sending, rather than when picked: a
+    /// picture chosen and then removed shouldn't leave a file behind.
+    ///
+    /// A failure is reported rather than swallowed. Silently sending the text
+    /// without the picture is the worst outcome — the model answers as though
+    /// nothing was attached, and there's no way to tell that from a model that
+    /// looked and didn't understand.
+    private func attachedImages() -> [URL] {
+        guard !photoPickerModel.selections.isEmpty else { return [] }
+        do {
+            let urls = try photoPickerModel.writeAll()
+            ChatDebug.log("→ attaching \(urls.count) image(s): \(urls.map(\.lastPathComponent).joined(separator: ", "))")
+            return urls
+        } catch {
+            ChatDebug.log("→ attachment failed, sending without it: \(error)")
+            conversationViewModel.error = "Couldn't attach the picture: \(error.localizedDescription)"
+            return []
+        }
     }
 
     func handleStop() {
@@ -243,6 +268,11 @@ struct MessageField: View {
     private func clear() {
         content = ""
         photoPickerModel.removeAll()
+    }
+
+    /// Whether the conversation's model can read a picture at all.
+    private var modelCanSeeImages: Bool {
+        conversationViewModel.selectedModel?.supports(.vision) ?? true
     }
 
     /// Whether there's anything to send. A picture on its own counts — asking

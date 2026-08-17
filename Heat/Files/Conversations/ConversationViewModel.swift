@@ -674,7 +674,15 @@ final class ConversationViewModel {
                 context["MEMORIES"] = .string(profile)
             }
 
-            ChatDebug.log("→ chat request | model: \(model.id) | tools: \(conversation.toolIDs.sorted().joined(separator: ", ")) | history: \(conversation.messages.count) messages")
+            ChatDebug.log("→ chat request | model: \(model.id) | tools: \(conversation.toolIDs.sorted().joined(separator: ", ")) | images: \(images.count) | history: \(conversation.messages.count) messages")
+
+            // Named individually, because an image that fails to reach the
+            // model is indistinguishable from one it looked at and didn't
+            // recognise — the reply reads the same either way.
+            for url in images {
+                let size = (try? Data(contentsOf: url).count) ?? -1
+                ChatDebug.log("→ image: \(url.lastPathComponent) | \(size < 0 ? "UNREADABLE at \(url.path)" : "\(size) bytes")")
+            }
             // The resolved prompt, not the stored template: logging the
             // template shows placeholders like {{datetime}} still in place and
             // says nothing about whether they were filled in.
