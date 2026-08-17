@@ -196,10 +196,26 @@ private struct ImagePreviewSheet: View {
     }
 }
 
-/// A thumbnail that opens the picture, and offers its links on a right-click.
+/// A thumbnail that opens the picture.
+///
+/// Deliberately no context menu, after three attempts. Raised from any
+/// thumbnail it offered the first result's links, and the focus ring drew
+/// around the whole message rather than around a thumbnail — the menu had
+/// attached itself to the enclosing region, so there was one menu for the
+/// message and it could only ever answer with one picture.
+///
+/// What didn't fix it, so nobody repeats them: passing the picture into the
+/// menu explicitly; giving each thumbnail its own `.id`; and giving the label
+/// an explicit `contentShape`, on the theory that `PictureView`'s
+/// `GeometryReader` left the menu nothing to bind to. The ring stayed around
+/// the message every time.
+///
+/// Both actions live in the sheet the thumbnail opens, where they work — so
+/// nothing is missing, and a menu that quietly acts on something other than
+/// what was clicked would be worse than none. Anyone wanting right-click back
+/// should reach for an AppKit menu on a hosted view rather than a fourth
+/// arrangement of SwiftUI modifiers.
 struct RenderImageView: View {
-    @Environment(\.openURL) private var openURL
-
     let found: FoundImage
     let action: () -> Void
 
@@ -213,23 +229,8 @@ struct RenderImageView: View {
                     RoundedRectangle(cornerRadius: 5)
                         .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                 }
-                // Says where this thumbnail is, which it otherwise doesn't.
-                // PictureView is built on a GeometryReader, which reports no
-                // definite shape of its own, so the menu below had nothing to
-                // attach to and bound itself to the enclosing region instead —
-                // one menu for the whole message, answering with the first
-                // result whichever picture was clicked. The giveaway was the
-                // focus ring: it drew around the entire message rather than
-                // around a thumbnail.
-                .contentShape(.rect(cornerRadius: 5))
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            if let source = found.source {
-                Button("Open Source Page") { openURL(source) }
-            }
-            Button("Open Image") { openURL(found.image) }
-        }
         .help(found.source?.host().map { "From \($0) — click to open" } ?? found.image.absoluteString)
     }
 }
