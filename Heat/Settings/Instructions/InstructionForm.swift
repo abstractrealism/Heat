@@ -293,6 +293,12 @@ struct InstructionTextForm: View {
         self.fileID = fileID
     }
 
+    /// The version of this prompt that Heat ships, if it's one of Heat's own.
+    /// Nil for a template somebody wrote, which has no default to go back to.
+    private var shippedInstructions: String? {
+        Defaults.instructions.first { $0.id == fileID }?.object.instructions
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             TextEditor(text: $instructions)
@@ -301,9 +307,23 @@ struct InstructionTextForm: View {
                         .fill(.clear)
                         .stroke(.separator, lineWidth: 1)
                 }
-            Text("The prompt text itself. Words in {{double braces}} are placeholders Heat fills in. Conversations get {{datetime}}, the current date and time. Heat's own prompts get their own: {{history}} for Title and Suggestions, {{query}} and {{results}} for Web Search.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            HStack(alignment: .top) {
+                Text("The prompt text itself. Words in {{double braces}} are placeholders Heat fills in. Conversations get {{datetime}}, the current date and time. Heat's own prompts get their own: {{history}} for Title and Suggestions, {{query}} and {{results}} for Web Search.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                // Only for the prompts Heat ships, and only once one has been
+                // changed. These are seeded on first launch and never written
+                // again, so an improvement to a shipped prompt otherwise
+                // reaches new installations and nobody else.
+                if let shipped = shippedInstructions, shipped != instructions {
+                    Button("Restore Default") {
+                        instructions = shipped
+                    }
+                    .help("Replaces this prompt with the one Heat ships. Use it to pick up an improved version, or to undo edits.")
+                    .fixedSize()
+                }
+            }
         }
         .onAppear { load() }
         .onChange(of: instructions) { _, _ in scheduleSave() }
