@@ -196,19 +196,10 @@ private struct ImagePreviewSheet: View {
     }
 }
 
-/// A thumbnail that opens the picture.
-///
-/// No context menu. One was here offering the source page and the image, and
-/// it acted on the first result whichever thumbnail it was raised from —
-/// through two attempts at fixing it, including giving each thumbnail an
-/// explicit identity. `contextMenu` on items inside a horizontal `ScrollView`
-/// builds its menu against the wrong item, and passing the picture into the
-/// menu explicitly doesn't change that.
-///
-/// Both actions live in the sheet the thumbnail opens, where they work. A menu
-/// that quietly acts on something other than what was clicked is worse than no
-/// menu, and this one was redundant the moment the sheet gained the buttons.
+/// A thumbnail that opens the picture, and offers its links on a right-click.
 struct RenderImageView: View {
+    @Environment(\.openURL) private var openURL
+
     let found: FoundImage
     let action: () -> Void
 
@@ -222,8 +213,23 @@ struct RenderImageView: View {
                     RoundedRectangle(cornerRadius: 5)
                         .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                 }
+                // Says where this thumbnail is, which it otherwise doesn't.
+                // PictureView is built on a GeometryReader, which reports no
+                // definite shape of its own, so the menu below had nothing to
+                // attach to and bound itself to the enclosing region instead —
+                // one menu for the whole message, answering with the first
+                // result whichever picture was clicked. The giveaway was the
+                // focus ring: it drew around the entire message rather than
+                // around a thumbnail.
+                .contentShape(.rect(cornerRadius: 5))
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            if let source = found.source {
+                Button("Open Source Page") { openURL(source) }
+            }
+            Button("Open Image") { openURL(found.image) }
+        }
         .help(found.source?.host().map { "From \($0) — click to open" } ?? found.image.absoluteString)
     }
 }
