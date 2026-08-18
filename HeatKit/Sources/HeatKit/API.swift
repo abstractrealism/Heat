@@ -128,7 +128,37 @@ extension API {
     // File Delete
 
     public func fileDelete(_ fileID: String) async throws {
+        // Before the conversation goes, since afterwards there's nothing left
+        // saying which pictures were its.
+        deleteAttachments(of: fileID)
         try await filesProvider.cacheFileDelete(fileID)
+    }
+
+    /// Removes the pictures a conversation was carrying.
+    ///
+    /// Attachments are copied into the app's own storage when they're sent, and
+    /// nothing had ever removed them — every picture ever attached stayed on
+    /// disk, including from conversations long since deleted, growing quietly
+    /// where nobody would look for it.
+    ///
+    /// Only files in that storage are touched. A message can hold the address
+    /// of a picture the app didn't put there, and deleting a conversation is no
+    /// reason to go removing something elsewhere on the disk.
+    private func deleteAttachments(of fileID: String) {
+        guard let conversation = try? filesProvider.cachedFileObject(Conversation.self, fileID: fileID) else {
+            return
+        }
+        guard let documents = Resource.document("").url?.deletingLastPathComponent() else { return }
+
+        for message in conversation.messages {
+            for content in message.contents ?? [] {
+                guard case .image(let image) = content else { continue }
+                guard image.url.isFileURL,
+                      image.url.deletingLastPathComponent().standardizedFileURL == documents.standardizedFileURL
+                else { continue }
+                try? FileManager.default.removeItem(at: image.url)
+            }
+        }
     }
 }
 

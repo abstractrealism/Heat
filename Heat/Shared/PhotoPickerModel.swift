@@ -44,7 +44,7 @@ final class PhotoPickerModel {
             guard let data = image.pngData() else {
                 throw PhotoPickerError.missingPhoto
             }
-            let resource = Resource.document(Self.filename(for: selected.id))
+            let resource = Resource.document(Self.filename())
 
             guard let url = resource.url else {
                 throw PhotoPickerError.missingResourceURL
@@ -79,20 +79,18 @@ final class PhotoPickerModel {
         }
     }
 
-    /// A filename that can actually be written.
+    /// A filename of its own for each attachment.
     ///
-    /// A Photos identifier is not one. It looks like
-    /// `42EB54E0-723F-4DB2-B4FB-A2A839203F5C/L0/001`, and the slashes are part
-    /// of the identifier rather than a path — so using it as a filename aimed
-    /// the write at two directories that don't exist, and every attached
-    /// picture failed with "the file doesn't exist" before it could be sent.
+    /// Not derived from the picture's identifier. That was the previous fix —
+    /// a Photos identifier looks like `42EB54E0-…/L0/001`, and the slashes made
+    /// the write fail — but naming files after the identifier also means the
+    /// same picture attached to two conversations is one file with two owners,
+    /// so deleting either conversation takes the picture out of the other.
     ///
-    /// Anything outside letters, digits, dash and underscore is replaced, so
-    /// this holds for whatever shape another platform's identifiers take.
-    static func filename(for id: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
-        let safe = String(id.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" })
-        return "\(safe).png"
+    /// A name of its own costs a second copy of a picture used twice, and buys
+    /// an unambiguous answer to which conversation a file belongs to.
+    static func filename() -> String {
+        "\(UUID().uuidString).png"
     }
 
     func remove(id: String) {
