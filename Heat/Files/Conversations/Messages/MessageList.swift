@@ -71,7 +71,18 @@ struct MessageList: View {
                     case .waiting:
                         GeneratingIndicator("Generating" + liveRateSuffix)
                     case .thinking:
-                        GeneratingIndicator("Thinking" + liveRateSuffix)
+                        // Also the way to close the reasoning above it. Its own
+                        // Hide control scrolls off the top as the block grows,
+                        // so this is the one part of it that stays in reach.
+                        Button {
+                            conversationViewModel.isStreamingThinkingExpanded.toggle()
+                        } label: {
+                            GeneratingIndicator("Thinking" + liveRateSuffix)
+                        }
+                        .buttonStyle(.plain)
+                        .help(conversationViewModel.isStreamingThinkingExpanded
+                              ? "Hide the reasoning above"
+                              : "Show the reasoning above")
                     case .responding, .suggesting, .idle:
                         EmptyView()
                     }

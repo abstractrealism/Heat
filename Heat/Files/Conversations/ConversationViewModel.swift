@@ -171,6 +171,18 @@ final class ConversationViewModel {
         }
     }
 
+    /// Whether the reasoning currently being written is shown.
+    ///
+    /// Held here rather than in the block that draws it, so the status line at
+    /// the foot of the conversation can close it too. Reasoning can run for
+    /// pages, and its own Hide control scrolls away with it — leaving the only
+    /// way to shut it the one place you'd have to scroll back to find.
+    ///
+    /// Only the block still being written follows this. Finished ones keep
+    /// their own state, so closing the live one doesn't shut every earlier one
+    /// in the conversation.
+    var isStreamingThinkingExpanded = false
+
     /// True while a turn is running, used to offer a stop control.
     var isGenerating: Bool {
         conversation.state != .none
