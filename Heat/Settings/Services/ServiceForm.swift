@@ -11,6 +11,15 @@ struct ServiceForm: View {
 
     @State var service: Service
 
+    /// Held as a value rather than written at the call site.
+    ///
+    /// A string literal passed to `help` is read as a localization key and run
+    /// through the markdown parser, which turns the two addresses in it into
+    /// links — and a tooltip can only carry unstyled text, so AppKit complained
+    /// on every appearance: "Only unstyled text can be used with help(_:)".
+    /// A `String` value takes a different overload, and is shown as written.
+    private static let hostHelp = "Where this service is reached. A local Ollama is usually http://127.0.0.1:11434/api; a hosted service is its API address, such as https://api.openai.com/v1. Heat ships each service with a working address, so there's rarely a reason to change this."
+
     var body: some View {
         Form {
             Section {
@@ -27,7 +36,7 @@ struct ServiceForm: View {
                 TextField("Host", text: $service.host)
                     .autocorrectionDisabled()
                     .textContentType(.URL)
-                    .help("Where this service is reached. A local Ollama is usually http://127.0.0.1:11434/api; a hosted service is its API address, such as https://api.openai.com/v1. Heat ships each service with a working address, so there's rarely a reason to change this.")
+                    .help(Self.hostHelp)
 
                 TextField("Token", text: $service.token)
                     .autocorrectionDisabled()
