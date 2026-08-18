@@ -18,6 +18,7 @@ struct MessageField: View {
     @State private var instructionFile: File? = nil
     @State private var photoPickerModel = PhotoPickerModel()
     @State private var showingPhotoPicker = false
+    @State private var showingFileImporter = false
     @State private var inputNaturalHeight: CGFloat = 0
 
     @FocusState private var isFocused: Bool
@@ -60,13 +61,22 @@ struct MessageField: View {
             Divider()
             HStack(alignment: .bottom, spacing: 0) {
                 Menu {
-                    Button("Attach Image") {
-                        showingPhotoPicker = true
+                    // Both, rather than one or the other. A picture worth
+                    // asking about is as likely to be a file on disk — a
+                    // screenshot, something downloaded — as it is to be in the
+                    // photo library.
+                    Group {
+                        Button("Attach Photo from Photos…") {
+                            showingPhotoPicker = true
+                        }
+                        Button(fileImportLabel) {
+                            showingFileImporter = true
+                        }
                     }
-                    // Offered only where it can be looked at. Unknown counts as
-                    // yes, as elsewhere — only Ollama reports this, so gating
-                    // on a missing answer would withdraw attachments from every
-                    // hosted service.
+                    // Offered only where they can be looked at. Unknown counts
+                    // as yes, as elsewhere — only Ollama reports this, so
+                    // gating on a missing answer would withdraw attachments
+                    // from every hosted service.
                     .disabled(!modelCanSeeImages)
                     .help(modelCanSeeImages
                           ? "Attach a picture to your message"
@@ -144,6 +154,20 @@ struct MessageField: View {
                 matching: .images,
                 photoLibrary: .shared()
             )
+            .fileImporter(
+                isPresented: $showingFileImporter,
+                allowedContentTypes: [.image],
+                allowsMultipleSelection: true
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    // Capped to match the photo picker, so the two ways in
+                    // don't disagree about how much can be attached.
+                    photoPickerModel.addFiles(Array(urls.prefix(3)))
+                case .failure(let error):
+                    conversationViewModel.error = "Couldn't open that picture: \(error.localizedDescription)"
+                }
+            }
 
             MessageFieldControls()
                 .padding(.trailing, 8)
@@ -268,6 +292,15 @@ struct MessageField: View {
     private func clear() {
         content = ""
         photoPickerModel.removeAll()
+    }
+
+    /// Named for the app that opens, since that's what somebody is looking for.
+    private var fileImportLabel: String {
+        #if os(macOS)
+        "Attach Photo from Finder…"
+        #else
+        "Attach Photo from Files…"
+        #endif
     }
 
     /// Whether the conversation's model can read a picture at all.

@@ -55,6 +55,30 @@ final class PhotoPickerModel {
         return out
     }
 
+    /// Takes on images chosen from the filesystem, alongside any from Photos.
+    ///
+    /// They become ordinary selections, so they draw in the same strip, are
+    /// removed the same way, and are written out by the same code — the only
+    /// thing that differs is where they were picked.
+    ///
+    /// Read immediately rather than held as a reference. A file chosen through
+    /// the importer comes with permission attached that lasts only as long as
+    /// the callback, and a sandboxed app that kept the URL to read later would
+    /// find it can no longer open it.
+    func addFiles(_ urls: [URL]) {
+        for url in urls {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+            guard let data = try? Data(contentsOf: url), let image = PlatformImage(data: data) else {
+                logger.warning("Couldn't read a picked image: \(url.lastPathComponent, privacy: .public)")
+                upsert(image: Selection(id: url.lastPathComponent, state: .failure(.transferFailed)))
+                continue
+            }
+            upsert(image: Selection(id: url.lastPathComponent, state: .success, photo: image))
+        }
+    }
+
     /// A filename that can actually be written.
     ///
     /// A Photos identifier is not one. It looks like
