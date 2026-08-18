@@ -44,8 +44,7 @@ final class PhotoPickerModel {
             guard let data = image.pngData() else {
                 throw PhotoPickerError.missingPhoto
             }
-            let filename = "\(selected.id).png"
-            let resource = Resource.document(filename)
+            let resource = Resource.document(Self.filename(for: selected.id))
 
             guard let url = resource.url else {
                 throw PhotoPickerError.missingResourceURL
@@ -54,6 +53,22 @@ final class PhotoPickerModel {
             out.append(url)
         }
         return out
+    }
+
+    /// A filename that can actually be written.
+    ///
+    /// A Photos identifier is not one. It looks like
+    /// `42EB54E0-723F-4DB2-B4FB-A2A839203F5C/L0/001`, and the slashes are part
+    /// of the identifier rather than a path — so using it as a filename aimed
+    /// the write at two directories that don't exist, and every attached
+    /// picture failed with "the file doesn't exist" before it could be sent.
+    ///
+    /// Anything outside letters, digits, dash and underscore is replaced, so
+    /// this holds for whatever shape another platform's identifiers take.
+    static func filename(for id: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let safe = String(id.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" })
+        return "\(safe).png"
     }
 
     func remove(id: String) {
