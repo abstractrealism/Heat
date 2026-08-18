@@ -30,6 +30,10 @@ struct MessageList: View {
     private struct ScrollState: Equatable {
         var offset: CGFloat
         var distanceFromEnd: CGFloat
+
+        /// Carried so an offset change can be told apart from a layout change.
+        /// See the scroll geometry handler.
+        var contentHeight: CGFloat
     }
 
     var body: some View {
@@ -88,12 +92,24 @@ struct MessageList: View {
                 ScrollState(
                     offset: geometry.contentOffset.y,
                     distanceFromEnd: geometry.contentSize.height
-                        - (geometry.contentOffset.y + geometry.containerSize.height)
+                        - (geometry.contentOffset.y + geometry.containerSize.height),
+                    contentHeight: geometry.contentSize.height
                 )
             } action: { old, new in
                 distanceFromEnd = new.distanceFromEnd
 
-                if new.offset < old.offset - scrollUpTolerance {
+                // Only when the content stayed the same size. Text that is
+                // still being laid out settles at slightly different heights
+                // as it goes, and each settle moves the offset — which read as
+                // the reader scrolling up, so following switched off, and
+                // stayed off until the view happened to end up near the bottom
+                // again. That is the stutter while a model thinks: reasoning is
+                // markdown being re-parsed on every update, so it wobbles far
+                // more than a plain answer does, and following was being turned
+                // off and on throughout.
+                let contentSettled = new.contentHeight == old.contentHeight
+
+                if contentSettled, new.offset < old.offset - scrollUpTolerance {
                     // Moving up is the reader's doing; leave the view put.
                     isFollowing = false
                 } else if new.distanceFromEnd <= endThreshold {
