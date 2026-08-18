@@ -152,13 +152,27 @@ extension API {
 
         for message in conversation.messages {
             for content in message.contents ?? [] {
-                guard case .image(let image) = content else { continue }
-                guard image.url.isFileURL,
-                      image.url.deletingLastPathComponent().standardizedFileURL == documents.standardizedFileURL
-                else { continue }
+                guard case .image(let image) = content, isInAppStorage(image.url, under: documents) else {
+                    continue
+                }
                 try? FileManager.default.removeItem(at: image.url)
             }
         }
+    }
+
+    /// Whether a file is one of ours to remove.
+    ///
+    /// Anywhere beneath the app's storage, not only directly in it: attachments
+    /// are written alongside the conversations, while generated images go into
+    /// a folder of their own, and both are the app's.
+    ///
+    /// Compared by path component rather than by prefix, so a directory that
+    /// merely starts with the same characters isn't mistaken for a child of it.
+    private func isInAppStorage(_ url: URL, under documents: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        let base = documents.standardizedFileURL.pathComponents
+        let target = url.standardizedFileURL.pathComponents
+        return target.count > base.count && Array(target.prefix(base.count)) == base
     }
 }
 
