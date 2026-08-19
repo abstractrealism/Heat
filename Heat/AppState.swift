@@ -166,6 +166,40 @@ final class AppState {
         }
     }
 
+    // MARK: - Moving Between Conversations
+
+    /// The conversations the sidebar is showing, top to bottom.
+    ///
+    /// Ordered and filtered exactly as the list draws it — same sort
+    /// preference, same rule about folders — so the keyboard moves through what
+    /// is on screen rather than through some second order of its own.
+    ///
+    /// Conversations only. Documents and folders are in the same list and are
+    /// stepped straight past, since a shortcut called Next Conversation that
+    /// stops on a folder isn't the one that was asked for.
+    var visibleConversationIDs: [String] {
+        let files = self.files
+        let byID = Dictionary(files.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        // Read rather than observed: the sort lives in user defaults, written
+        // by the list's own @AppStorage. Nothing here needs to redraw when it
+        // changes — this is only ever asked at the moment a key is pressed.
+        let stored = UserDefaults.standard.string(forKey: FileSortOrder.preferenceKey) ?? ""
+        let order = FileSortOrder(rawValue: stored) ?? .recentActivity
+
+        let sorted = FileOrder.sorted(fileTree, files: files, by: order)
+        return FileOrder.visibleIDs(in: sorted, files: files)
+            .filter { byID[$0]?.isConversation == true }
+    }
+
+    /// Opens the conversation before or after the open one.
+    func step(_ step: FileOrder.Step) {
+        guard let destination = FileOrder.step(step, from: selectedFileID, in: visibleConversationIDs) else {
+            return
+        }
+        selectedFileID = destination
+    }
+
     // MARK: - File Handling
 
     func file<T: Decodable>(_ type: T.Type, fileID: String) throws -> T {

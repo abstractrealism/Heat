@@ -82,6 +82,7 @@
 		D8F5C15F2DBD2CEB00E3C1DC /* InstructionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8F5C15E2DBD2CEB00E3C1DC /* InstructionView.swift */; };
 		D8F5C1632DBD4D2A00E3C1DC /* SettingsView-iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8F5C1622DBD4D2A00E3C1DC /* SettingsView-iOS.swift */; };
 		D8F5C1662DBE8C0700E3C1DC /* FileList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8F5C1652DBE8C0700E3C1DC /* FileList.swift */; };
+		A1B2C3D40000000000000009 /* FileOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000A /* FileOrder.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -161,6 +162,7 @@
 		D8F5C15E2DBD2CEB00E3C1DC /* InstructionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstructionView.swift; sourceTree = "<group>"; };
 		D8F5C1622DBD4D2A00E3C1DC /* SettingsView-iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsView-iOS.swift"; sourceTree = "<group>"; };
 		D8F5C1652DBE8C0700E3C1DC /* FileList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileList.swift; sourceTree = "<group>"; };
+		A1B2C3D4000000000000000A /* FileOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileOrder.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -421,6 +423,7 @@
 				D41E194A2AE58D29002516C1 /* Conversations */,
 				D4FB726C2DC03755008CC1DF /* Documents */,
 				D8F5C1652DBE8C0700E3C1DC /* FileList.swift */,
+				A1B2C3D4000000000000000A /* FileOrder.swift */,
 				D4FB726A2DC02813008CC1DF /* FileForm.swift */,
 				D4FB72682DC01F4B008CC1DF /* FileDetail.swift */,
 			);
@@ -521,6 +524,7 @@
 				D4FB72692DC01F4B008CC1DF /* FileDetail.swift in Sources */,
 				D8F5C15F2DBD2CEB00E3C1DC /* InstructionView.swift in Sources */,
 				D8F5C1662DBE8C0700E3C1DC /* FileList.swift in Sources */,
+				A1B2C3D40000000000000009 /* FileOrder.swift in Sources */,
 				D4FBFBEA2CED03E100266BF1 /* App-iOS.swift in Sources */,
 				D8F5C15D2DBD2CA600E3C1DC /* ServiceDefaults.swift in Sources */,
 				D884AAFE2BD9B40000B90E9B /* PermissionList.swift in Sources */,

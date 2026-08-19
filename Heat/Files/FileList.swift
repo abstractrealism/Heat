@@ -39,6 +39,12 @@ struct FileList: View {
     @State private var pendingDeletion: Set<String> = []
 
     var body: some View {
+        ScrollViewReader { proxy in
+            list(proxy)
+        }
+    }
+
+    private func list(_ proxy: ScrollViewProxy) -> some View {
         List(selection: $selection) {
             ForEach(sortedTree) { tree in
                 FileRow(tree: tree, depth: 0)
@@ -53,10 +59,19 @@ struct FileList: View {
             }
         }
         .onChange(of: selected) { _, openFile in
+            guard let openFile else { return }
+
             // Follow along when something else changes what's open, such as
             // creating a conversation, without disturbing a wider selection.
-            guard let openFile, !selection.contains(openFile) else { return }
-            selection = [openFile]
+            if !selection.contains(openFile) {
+                selection = [openFile]
+            }
+
+            // Kept outside that condition, and reached even when the row was
+            // already highlighted: stepping between conversations by keyboard
+            // can open one that's scrolled out of sight, where the detail view
+            // changes and the sidebar appears not to have moved at all.
+            proxy.scrollTo(openFile)
         }
         .onAppear {
             if let selected { selection = [selected] }
@@ -140,48 +155,12 @@ struct FileList: View {
     /// directory happened to enumerate in, which is why it looked like no
     /// order at all. Newest activity first is the default because the thing
     /// you were last working on is almost always the one you want next.
+    ///
+    /// The sort itself lives in `FileOrder`, shared with the keyboard shortcuts
+    /// that step between conversations — they have to move in the order the
+    /// list is drawn in, and a second copy of this would eventually disagree.
     private var sortedTree: [FileTree] {
-        // One lookup for the whole sort, rather than searching the file list
-        // again for every comparison.
-        let filesByID = Dictionary(
-            state.files.map { ($0.id, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        return sort(state.fileTree, using: filesByID)
-    }
-
-    private func sort(_ trees: [FileTree], using filesByID: [String: File]) -> [FileTree] {
-        trees
-            .map { tree in
-                var tree = tree
-                if let children = tree.children {
-                    tree.children = sort(children, using: filesByID)
-                }
-                return tree
-            }
-            .sorted { isOrderedBefore($0, $1, using: filesByID) }
-    }
-
-    private func isOrderedBefore(_ lhs: FileTree, _ rhs: FileTree, using filesByID: [String: File]) -> Bool {
-        // A row with no file behind it can't be ordered meaningfully, and
-        // FileRow won't draw it either, so let it settle at the end.
-        guard let left = filesByID[lhs.id] else { return false }
-        guard let right = filesByID[rhs.id] else { return true }
-
-        switch sortOrder {
-        case .recentActivity:
-            return left.modified > right.modified
-        case .dateCreated:
-            return left.created > right.created
-        case .name:
-            // Matches what the row displays, and compares the way a person
-            // reads names — case-insensitive, with numbers in numeric order.
-            return displayName(left).localizedStandardCompare(displayName(right)) == .orderedAscending
-        }
-    }
-
-    private func displayName(_ file: File) -> String {
-        file.name ?? file.path
+        FileOrder.sorted(state.fileTree, files: state.files, by: sortOrder)
     }
 
     func handleShowFinder(_ fileIDs: Set<String>) {

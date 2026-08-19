@@ -117,6 +117,25 @@ struct MainApp: App {
                 }
             }
 
+            // Into View, beside the sidebar commands, these being about which
+            // file the sidebar is showing. ⌃⇥ and ⌃⇧⇥ are what the gesture is
+            // everywhere else it appears, and Heat has a single window rather
+            // than a WindowGroup, so there are no window tabs to collide with.
+            CommandGroup(after: .sidebar) {
+                Divider()
+                Button("Next Conversation") {
+                    state.step(.next)
+                }
+                .keyboardShortcut(.tab, modifiers: .control)
+                .disabled(state.visibleConversationIDs.count < 2)
+
+                Button("Previous Conversation") {
+                    state.step(.previous)
+                }
+                .keyboardShortcut(.tab, modifiers: [.control, .shift])
+                .disabled(state.visibleConversationIDs.count < 2)
+            }
+
             // Beside Settings, this being a thing you do to the app rather
             // than to a file.
             CommandGroup(after: .appSettings) {
