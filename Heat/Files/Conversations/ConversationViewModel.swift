@@ -206,7 +206,7 @@ final class ConversationViewModel {
                 text = String(text[close.upperBound...])
             }
         }
-        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        text = CodeFence.readableFences(in: text).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         return text.count > 140 ? text.prefix(140).trimmingCharacters(in: .whitespaces) + "…" : text
     }

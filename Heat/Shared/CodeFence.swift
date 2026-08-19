@@ -173,6 +173,64 @@ struct CodeFence {
     ]
 }
 
+extension CodeFence {
+
+    /// The same text with code fences reduced to what they're worth reading
+    /// somewhere nothing renders markdown.
+    ///
+    /// A notification shows plain text, so an answer opening with a code block
+    /// spent the first line of its preview on ```` ```yaml:docker-compose.yml ````.
+    /// Outside a renderer the backticks say nothing and the language is already
+    /// implied by the file, so the name is all that's kept. A closing fence is
+    /// dropped outright — it marks the end of something a preview has almost
+    /// certainly been cut off before reaching.
+    ///
+    /// Only fences are touched. The rest of the markdown is left as written,
+    /// since stripping it is a much larger claim about what the text means.
+    static func readableFences(in text: String) -> String {
+        /// How many backticks opened the block being read, or zero outside one.
+        /// Counted rather than assumed to be three: a block that contains a
+        /// fence of its own — markdown showing markdown — is opened with four
+        /// or more, and treating the inner three as the end would close the
+        /// block early and then read its remaining markers as fences of their
+        /// own.
+        var openedWith = 0
+        var lines: [String] = []
+
+        for line in text.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let backticks = trimmed.prefix { $0 == "`" }.count
+            let rest = trimmed.dropFirst(backticks).trimmingCharacters(in: .whitespaces)
+
+            if openedWith > 0 {
+                // A fence closes with at least as many backticks as opened it
+                // and nothing after them. Anything else is the block's contents,
+                // kept as written so indentation survives.
+                if backticks >= openedWith, rest.isEmpty {
+                    openedWith = 0
+                } else {
+                    lines.append(line)
+                }
+                continue
+            }
+
+            guard backticks >= 3 else {
+                lines.append(line)
+                continue
+            }
+            openedWith = backticks
+
+            // The name is the useful half. A block with no name falls back to
+            // its language, and a bare fence contributes nothing at all.
+            let fence = CodeFence(fenceInfo: rest)
+            if let label = fence.filename ?? fence.language?.capitalized {
+                lines.append(label)
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
 /// Writing a code block out as a file.
 enum CodeDownload {
 
