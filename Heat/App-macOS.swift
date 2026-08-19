@@ -17,10 +17,6 @@ struct MainApp: App {
     @State private var showingError = false
     @State private var error: (any CustomStringConvertible)? = nil
 
-    /// Reset deletes every conversation, document and setting, and there is no
-    /// undo. It sat one click away in a menu, and has just moved next to
-    /// Settings where it is easier to reach by accident.
-    @State private var showingResetConfirmation = false
 
     @AppStorage(AppAppearance.preferenceKey) private var appearance: AppAppearance = .system
 
@@ -78,7 +74,10 @@ struct MainApp: App {
             }
             .confirmationDialog(
                 "Delete everything in Heat?",
-                isPresented: $showingResetConfirmation,
+                isPresented: Binding(
+                    get: { state.showingResetConfirmation },
+                    set: { state.showingResetConfirmation = $0 }
+                ),
                 titleVisibility: .visible
             ) {
                 Button("Delete Everything", role: .destructive) {
@@ -123,7 +122,7 @@ struct MainApp: App {
             CommandGroup(after: .appSettings) {
                 Divider()
                 Button("Reset All Data…") {
-                    showingResetConfirmation = true
+                    state.showingResetConfirmation = true
                 }
             }
         }

@@ -36,6 +36,15 @@ final class AppState {
 
     var selectedFileID: String? = nil
 
+    /// Whether the confirmation for Reset All Data is up.
+    ///
+    /// Here rather than on the app itself. State declared on an `App` doesn't
+    /// reliably re-evaluate the window's contents when it changes, so setting
+    /// it from a menu command left the dialog waiting: nothing happened until
+    /// something else invalidated the view — creating a conversation, say — and
+    /// then it appeared alongside whatever that was.
+    var showingResetConfirmation = false
+
     // Providers oversee a specific top-level kind of data and provide methods
     // for mutating and storing the data they're responsible for.
 
