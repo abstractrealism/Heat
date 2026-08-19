@@ -3,8 +3,21 @@ import QuickLook
 import GenKit
 import HeatKit
 
+/// Pictures for a search the model asked for in its reply.
+///
+/// This isn't a tool call. The model writes a tag and the search happens here,
+/// as the view appears — so it used to run with every tool switched off, which
+/// made the Tools menu untrue: a request left the machine because a message was
+/// drawn. It now waits on the same switch as web search, which is the ability
+/// it actually uses.
+///
+/// It also can't say what it found. The model names a query and never sees the
+/// results, so it can't tell you what's in the pictures. The image search tool
+/// does both, which is what the instructions now steer towards; this stays for
+/// replies already written that way.
 struct RenderImageSearch: View {
     @Environment(\.openURL) var openURL
+    @Environment(ConversationViewModel.self) private var conversationViewModel
 
     let tag: ContentParser.Result.Tag
 
@@ -14,23 +27,29 @@ struct RenderImageSearch: View {
         self.tag = tag
     }
 
-    var body: some View {
-        VStack(alignment: .leading) {
-            ImageStripView(images: FoundImage.from(results.prefix(10)))
+    private var isSearchEnabled: Bool {
+        conversationViewModel.conversation.toolIDs.contains(Toolbox.searchWeb.name)
+    }
 
-            if let content = tag.content {
-                Text(content)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+    var body: some View {
+        if isSearchEnabled {
+            VStack(alignment: .leading) {
+                ImageStripView(images: FoundImage.from(results.prefix(10)))
+
+                if let content = tag.content {
+                    Text(content)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-        }
-        .onAppear {
-            Task { try await performQuery() }
+            .onAppear {
+                Task { try await performQuery() }
+            }
         }
     }
 
     func performQuery() async throws {
-        guard tag.hasClosingTag else {
+        guard isSearchEnabled, tag.hasClosingTag else {
             return
         }
         guard let content = tag.content else {
