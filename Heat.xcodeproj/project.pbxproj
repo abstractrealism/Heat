@@ -46,6 +46,7 @@
 		A1B2C3D40000000000000001 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000002 /* NotificationManager.swift */; };
 		A1B2C3D40000000000000005 /* SlashCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000006 /* SlashCommand.swift */; };
 		A1B2C3D40000000000000003 /* MessageFieldControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000004 /* MessageFieldControls.swift */; };
+		A1B2C3D40000000000000007 /* CodeFence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000008 /* CodeFence.swift */; };
 		D8015CC72CB8EDBF0068749D /* MessageInstructions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8015CC62CB8EDBF0068749D /* MessageInstructions.swift */; };
 		D8015CC92CB8F4D60068749D /* RenderAnyTag.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8015CC82CB8F4D60068749D /* RenderAnyTag.swift */; };
 		D80F73B62C95F0E0001B2778 /* AttributedString+.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80F73B52C95F0E0001B2778 /* AttributedString+.swift */; };
@@ -125,6 +126,7 @@
 		A1B2C3D40000000000000002 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000006 /* SlashCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommand.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000004 /* MessageFieldControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFieldControls.swift; sourceTree = "<group>"; };
+		A1B2C3D40000000000000008 /* CodeFence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeFence.swift; sourceTree = "<group>"; };
 		D800BF8D2D8C73F300CD1D99 /* Heat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Heat.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D8015CC62CB8EDBF0068749D /* MessageInstructions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageInstructions.swift; sourceTree = "<group>"; };
 		D8015CC82CB8F4D60068749D /* RenderAnyTag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderAnyTag.swift; sourceTree = "<group>"; };
@@ -232,6 +234,7 @@
 				D884AAF42BD7F50E00B90E9B /* FloatingPanel.swift */,
 				D884AAFF2BD9B9DE00B90E9B /* LocationManager.swift */,
 				D8271A5B2C7A4E83008C345B /* CodeHighlighter.swift */,
+				A1B2C3D40000000000000008 /* CodeFence.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -504,6 +507,7 @@
 			files = (
 				D4FB72672DC01C4C008CC1DF /* FileRow-macOS.swift in Sources */,
 				D8271A5C2C7A4E83008C345B /* CodeHighlighter.swift in Sources */,
+				A1B2C3D40000000000000007 /* CodeFence.swift in Sources */,
 				D4EDDC812D5E91190079D53E /* Message+.swift in Sources */,
 				D85FE37F2C8FCA0B004CA2F3 /* RunView.swift in Sources */,
 				D8F5C1572DBD2BFE00E3C1DC /* PermissionsView.swift in Sources */,

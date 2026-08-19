@@ -5,6 +5,21 @@ struct CodeBlockView: View {
     let configuration: CodeBlockConfiguration
 
     @State private var isCopied = false
+    @State private var saveOutcome: SaveOutcome = .none
+
+    /// What the save button last did, so the button can say so without an
+    /// alert. There's no save panel to confirm the write — the file goes
+    /// straight to Downloads — so the only report is this.
+    private enum SaveOutcome {
+        case none, saved, failed
+    }
+
+    /// The language and, if the model named one, the file. Parsed rather than
+    /// read straight off `configuration.language`, which is the entire fence
+    /// info string. See `CodeFence`.
+    private var fence: CodeFence {
+        CodeFence(fenceInfo: configuration.language)
+    }
 
     /// The background atom-one-dark is drawn against — the theme the syntax
     /// highlighter is fixed to, whatever appearance the app is in.
@@ -23,14 +38,28 @@ struct CodeBlockView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(configuration.language?.capitalized ?? "")
+                Text(fence.displayLabel)
                     .font(.subheadline)
                 Spacer()
+
+                // macOS only. On iOS the same path would write into the app's
+                // own container, where nobody would ever find the file — that
+                // wants a share sheet instead, and iOS is untouched for now.
+                #if os(macOS)
+                Button(action: saveCodeAction) {
+                    Image(systemName: saveSymbol)
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+                .help(saveHelp)
+                #endif
+
                 Button(action: copyCodeAction) {
                     Image(systemName: isCopied ? "checkmark" : "square.on.square")
                         .font(.system(size: 12))
                 }
                 .buttonStyle(.plain)
+                .help("Copy this code")
             }
             .foregroundStyle(Self.chrome)
             .padding(.horizontal, 12)
@@ -48,6 +77,41 @@ struct CodeBlockView: View {
         .clipShape(.rect(cornerRadius: 5))
         .padding(.horizontal, -12)
     }
+
+    #if os(macOS)
+    private var saveSymbol: String {
+        switch saveOutcome {
+        case .none: "square.and.arrow.down"
+        case .saved: "checkmark"
+        case .failed: "exclamationmark.triangle"
+        }
+    }
+
+    private var saveHelp: String {
+        switch saveOutcome {
+        case .none: "Save \(fence.suggestedFilename) to Downloads"
+        case .saved: "Saved to Downloads"
+        case .failed: "Couldn't save — see Settings ▸ Logs"
+        }
+    }
+
+    @MainActor
+    private func saveCodeAction() {
+        do {
+            try CodeDownload.save(configuration.content, as: fence.suggestedFilename)
+            saveOutcome = .saved
+        } catch {
+            // The app has no working error alert, so a failure that only
+            // changed the symbol would be lost the moment it reset. Logged too.
+            AppState.shared.log(error: error)
+            saveOutcome = .failed
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            saveOutcome = .none
+        }
+    }
+    #endif
 
     private func copyCodeAction() {
         #if os(macOS)

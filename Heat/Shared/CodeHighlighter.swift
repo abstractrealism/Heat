@@ -16,6 +16,12 @@ struct CodeHighlighter: CodeSyntaxHighlighter {
     func highlightCode(_ code: String, language: String?) -> Text {
         let highlightedCode: NSAttributedString?
 
+        // What arrives is the whole fence info string, which may name a file as
+        // well as a language. Highlightr answers nil for anything it doesn't
+        // recognise, so passing `python:parse_logs.py` through would leave the
+        // block unhighlighted. See `CodeFence`.
+        let language = CodeFence(fenceInfo: language).language
+
         if let language, !language.isEmpty {
             highlightedCode = highlightr.highlight(code, as: language)
         } else {
