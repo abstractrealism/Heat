@@ -192,6 +192,26 @@ final class AppState {
             .filter { byID[$0]?.isConversation == true }
     }
 
+    /// Whether stepping between conversations can go anywhere.
+    ///
+    /// Deliberately not `visibleConversationIDs.count > 1`. The menu asks this
+    /// on every validation pass, which is far too often to build and sort the
+    /// whole file hierarchy for — and it was being asked twice, once per menu
+    /// item, on top of the build that stepping itself does.
+    ///
+    /// It counts conversations rather than *visible* ones, so the commands stay
+    /// enabled in the one case where they do nothing: every conversation shut
+    /// inside a collapsed folder. A command that no-ops in a corner is a far
+    /// cheaper mistake than walking the file tree on every keystroke.
+    var canStepConversations: Bool {
+        var found = 0
+        for file in files where file.isConversation {
+            found += 1
+            if found > 1 { return true }
+        }
+        return false
+    }
+
     /// Opens the conversation before or after the open one.
     func step(_ step: FileOrder.Step) {
         guard let destination = FileOrder.step(step, from: selectedFileID, in: visibleConversationIDs) else {

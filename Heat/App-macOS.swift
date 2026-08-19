@@ -127,13 +127,13 @@ struct MainApp: App {
                     state.step(.next)
                 }
                 .keyboardShortcut(.tab, modifiers: .control)
-                .disabled(state.visibleConversationIDs.count < 2)
+                .disabled(!state.canStepConversations)
 
                 Button("Previous Conversation") {
                     state.step(.previous)
                 }
                 .keyboardShortcut(.tab, modifiers: [.control, .shift])
-                .disabled(state.visibleConversationIDs.count < 2)
+                .disabled(!state.canStepConversations)
             }
 
             // Beside Settings, this being a thing you do to the app rather

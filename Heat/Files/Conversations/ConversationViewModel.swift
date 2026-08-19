@@ -66,23 +66,32 @@ final class ConversationViewModelStore {
 
     @ObservationIgnored private var models: [String: ConversationViewModel] = [:]
 
+    /// Which models have been asked for, least recently first. Held separately
+    /// because a dictionary has no order to evict by, and evicting without one
+    /// meant evicting everything.
+    @ObservationIgnored private var recency: [String] = []
+
     /// Caps idle models so browsing many conversations doesn't hold them all
     /// in memory. A generating model is never evicted, and a view already
     /// showing an evicted model keeps its own reference.
     private let idleLimit = 8
 
     func model(for file: File) -> ConversationViewModel {
+        recency.removeAll { $0 == file.id }
+        recency.append(file.id)
+
         if let existing = models[file.id] {
             return existing
         }
-        evictIdleModelsIfNeeded()
         let model = ConversationViewModel(file: file)
         models[file.id] = model
+        evictIdleModelsIfNeeded()
         return model
     }
 
     func removeAll() {
         models.removeAll()
+        recency.removeAll()
         generatingFileIDs.removeAll()
     }
 
@@ -96,11 +105,23 @@ final class ConversationViewModelStore {
         }
     }
 
+    /// Drops the least recently used idle models until the cache is back inside
+    /// its limit.
+    ///
+    /// This used to empty the cache instead of trimming it: on reaching the
+    /// limit it removed *every* idle model, so opening a ninth conversation
+    /// discarded the other eight. Stepping through conversations therefore
+    /// re-read and re-decoded each one from disk almost every time — the very
+    /// thing holding them was meant to avoid, and worst on the conversations
+    /// where it costs most.
     private func evictIdleModelsIfNeeded() {
-        guard models.count >= idleLimit else { return }
-        for (id, model) in models where !model.isGenerating {
+        guard models.count > idleLimit else { return }
+        for id in recency {
+            guard models.count > idleLimit else { break }
+            guard let model = models[id], !model.isGenerating else { continue }
             models.removeValue(forKey: id)
         }
+        recency.removeAll { models[$0] == nil }
     }
 }
 
