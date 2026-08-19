@@ -17,6 +17,11 @@ struct MainApp: App {
     @State private var showingError = false
     @State private var error: (any CustomStringConvertible)? = nil
 
+    /// Reset deletes every conversation, document and setting, and there is no
+    /// undo. It sat one click away in a menu, and has just moved next to
+    /// Settings where it is easier to reach by accident.
+    @State private var showingResetConfirmation = false
+
     @AppStorage(AppAppearance.preferenceKey) private var appearance: AppAppearance = .system
 
     var body: some Scene {
@@ -71,6 +76,18 @@ struct MainApp: App {
             } message: { error in
                 Text(error.description)
             }
+            .confirmationDialog(
+                "Delete everything in Heat?",
+                isPresented: $showingResetConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete Everything", role: .destructive) {
+                    Task { await appReset() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Every conversation, document and setting is removed, and the services are returned to their defaults. This cannot be undone.")
+            }
             .onAppear {
                 Task { await appActive() }
             }
@@ -81,7 +98,11 @@ struct MainApp: App {
         .defaultLaunchBehavior(.presented)
         .environment(state)
         .commands {
-            CommandMenu("Heat") {
+            // Into the File menu, where macOS puts new documents and where ⌘N
+            // is expected. These were in a CommandMenu named after the app,
+            // which builds a second top-level menu rather than adding to the
+            // app's own — so the menu bar read Heat, Edit, View, Heat.
+            CommandGroup(replacing: .newItem) {
                 Button("New Conversation") {
                     Task { do { try await state.fileCreateConversation() } catch { state.log(error: error) } }
                 }
@@ -95,11 +116,14 @@ struct MainApp: App {
                 Button("New Folder") {
                     Task { do { try await state.folderCreate() } catch { state.log(error: error) } }
                 }
+            }
 
+            // Beside Settings, this being a thing you do to the app rather
+            // than to a file.
+            CommandGroup(after: .appSettings) {
                 Divider()
-
-                Button("Reset All Data") {
-                    Task { await appReset() }
+                Button("Reset All Data…") {
+                    showingResetConfirmation = true
                 }
             }
         }
