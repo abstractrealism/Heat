@@ -16,9 +16,14 @@ struct RenderText: View {
     }
 
     var body: some View {
+        // Held once: this is a computed property running a full regex pass
+        // over the message, and reading it from inside the ForEach ran that
+        // pass again for every segment — a message with S segments was parsed
+        // S+1 times per evaluation.
+        let contents = toTaggedContents
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(toTaggedContents.indices, id: \.self) { index in
-                switch toTaggedContents[index] {
+            ForEach(contents.indices, id: \.self) { index in
+                switch contents[index] {
                 case let .text(text):
                     Markdown(text)
                         .markdownCodeSyntaxHighlighter(.app)
