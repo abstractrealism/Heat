@@ -5,7 +5,7 @@ import HeatKit
 struct ConversationView: View {
     @Environment(AppState.self) var state
 
-    let fileID: String
+    let file: File
 
     /// Shared rather than owned: see ConversationViewModelStore. A view model
     /// created here would be discarded whenever the view is torn down, taking
@@ -13,9 +13,11 @@ struct ConversationView: View {
     let conversationViewModel: ConversationViewModel
 
     init(file: File) {
-        self.fileID = file.id
+        self.file = file
         self.conversationViewModel = ConversationViewModelStore.shared.model(for: file)
     }
+
+    private var fileID: String { file.id }
 
     var body: some View {
         MessageList()
@@ -36,16 +38,12 @@ struct ConversationView: View {
     }
 
     func handleLoad() {
-        // A turn still in flight owns the conversation in memory, and it is
-        // further along than the copy on disk — reading over it would drop
-        // the prompt and the answer arriving right now.
-        guard !conversationViewModel.isGenerating else { return }
-        do {
-            let conversation = try state.file(Conversation.self, fileID: fileID)
-            conversationViewModel.read(conversation)
-        } catch {
-            state.log(error: error)
-        }
+        // The model decides whether disk has anything it doesn't: a turn in
+        // flight is left alone, and a copy already matching the file's date
+        // isn't re-read — reassigning identical content still invalidates
+        // every observer, which made returning to a thread cost as much as
+        // opening it cold.
+        conversationViewModel.load(file)
     }
 
     func handleSubmit(_ prompt: String, images: [URL] = [], context: [String: String]? = nil, toolIDs: Set<String>? = nil) {

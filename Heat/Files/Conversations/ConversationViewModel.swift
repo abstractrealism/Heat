@@ -409,8 +409,35 @@ final class ConversationViewModel {
         self.file = file
     }
 
-    func read(_ conversation: Conversation) {
-        self.conversation = conversation
+    /// Whether this model has read its conversation from disk yet. Needed
+    /// because a fresh model already holds the file it was created from —
+    /// matching dates alone would say there's nothing to load.
+    @ObservationIgnored private var hasLoadedFromDisk = false
+
+    /// Brings the conversation in from disk, if there's anything new there.
+    ///
+    /// Called every time the view appears, which with cached view models is
+    /// every switch back to a thread — and reassigning `conversation`
+    /// invalidates everything observing it, identical content or not, which
+    /// made returning to a thread cost as much as opening it cold. The model
+    /// bumps `file.modified` itself whenever it writes, so a date that matches
+    /// means the copy in memory is the copy on disk, and there is nothing to
+    /// do. Dates that differ always load: the stale direction fails safe.
+    ///
+    /// A turn in flight owns the conversation in memory outright — it is
+    /// further along than the copy on disk, and reading over it would drop
+    /// the prompt and the answer arriving right now.
+    func load(_ file: File) {
+        guard !isGenerating else { return }
+        if hasLoadedFromDisk, file.modified == self.file.modified { return }
+        do {
+            let conversation = try state.file(Conversation.self, fileID: file.id)
+            self.conversation = conversation
+            self.file = file
+            hasLoadedFromDisk = true
+        } catch {
+            state.log(error: error)
+        }
     }
 
     /// How often a streaming answer is published to the view. Fast enough to
@@ -659,7 +686,8 @@ final class ConversationViewModel {
             do {
                 if conversation.isEmpty {
                     let stored = try state.file(Conversation.self, fileID: file.id)
-                    read(stored)
+                    conversation = stored
+                    hasLoadedFromDisk = true
                 }
 
                 // Before the tools below are merged in, or a template's tools
