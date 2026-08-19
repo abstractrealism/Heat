@@ -228,7 +228,28 @@ enum CodeDownload {
         }
         let destination = try availableURL(for: filename, in: directory)
         try text.write(to: destination, atomically: true, encoding: .utf8)
+        announce(destination)
         return destination
+    }
+
+    /// Tells the Dock a download landed, so the Downloads stack bounces.
+    ///
+    /// This is the notification browsers post, and the only part of the
+    /// familiar download feedback that's actually available: the animation of
+    /// an icon flying into the Dock is private to the apps that draw it
+    /// themselves, not something the system offers.
+    ///
+    /// Undocumented, and it fails by doing nothing — there's no result to
+    /// check and no error to catch. If the Dock ever stops answering, the
+    /// button's own confirmation is what's left, which is why that says
+    /// "Saved to Downloads" in words rather than relying on this.
+    private static func announce(_ url: URL) {
+        #if os(macOS)
+        DistributedNotificationCenter.default().post(
+            name: Notification.Name("com.apple.DownloadFileFinished"),
+            object: url.path(percentEncoded: false)
+        )
+        #endif
     }
 
     /// `parse_logs.py`, then `parse_logs 2.py`, and so on — the way a browser

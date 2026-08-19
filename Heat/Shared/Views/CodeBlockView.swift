@@ -38,7 +38,7 @@ struct CodeBlockView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(fence.displayLabel)
+                Text(headerLabel)
                     .font(.subheadline)
                 Spacer()
 
@@ -76,6 +76,24 @@ struct CodeBlockView: View {
         .background(Self.background)
         .clipShape(.rect(cornerRadius: 5))
         .padding(.horizontal, -12)
+    }
+
+    /// Normally what the block is; briefly what just happened to it.
+    ///
+    /// The Dock bounce is undocumented and can only fail silently, so the
+    /// confirmation that a file was written has to be legible here too — a
+    /// checkmark alone reads the same as nothing happening if you're expecting
+    /// the Dock to move and it doesn't.
+    private var headerLabel: String {
+        #if os(macOS)
+        switch saveOutcome {
+        case .none: fence.displayLabel
+        case .saved: "Saved to Downloads"
+        case .failed: "Couldn't save"
+        }
+        #else
+        fence.displayLabel
+        #endif
     }
 
     #if os(macOS)
