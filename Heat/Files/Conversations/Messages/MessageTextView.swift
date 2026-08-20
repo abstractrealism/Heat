@@ -86,6 +86,8 @@ struct MessageTextView: NSViewRepresentable {
             if let storage = textView.textStorage {
                 MessageTextStyle.apply(to: storage)
             }
+            // The run of edits ended with the text it applied to.
+            context.coordinator.coalescing.reset()
         }
 
         if focusRequest, let window = textView.window, window.firstResponder !== textView {
@@ -113,8 +115,25 @@ struct MessageTextView: NSViewRepresentable {
 
         private var lastReportedHeight: CGFloat = -1
 
+        /// Keeps typing and rubbing out in separate undo actions.
+        var coalescing = UndoCoalescing()
+
         init(parent: MessageTextView) {
             self.parent = parent
+        }
+
+        func textView(
+            _ textView: NSTextView,
+            shouldChangeTextIn affectedCharRange: NSRange,
+            replacementString: String?
+        ) -> Bool {
+            // Nothing going in and something being replaced is a deletion,
+            // however it was asked for.
+            let isDeletion = (replacementString?.isEmpty ?? true) && affectedCharRange.length > 0
+            if coalescing.shouldBreak(isDeletion: isDeletion) {
+                textView.breakUndoCoalescing()
+            }
+            return true
         }
 
         func textDidChange(_ notification: Notification) {
@@ -169,6 +188,34 @@ struct MessageTextView: NSViewRepresentable {
             lastReportedHeight = height
             parent.onHeightChange(height)
         }
+    }
+}
+
+/// Whether a run of edits should stop merging into a single undo.
+///
+/// AppKit merges consecutive typing into one undo action, and merges
+/// backspaces into that same action — so typing a sentence, rubbing out the
+/// last word, and pressing ⌘Z removes the whole sentence instead of putting
+/// the word back. Verified as AppKit's own behaviour, not something Heat
+/// introduced: a bare NSTextView with nothing attached does it too, and only
+/// for backspaces — selecting a word and deleting it, or ⌥⌫, already undo the
+/// way you'd expect.
+///
+/// Rubbing out is a different intention from writing, so a change of direction
+/// ends the run and starts a new one.
+struct UndoCoalescing {
+    private var lastWasDeletion: Bool?
+
+    mutating func shouldBreak(isDeletion: Bool) -> Bool {
+        defer { lastWasDeletion = isDeletion }
+        guard let previous = lastWasDeletion else { return false }
+        return previous != isDeletion
+    }
+
+    /// Forgets the run, for when the text is replaced wholesale rather than
+    /// edited — sending, clearing, choosing a template.
+    mutating func reset() {
+        lastWasDeletion = nil
     }
 }
 
