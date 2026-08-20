@@ -68,6 +68,16 @@ struct FileRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            // The row's own vertical space, taken back from the list. With the
+            // list's insets doing it instead, the margins belonged to the row's
+            // slot but not to this view, so the gaps between rows accepted no
+            // drop at all and the cursor flickered between refusing and
+            // accepting on the way past.
+            .padding(.vertical, 4)
+            // The whole row rather than the words in it. A Spacer is layout
+            // and not content, so without a shape to hit only the label itself
+            // answers — which is why a drop had to land on the text.
+            .contentShape(.rect)
             // Marks the folder a drop would land in — which is this row when
             // the cursor is on the folder itself, and equally when it's on
             // anything inside it.
@@ -85,6 +95,12 @@ struct FileRow: View {
                     onDrop: onDrop
                 )
             )
+            // Vertical spacing is the row's own now, so rows meet with nothing
+            // dead between them. Horizontal is stated rather than defaulted
+            // because these insets replace the list's outright — the leading
+            // value stands in for the sidebar's usual margin, and `leadingSpace`
+            // adds depth on top of it.
+            .listRowInsets(.init(top: 0, leading: 10, bottom: 0, trailing: 10))
 
             // Child references
             if file.isExpanded, let children = tree.children {
