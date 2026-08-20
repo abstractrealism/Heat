@@ -133,11 +133,68 @@ extension API {
 
     // File Delete
 
-    public func fileDelete(_ fileID: String) async throws {
-        // Before the conversation goes, since afterwards there's nothing left
-        // saying which pictures were its.
+    /// Everything needed to put a deleted file back.
+    ///
+    /// Held in memory by whoever offers the undo, and dropped when they stop
+    /// offering it. Deliberately not a trash folder on disk: a conversation
+    /// someone deleted should actually be gone once they've moved on, rather
+    /// than lingering somewhere they don't know about and can't see.
+    public struct DeletedFile: Sendable {
+        public struct Attachment: Sendable {
+            public let url: URL
+            public let data: Data
+        }
+
+        public let file: File
+
+        /// Nil for a directory, which has no contents of its own.
+        public let data: Data?
+
+        /// Pictures that were the conversation's own, since deleting it
+        /// removes them and restoring it would otherwise leave the message
+        /// pointing at a file that no longer exists.
+        public let attachments: [Attachment]
+    }
+
+    @discardableResult
+    public func fileDelete(_ fileID: String) async throws -> DeletedFile {
+        // Read before removing: afterwards there is nothing left saying what
+        // the file held or which pictures were its.
+        let deleted = snapshot(fileID)
+
         deleteAttachments(of: fileID)
         try await filesProvider.cacheFileDelete(fileID)
+        return deleted
+    }
+
+    /// Restores a file that `fileDelete` removed.
+    public func fileRestore(_ deleted: DeletedFile) async throws {
+        for attachment in deleted.attachments {
+            do {
+                try FileManager.default.createDirectory(
+                    at: attachment.url.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                try attachment.data.write(to: attachment.url, options: .atomic)
+            } catch {
+                // A picture that won't come back shouldn't cost the
+                // conversation it belonged to.
+                logsProvider.log(error: error)
+            }
+        }
+        try await filesProvider.cacheFileRestore(deleted.file, data: deleted.data)
+    }
+
+    private func snapshot(_ fileID: String) -> DeletedFile {
+        let file = (try? filesProvider.cachedFileMetadata(fileID))
+            ?? File(id: fileID, path: fileID, mimetype: .json)
+        let data = file.isDirectory ? nil : try? filesProvider.cachedFileData(fileID)
+
+        let attachments = attachmentURLs(of: fileID).compactMap { url -> DeletedFile.Attachment? in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return .init(url: url, data: data)
+        }
+        return .init(file: file, data: data, attachments: attachments)
     }
 
     /// Removes the pictures a conversation was carrying.
@@ -151,19 +208,29 @@ extension API {
     /// of a picture the app didn't put there, and deleting a conversation is no
     /// reason to go removing something elsewhere on the disk.
     private func deleteAttachments(of fileID: String) {
-        guard let conversation = try? filesProvider.cachedFileObject(Conversation.self, fileID: fileID) else {
-            return
+        for url in attachmentURLs(of: fileID) {
+            try? FileManager.default.removeItem(at: url)
         }
-        guard let documents = Resource.document("").url?.deletingLastPathComponent() else { return }
+    }
 
+    /// The pictures a conversation owns — those copied into the app's own
+    /// storage, never one that merely lives somewhere else on disk.
+    private func attachmentURLs(of fileID: String) -> [URL] {
+        guard let conversation = try? filesProvider.cachedFileObject(Conversation.self, fileID: fileID) else {
+            return []
+        }
+        guard let documents = Resource.document("").url?.deletingLastPathComponent() else { return [] }
+
+        var urls: [URL] = []
         for message in conversation.messages {
             for content in message.contents ?? [] {
                 guard case .image(let image) = content, isInAppStorage(image.url, under: documents) else {
                     continue
                 }
-                try? FileManager.default.removeItem(at: image.url)
+                urls.append(image.url)
             }
         }
+        return urls
     }
 
     /// Whether a file is one of ours to remove.

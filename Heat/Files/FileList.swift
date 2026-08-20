@@ -24,6 +24,7 @@ enum FileSortOrder: String, CaseIterable, Identifiable {
 struct FileList: View {
     @Environment(AppState.self) var state
     @Environment(\.dismiss) var dismiss
+    @Environment(\.undoManager) private var undoManager
 
     @Binding var selected: String?
 
@@ -326,24 +327,29 @@ struct FileList: View {
         let hidden = targets.count - pendingDeletion.count
 
         let title = targets.count == 1 ? "Delete File" : "Delete \(targets.count) Files"
+        // Undo lives on the window's undo stack, which starts empty each
+        // launch — so the promise has to be bounded by the session to be true.
+        let undo = "Undo brings this back until you quit Heat."
+
         guard hidden > 0 else {
-            return (title, "This can't be undone.")
+            return (title, undo)
         }
         if pendingDeletion.count == 1,
            let folder = try? API.shared.file(pendingDeletion.first!) {
             let name = folder.name ?? "this folder"
-            return (title, "Deleting \(name) also deletes the \(hidden) \(hidden == 1 ? "item" : "items") inside it. This can't be undone.")
+            return (title, "Deleting \(name) also deletes the \(hidden) \(hidden == 1 ? "item" : "items") inside it. \(undo)")
         }
-        return (title, "This includes \(hidden) \(hidden == 1 ? "item" : "items") inside the folders being deleted. This can't be undone.")
+        return (title, "This includes \(hidden) \(hidden == 1 ? "item" : "items") inside the folders being deleted. \(undo)")
     }
 
     func handleDelete(_ fileIDs: Set<String>) {
         let targets = deletionTargets(fileIDs)
         pendingDeletion = []
         Task {
+            var deleted: [API.DeletedFile] = []
             for file in targets {
                 do {
-                    try await API.shared.fileDelete(file.id)
+                    deleted.append(try await API.shared.fileDelete(file.id))
                 } catch {
                     // Carry on with the rest rather than stopping partway
                     // through and leaving the outcome unclear.
@@ -354,6 +360,41 @@ struct FileList: View {
             selection.subtract(removed)
             if let open = selected, removed.contains(open) {
                 selected = nil
+            }
+            registerUndo(for: deleted)
+        }
+    }
+
+    /// Offers the delete back through the Edit menu and ⌘Z.
+    ///
+    /// The snapshots live in this closure and nowhere else, so they're held
+    /// exactly as long as the undo is on offer and released the moment the
+    /// stack drops them — nothing deleted lingers on disk waiting to be
+    /// wanted. The cost is that undo doesn't survive quitting, which is what
+    /// undo means everywhere else.
+    ///
+    /// Registered against `AppState`, undo needing an object to own the
+    /// action; a `View` is a value and can't.
+    private func registerUndo(for deleted: [API.DeletedFile]) {
+        guard !deleted.isEmpty, let undoManager else { return }
+
+        undoManager.setActionName(deleted.count == 1 ? "Delete File" : "Delete \(deleted.count) Files")
+        undoManager.registerUndo(withTarget: state) { state in
+            Task { @MainActor in
+                var restored: Set<String> = []
+                // Shallowest first, mirroring the deepest-first deletion: a
+                // folder has to exist again before what was inside it does.
+                for item in deleted.sorted(by: {
+                    $0.file.path.split(separator: "/").count < $1.file.path.split(separator: "/").count
+                }) {
+                    do {
+                        try await API.shared.fileRestore(item)
+                        restored.insert(item.file.id)
+                    } catch {
+                        state.log(error: error)
+                    }
+                }
+                selection = restored
             }
         }
     }

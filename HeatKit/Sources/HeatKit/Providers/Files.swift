@@ -308,6 +308,18 @@ extension FilesProvider {
         files.removeAll(where: { $0.id == fileID })
     }
 
+    /// Puts a deleted file back exactly where it was.
+    ///
+    /// Metadata first: writing the data looks its path up by id, so the file
+    /// has to be known again before its contents can be restored.
+    public func cacheFileRestore(_ file: File, data: Data?) async throws {
+        try await ready()
+        try await cacheFileMetadata(file)
+        if let data, !file.isDirectory {
+            try await cacheFileData(data, fileID: file.id)
+        }
+    }
+
     // Moving between folders
 
     /// Moves a file into a folder, or back to the top level when `destinationID`
