@@ -122,6 +122,13 @@ struct FileList: View {
                 Button("Show in Finder") { handleShowFinder(fileIDs) }
                 Button("Edit") { handleEdit(fileIDs) }
 
+                let groupable = groupableCount(fileIDs)
+                if groupable > 0 {
+                    Button(groupable == 1 ? "New Folder with 1 Item" : "New Folder with \(groupable) Items") {
+                        handleNewFolder(from: fileIDs)
+                    }
+                }
+
                 // The way back out. Dragging handles going in, but there's
                 // nowhere to drop a row to mean "the top level" — the list's
                 // own background sits behind every row.
@@ -210,6 +217,51 @@ struct FileList: View {
             }
         }
         return true
+    }
+
+    /// Groups a selection into a new folder, the way Finder's "New Folder with
+    /// Selection" does.
+    ///
+    /// The folder is made beside what's going into it when they all share a
+    /// parent, and at the top level when they don't — there being no single
+    /// "here" for a selection spanning several folders.
+    ///
+    /// Created expanded, so the files are visible where they landed rather
+    /// than appearing to have been swallowed.
+    private func handleNewFolder(from fileIDs: Set<String>) {
+        let files = fileIDs.compactMap { try? API.shared.file($0) }.filter { !$0.isDirectory }
+        guard !files.isEmpty else { return }
+
+        let parents = Set(files.map { ($0.path as NSString).deletingLastPathComponent })
+        let parentPath = parents.count == 1 ? (parents.first ?? "") : ""
+
+        Task {
+            do {
+                let id = String.id
+                let folderID = try await state.folderCreate(
+                    id: id,
+                    name: "New Folder",
+                    path: parentPath.isEmpty ? id : "\(parentPath)/\(id)"
+                )
+
+                var folder = try API.shared.file(folderID)
+                folder.isExpanded = true
+                try await API.shared.fileUpdate(folder)
+
+                move(Set(files.map(\.id)), into: folderID)
+                selection = [folderID]
+            } catch {
+                state.log(error: error)
+            }
+        }
+    }
+
+    /// How many of these would actually go into a new folder.
+    private func groupableCount(_ fileIDs: Set<String>) -> Int {
+        fileIDs.count { id in
+            guard let file = try? API.shared.file(id) else { return false }
+            return !file.isDirectory
+        }
     }
 
     /// Whether any of these are currently inside a folder, and so have

@@ -226,10 +226,16 @@ final class AppState {
         try filesProvider.cachedFileObject(type, fileID: fileID)
     }
 
+    /// Creates a folder.
+    ///
+    /// `path` places it explicitly, for callers that know where it belongs —
+    /// grouping a selection puts the folder beside what's going into it.
+    /// Omitted, it lands wherever new files land: alongside whatever is
+    /// currently open.
     @discardableResult
-    func folderCreate(id: String = .id) async throws -> String {
+    func folderCreate(id: String = .id, name: String? = nil, path: String? = nil) async throws -> String {
         let filename = "\(id)"
-        let fileID = try await fileCreate(id: id, filename: filename, mimetype: .directory)
+        let fileID = try await fileCreate(id: id, filename: filename, path: path, name: name, mimetype: .directory)
         selectedFileID = fileID
         return fileID
     }
