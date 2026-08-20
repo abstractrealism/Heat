@@ -308,6 +308,62 @@ extension FilesProvider {
         files.removeAll(where: { $0.id == fileID })
     }
 
+    // Moving between folders
+
+    /// Moves a file into a folder, or back to the top level when `destinationID`
+    /// is nil.
+    ///
+    /// A file's metadata is stored under its id, but its *data* is stored at
+    /// its path — so moving is a real file-system operation, not a metadata
+    /// edit. Doing only the latter would leave the path pointing at nothing and
+    /// every later read failing with `cachedDataNotFound`.
+    ///
+    /// `modified` is deliberately left alone. It orders the sidebar under
+    /// Recent Activity, and it's also what tells a cached conversation view
+    /// model that disk has something newer — moving a file changes neither what
+    /// it says nor when it was last worked on.
+    ///
+    /// Directories are refused for now: their descendants' paths are all
+    /// prefixed with the folder's own, so moving one means rewriting the whole
+    /// subtree, and dropping a folder into its own descendant would strand it.
+    public func moveFile(_ fileID: String, into destinationID: String?) async throws {
+        try await ready()
+
+        let file = try cachedFileMetadata(fileID)
+        guard !file.isDirectory else {
+            throw Error.unknown("Folders can't be moved into other folders yet.")
+        }
+
+        var destinationPath = ""
+        if let destinationID {
+            let destination = try cachedFileMetadata(destinationID)
+            guard destination.isDirectory else {
+                throw Error.unknown("\(destination.name ?? destination.path) isn't a folder.")
+            }
+            destinationPath = destination.path
+        }
+
+        let filename = (file.path as NSString).lastPathComponent
+        let newPath = destinationPath.isEmpty ? filename : "\(destinationPath)/\(filename)"
+        guard newPath != file.path else { return }
+
+        let source = persistenceURL.appending(path: file.path)
+        let target = persistenceURL.appending(path: newPath)
+
+        // A folder exists only as metadata until something is put in it —
+        // fileCreate returns early for directories — so the directory being
+        // moved into may not be on disk at all.
+        try FileManager.default.createDirectory(
+            at: target.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.moveItem(at: source, to: target)
+
+        var moved = file
+        moved.path = newPath
+        try await cacheFileMetadata(moved)
+    }
+
     // Ordering
 
     public func moveFiles(_ indexSet: IndexSet, to offset: Int, context: [File]) async throws {

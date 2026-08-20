@@ -125,6 +125,12 @@ extension API {
         try await filesProvider.moveFiles(indexSet, to: offset, context: context)
     }
 
+    /// Moves a file into a folder, or back to the top level when `folderID` is
+    /// nil. Files only — see `FilesProvider.moveFile`.
+    public func fileMove(_ fileID: String, into folderID: String?) async throws {
+        try await filesProvider.moveFile(fileID, into: folderID)
+    }
+
     // File Delete
 
     public func fileDelete(_ fileID: String) async throws {

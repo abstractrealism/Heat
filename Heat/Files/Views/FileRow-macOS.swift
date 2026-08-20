@@ -7,6 +7,11 @@ struct FileRow: View {
     let tree: FileTree
     let depth: Int
 
+    /// What to do when rows are dropped on a folder. Passed down rather than
+    /// reached for, because deciding *which* files move needs the list's
+    /// selection, which lives with the list.
+    let onDrop: (_ draggedIDs: [String], _ folderID: String) -> Bool
+
     @State private var isDropping = false
 
     var body: some View {
@@ -47,14 +52,45 @@ struct FileRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isDropping ? .blue : .clear)
+            // Was here from the start with nothing ever setting it — there was
+            // no way to drag a file anywhere. Now it marks the folder a drop
+            // would land in.
+            .background(isDropping ? Color.accentColor.opacity(0.25) : .clear, in: .rect(cornerRadius: 4))
+            .modifier(DragAndDrop(file: file, isDropping: $isDropping, onDrop: onDrop))
 
             // Child references
             if file.isExpanded, let children = tree.children {
                 ForEach(children) { child in
-                    FileRow(tree: child, depth: depth+1)
+                    FileRow(tree: child, depth: depth+1, onDrop: onDrop)
                         .tag(child.id)
                 }
+            }
+        }
+    }
+
+    /// A row is one or the other: a folder takes drops, anything else can be
+    /// dragged into one.
+    ///
+    /// Folders are deliberately not draggable — moving one means rewriting
+    /// every descendant's path, and dropping it into its own descendant would
+    /// strand the subtree. See `FilesProvider.moveFile`.
+    private struct DragAndDrop: ViewModifier {
+        let file: File
+        @Binding var isDropping: Bool
+        let onDrop: (_ draggedIDs: [String], _ folderID: String) -> Bool
+
+        func body(content: Content) -> some View {
+            if file.isDirectory {
+                content.dropDestination(for: String.self) { ids, _ in
+                    onDrop(ids, file.id)
+                } isTargeted: { targeted in
+                    isDropping = targeted
+                }
+            } else {
+                // The payload is the file's id. Plain text dragged in from
+                // elsewhere arrives the same way, so the drop handler only
+                // acts on ids it can find a file for.
+                content.draggable(file.id)
             }
         }
     }

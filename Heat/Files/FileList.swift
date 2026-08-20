@@ -47,7 +47,7 @@ struct FileList: View {
     private func list(_ proxy: ScrollViewProxy) -> some View {
         List(selection: $selection) {
             ForEach(sortedTree) { tree in
-                FileRow(tree: tree, depth: 0)
+                FileRow(tree: tree, depth: 0, onDrop: handleDrop)
                     .tag(tree.id)
             }
         }
@@ -121,6 +121,14 @@ struct FileList: View {
             Group {
                 Button("Show in Finder") { handleShowFinder(fileIDs) }
                 Button("Edit") { handleEdit(fileIDs) }
+
+                // The way back out. Dragging handles going in, but there's
+                // nowhere to drop a row to mean "the top level" — the list's
+                // own background sits behind every row.
+                if isInsideFolder(fileIDs) {
+                    Button("Move to Top Level") { move(fileIDs, into: nil) }
+                }
+
                 Divider()
                 Button("Delete", role: .destructive) { pendingDeletion = fileIDs }
             }
@@ -161,6 +169,56 @@ struct FileList: View {
     /// list is drawn in, and a second copy of this would eventually disagree.
     private var sortedTree: [FileTree] {
         FileOrder.sorted(state.fileTree, files: state.files, by: sortOrder)
+    }
+
+    /// Files dropped on a folder.
+    ///
+    /// Dragging a row that's part of the current selection moves the whole
+    /// selection, the way Finder does — the drag itself only carries the one
+    /// row it started on, so the rest is read from the selection here.
+    private func handleDrop(_ draggedIDs: [String], into folderID: String) -> Bool {
+        var moving = Set(draggedIDs)
+        if draggedIDs.contains(where: { selection.contains($0) }) {
+            moving.formUnion(selection)
+        }
+        return move(moving, into: folderID)
+    }
+
+    /// Moves what can be moved, and says whether anything was.
+    ///
+    /// Folders are skipped rather than refused: dragging a mixed selection
+    /// should still move the files in it. An id with no file behind it is
+    /// skipped too — the drag payload is plain text, so anything at all can
+    /// arrive here.
+    @discardableResult
+    private func move(_ fileIDs: Set<String>, into folderID: String?) -> Bool {
+        let movable = fileIDs.filter { id in
+            guard id != folderID, let file = try? API.shared.file(id) else { return false }
+            return !file.isDirectory
+        }
+        guard !movable.isEmpty else { return false }
+
+        Task {
+            for id in movable {
+                do {
+                    try await API.shared.fileMove(id, into: folderID)
+                } catch {
+                    // Carry on with the rest rather than stopping partway and
+                    // leaving half the selection moved with no word why.
+                    state.log(error: error)
+                }
+            }
+        }
+        return true
+    }
+
+    /// Whether any of these are currently inside a folder, and so have
+    /// somewhere to come back out to.
+    private func isInsideFolder(_ fileIDs: Set<String>) -> Bool {
+        fileIDs.contains { id in
+            guard let file = try? API.shared.file(id), !file.isDirectory else { return false }
+            return file.path.contains("/")
+        }
     }
 
     func handleShowFinder(_ fileIDs: Set<String>) {
