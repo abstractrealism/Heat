@@ -23,11 +23,25 @@ struct FileRow: View {
     /// lives with the list.
     let onDrop: (_ draggedIDs: [String], _ folderID: String?) -> Bool
 
+    /// Files that have just been moved, briefly lit so they can be found
+    /// again in the sorted list.
+    let recentlyMoved: Set<String>
+
+    /// How far past its own height a row answers a drop, covering the gap the
+    /// list leaves between rows. Cosmetically invisible: the layout is pulled
+    /// back by the same amount.
+    private static let dropOverhang: CGFloat = 3
+
     /// Where a drop on this row lands: into it if it's a folder, otherwise
     /// into whatever folder it sits in — so the whole of a folder's contents
     /// is one target, and a top-level row means the top level.
     private var dropFolderID: String? {
         (try? API.shared.file(tree.id))?.isDirectory == true ? tree.id : parentFolderID
+    }
+
+    private func isHighlighted(_ file: File) -> Bool {
+        if recentlyMoved.contains(file.id) { return true }
+        return file.isDirectory && dropFocus?.folderID == file.id
     }
 
     var body: some View {
@@ -74,18 +88,27 @@ struct FileRow: View {
             // drop at all and the cursor flickered between refusing and
             // accepting on the way past.
             .padding(.vertical, 4)
-            // The whole row rather than the words in it. A Spacer is layout
-            // and not content, so without a shape to hit only the label itself
-            // answers — which is why a drop had to land on the text.
-            .contentShape(.rect)
-            // Marks the folder a drop would land in — which is this row when
-            // the cursor is on the folder itself, and equally when it's on
-            // anything inside it.
+            // Two things wear the same highlight: the folder a drop is heading
+            // for, and, just after, the files that went there. The sidebar is
+            // sorted, so a dropped file rarely lands where it was let go —
+            // this says which rows just moved.
             .background(
-                file.isDirectory && dropFocus?.folderID == file.id
-                    ? Color.accentColor.opacity(0.25) : .clear,
+                isHighlighted(file) ? Color.accentColor.opacity(0.25) : .clear,
                 in: .rect(cornerRadius: 4)
             )
+            .animation(.easeOut(duration: 0.25), value: isHighlighted(file))
+            // A sliver of space survives between rows that belongs to the list
+            // rather than to either of them. `listRowSpacing` would close it,
+            // but that modifier is iOS-only, so instead the hit area is grown
+            // past the row and the layout pulled back by the same amount: the
+            // row occupies what it always did, and answers a drop slightly
+            // beyond it. Applied after the background, so nothing about the
+            // highlight moves.
+            .padding(.vertical, Self.dropOverhang)
+            // The whole row rather than the words in it. A Spacer is layout and
+            // not content, so with no shape to hit only the label itself
+            // answers — which is why a drop had to land on the text.
+            .contentShape(.rect)
             .modifier(
                 DragAndDrop(
                     file: file,
@@ -95,6 +118,9 @@ struct FileRow: View {
                     onDrop: onDrop
                 )
             )
+            // The other half of the overhang: the row lays out at its real
+            // height, having answered drops at the taller one.
+            .padding(.vertical, -Self.dropOverhang)
             // Vertical spacing is the row's own now, so rows meet with nothing
             // dead between them. Horizontal is stated rather than defaulted
             // because these insets replace the list's outright — the leading
@@ -112,7 +138,8 @@ struct FileRow: View {
                         depth: depth+1,
                         parentFolderID: file.id,
                         dropFocus: $dropFocus,
-                        onDrop: onDrop
+                        onDrop: onDrop,
+                        recentlyMoved: recentlyMoved
                     )
                     .tag(child.id)
                 }

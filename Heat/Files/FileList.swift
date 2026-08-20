@@ -55,6 +55,9 @@ struct FileList: View {
     /// Which row a drag is over, so the folder it would land in can say so.
     @State private var dropFocus: DropFocus?
 
+    /// Files lit for a moment after being moved.
+    @State private var recentlyMoved: Set<String> = []
+
     /// Stands in for the empty space below the list, which has no file behind
     /// it but still claims and releases the drop focus like a row.
     private static let emptySpaceRowID = "\u{0}top-level"
@@ -73,7 +76,8 @@ struct FileList: View {
                     depth: 0,
                     parentFolderID: nil,
                     dropFocus: $dropFocus,
-                    onDrop: handleDrop
+                    onDrop: handleDrop,
+                    recentlyMoved: recentlyMoved
                 )
                 .tag(tree.id)
             }
@@ -263,8 +267,25 @@ struct FileList: View {
                     state.log(error: error)
                 }
             }
+            flash(movable)
         }
         return true
+    }
+
+    /// Lights the rows that just moved, long enough to find them.
+    ///
+    /// The list is sorted, so a file almost never stays where it was let go —
+    /// without this a drop looks like the file vanished and something
+    /// unrelated appeared. Lit after the moves rather than before, so the row
+    /// is already in the place being pointed at.
+    private func flash(_ fileIDs: Set<String>) {
+        recentlyMoved.formUnion(fileIDs)
+        Task {
+            try? await Task.sleep(for: .milliseconds(800))
+            // Subtracted rather than cleared: a second drop while this one is
+            // still lit must not put the first one's rows out early.
+            recentlyMoved.subtract(fileIDs)
+        }
     }
 
     /// Groups a selection into a new folder, the way Finder's "New Folder with

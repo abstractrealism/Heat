@@ -12,6 +12,7 @@ struct FileRow: View {
     let parentFolderID: String?
     @Binding var dropFocus: DropFocus?
     let onDrop: (_ draggedIDs: [String], _ folderID: String?) -> Bool
+    let recentlyMoved: Set<String>
 
     var body: some View {
         if let file = try? API.shared.file(tree.id) {
