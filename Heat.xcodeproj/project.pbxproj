@@ -46,6 +46,8 @@
 		A1B2C3D40000000000000001 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000002 /* NotificationManager.swift */; };
 		A1B2C3D40000000000000005 /* SlashCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000006 /* SlashCommand.swift */; };
 		A1B2C3D40000000000000003 /* MessageFieldControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000004 /* MessageFieldControls.swift */; };
+		A1B2C3D4000000000000000D /* MessageTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000E /* MessageTextView.swift */; };
+		A1B2C3D4000000000000000B /* MessageSyntax.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000C /* MessageSyntax.swift */; };
 		A1B2C3D40000000000000007 /* CodeFence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000008 /* CodeFence.swift */; };
 		D8015CC72CB8EDBF0068749D /* MessageInstructions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8015CC62CB8EDBF0068749D /* MessageInstructions.swift */; };
 		D8015CC92CB8F4D60068749D /* RenderAnyTag.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8015CC82CB8F4D60068749D /* RenderAnyTag.swift */; };
@@ -127,6 +129,8 @@
 		A1B2C3D40000000000000002 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000006 /* SlashCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommand.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000004 /* MessageFieldControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFieldControls.swift; sourceTree = "<group>"; };
+		A1B2C3D4000000000000000E /* MessageTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTextView.swift; sourceTree = "<group>"; };
+		A1B2C3D4000000000000000C /* MessageSyntax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageSyntax.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000008 /* CodeFence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeFence.swift; sourceTree = "<group>"; };
 		D800BF8D2D8C73F300CD1D99 /* Heat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Heat.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D8015CC62CB8EDBF0068749D /* MessageInstructions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageInstructions.swift; sourceTree = "<group>"; };
@@ -354,6 +358,8 @@
 				D4B2D2682B6563DB0017FB52 /* MessageField.swift */,
 				D8015CC62CB8EDBF0068749D /* MessageInstructions.swift */,
 				A1B2C3D40000000000000004 /* MessageFieldControls.swift */,
+				A1B2C3D4000000000000000E /* MessageTextView.swift */,
+				A1B2C3D4000000000000000C /* MessageSyntax.swift */,
 			);
 			path = Messages;
 			sourceTree = "<group>";
@@ -578,6 +584,8 @@
 				A1B2C3D40000000000000005 /* SlashCommand.swift in Sources */,
 				D8015CC72CB8EDBF0068749D /* MessageInstructions.swift in Sources */,
 				A1B2C3D40000000000000003 /* MessageFieldControls.swift in Sources */,
+				A1B2C3D4000000000000000D /* MessageTextView.swift in Sources */,
+				A1B2C3D4000000000000000B /* MessageSyntax.swift in Sources */,
 				D45CC1FA2B8A5C1A009DFDF4 /* Suggestions.swift in Sources */,
 				D8F5C15B2DBD2C8B00E3C1DC /* ServiceManager.swift in Sources */,
 			);

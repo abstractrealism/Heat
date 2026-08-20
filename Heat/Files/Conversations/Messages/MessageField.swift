@@ -23,18 +23,19 @@ struct MessageField: View {
 
     @FocusState private var isFocused: Bool
 
-    /// Height of the macOS message editor: the mirror text's natural height,
-    /// clamped between a single line and a scrolling maximum.
-    private var inputHeight: CGFloat {
-        min(max(inputNaturalHeight, 40), 240)
-    }
+    /// macOS asks for the keyboard through the editor rather than `@FocusState`,
+    /// which can't reach into an `NSViewRepresentable`.
+    @State private var focusRequest = false
 
-    /// What the sizing mirror renders. SwiftUI Text ignores a trailing
-    /// newline that NSTextView counts as a line, so pad it with a space to
-    /// keep the caret's empty last line visible.
-    private var mirrorContent: String {
-        if content.isEmpty { return " " }
-        return content.hasSuffix("\n") ? content + " " : content
+    /// Height of the macOS message editor: what the text itself needs plus the
+    /// field's padding, clamped between a single line and a scrolling maximum.
+    ///
+    /// The natural height is now measured by the editor rather than by an
+    /// invisible mirror `Text`. A mirror is only right while both text engines
+    /// lay out identically, and code spans in a monospaced font is precisely
+    /// when they stop agreeing about where a line wraps.
+    private var inputHeight: CGFloat {
+        min(max(inputNaturalHeight + verticalPadding * 2, 40), 240)
     }
 
     init(action: @escaping ActionHandler) {
@@ -177,7 +178,11 @@ struct MessageField: View {
             // A new conversation opens ready to type into. Existing ones are
             // left alone so opening one to read doesn't steal the keyboard.
             guard conversationViewModel.messages.isEmpty else { return }
+            #if os(macOS)
+            focusRequest = true
+            #else
             isFocused = true
+            #endif
         }
     }
 
@@ -204,20 +209,6 @@ struct MessageField: View {
         Color.clear
             .frame(height: inputHeight)
             .frame(maxWidth: .infinity)
-            .overlay {
-                Text(mirrorContent)
-                    .font(.body)
-                    .padding(.vertical, verticalPadding)
-                    .padding(.horizontal, 5)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .opacity(0)
-                    .onGeometryChange(for: CGFloat.self) { proxy in
-                        proxy.size.height
-                    } action: { height in
-                        inputNaturalHeight = height
-                    }
-            }
             .overlay(alignment: .topLeading) {
                 if content.isEmpty {
                     Text("Message")
@@ -228,26 +219,21 @@ struct MessageField: View {
                 }
             }
             .overlay {
-                TextEditor(text: $content)
-                    .font(.body)
-                    .textEditorStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .scrollIndicators(.hidden)
-                    .padding(.vertical, verticalPadding)
-                    .focused($isFocused)
-                    .onKeyPress(keys: [.return], phases: .down) { press in
-                        // Return submits; Shift+Return inserts a newline.
-                        guard !press.modifiers.contains(.shift) else { return .ignored }
-                        guard !content.isEmpty else { return .handled }
+                MessageTextView(
+                    text: $content,
+                    focusRequest: $focusRequest,
+                    onSubmit: {
                         Task {
                             do {
                                 try await handleSubmit()
                             } catch {
-                                print(error)
+                                conversationViewModel.error = "Couldn't send that: \(error.localizedDescription)"
                             }
                         }
-                        return .handled
-                    }
+                    },
+                    onHeightChange: { inputNaturalHeight = $0 }
+                )
+                .padding(.vertical, verticalPadding)
             }
         #else
         TextField("Message", text: $content, axis: .vertical)
