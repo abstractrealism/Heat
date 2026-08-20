@@ -279,12 +279,21 @@ struct FileList: View {
     /// unrelated appeared. Lit after the moves rather than before, so the row
     /// is already in the place being pointed at.
     private func flash(_ fileIDs: Set<String>) {
+        // On at once and unanimated: the point is to catch the eye the moment
+        // the row lands, and a fade in would delay exactly that.
         recentlyMoved.formUnion(fileIDs)
+
         Task {
-            try? await Task.sleep(for: .milliseconds(800))
-            // Subtracted rather than cleared: a second drop while this one is
-            // still lit must not put the first one's rows out early.
-            recentlyMoved.subtract(fileIDs)
+            try? await Task.sleep(for: .milliseconds(600))
+            // Off gently. The row itself asks for no animation on this
+            // highlight, so the fade is entirely this: one animation covering
+            // both ends would have to either slow the appearance or hurry
+            // this.
+            withAnimation(.easeOut(duration: 0.7)) {
+                // Subtracted rather than cleared: a second drop while this one
+                // is still lit must not put the first one's rows out early.
+                recentlyMoved.subtract(fileIDs)
+            }
         }
     }
 

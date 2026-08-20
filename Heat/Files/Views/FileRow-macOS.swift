@@ -39,9 +39,8 @@ struct FileRow: View {
         (try? API.shared.file(tree.id))?.isDirectory == true ? tree.id : parentFolderID
     }
 
-    private func isHighlighted(_ file: File) -> Bool {
-        if recentlyMoved.contains(file.id) { return true }
-        return file.isDirectory && dropFocus?.folderID == file.id
+    private func isDropTarget(_ file: File) -> Bool {
+        file.isDirectory && dropFocus?.folderID == file.id
     }
 
     var body: some View {
@@ -88,15 +87,24 @@ struct FileRow: View {
             // drop at all and the cursor flickered between refusing and
             // accepting on the way past.
             .padding(.vertical, 4)
-            // Two things wear the same highlight: the folder a drop is heading
-            // for, and, just after, the files that went there. The sidebar is
-            // sorted, so a dropped file rarely lands where it was let go —
-            // this says which rows just moved.
+            // Two things wear the same highlight, and they're drawn separately
+            // because they come and go differently. A file that just moved
+            // lights the instant it lands and fades out slowly; nothing
+            // animates it here, so the fade is whatever the change that clears
+            // it asks for — see FileList.flash. One animation governing both
+            // ends would have to either delay the appearance or hurry the
+            // fade.
             .background(
-                isHighlighted(file) ? Color.accentColor.opacity(0.25) : .clear,
+                recentlyMoved.contains(tree.id) ? Color.accentColor.opacity(0.25) : .clear,
                 in: .rect(cornerRadius: 4)
             )
-            .animation(.easeOut(duration: 0.25), value: isHighlighted(file))
+            // The folder a drop is heading for, which wants to keep up with the
+            // cursor rather than linger.
+            .background(
+                isDropTarget(file) ? Color.accentColor.opacity(0.25) : .clear,
+                in: .rect(cornerRadius: 4)
+            )
+            .animation(.easeOut(duration: 0.15), value: isDropTarget(file))
             // A sliver of space survives between rows that belongs to the list
             // rather than to either of them. `listRowSpacing` would close it,
             // but that modifier is iOS-only, so instead the hit area is grown
