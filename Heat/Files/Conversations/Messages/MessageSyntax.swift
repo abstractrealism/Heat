@@ -22,6 +22,16 @@ enum MessageSyntax {
     struct Span: Equatable {
         let range: NSRange
         let isBlock: Bool
+
+        /// Whether a fence closed this block, as opposed to it running off the
+        /// end of the text still open.
+        ///
+        /// The difference is what's *after* it. An open block owns the empty
+        /// line the caret is sitting on, waiting for the next word; a closed
+        /// one ends at its fence, and the line after belongs to whatever comes
+        /// next. Inline spans are closed by definition — an unclosed one isn't
+        /// a span at all.
+        let isClosed: Bool
     }
 
     static func codeSpans(in text: String) -> [Span] {
@@ -72,7 +82,8 @@ enum MessageSyntax {
             spans.append(
                 Span(
                     range: NSRange(location: line.enclosing.location, length: end - line.enclosing.location),
-                    isBlock: true
+                    isBlock: true,
+                    isClosed: closingLine != nil
                 )
             )
             index = (closingLine ?? lines.count - 1) + 1
@@ -116,7 +127,8 @@ enum MessageSyntax {
                             location: offset + opening.location,
                             length: (closing.location + closing.length) - opening.location
                         ),
-                        isBlock: false
+                        isBlock: false,
+                        isClosed: true
                     )
                 )
             }

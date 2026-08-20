@@ -33,7 +33,7 @@ struct MessageTextView: NSViewRepresentable {
     let onHeightChange: (CGFloat) -> Void
 
     func makeNSView(context: Context) -> NSScrollView {
-        let textView = NSTextView()
+        let textView = MessageNSTextView()
         textView.delegate = context.coordinator
         textView.textStorage?.delegate = context.coordinator
 
@@ -139,7 +139,15 @@ struct MessageTextView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView else { return }
             parent.text = textView.string
+            // The block fill is drawn rather than an attribute, so it doesn't
+            // follow the text on its own.
+            textView.needsDisplay = true
             reportHeight()
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView else { return }
+            MessageTextStyle.updateTypingAttributes(of: textView)
         }
 
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
@@ -224,6 +232,16 @@ enum MessageTextStyle {
 
     static let lineFragmentPadding: CGFloat = 5
 
+    /// How far code sits in from the edge, so a block reads as one.
+    static let blockIndent: CGFloat = 10
+
+    /// Clear space above and below a block, separating it from the prose it
+    /// sits between.
+    static let blockSpacing: CGFloat = 6
+
+    /// The tint behind code, inline and block alike.
+    static let fill = NSColor.quaternaryLabelColor
+
     static var body: NSFont {
         .preferredFont(forTextStyle: .body)
     }
@@ -248,15 +266,169 @@ enum MessageTextStyle {
             range: everything
         )
 
+        let string = textStorage.string as NSString
+
         for span in MessageSyntax.codeSpans(in: textStorage.string) {
             guard span.range.location >= 0,
                   span.range.location + span.range.length <= textStorage.length
             else { continue }
 
-            textStorage.addAttributes(
-                [.font: code, .backgroundColor: NSColor.quaternaryLabelColor],
-                range: span.range
-            )
+            textStorage.addAttribute(.font, value: code, range: span.range)
+
+            if span.isBlock {
+                // No background attribute: a block is filled line by line, to
+                // the full width, by the text view — see blockBackgroundRects.
+                // The attribute only paints behind glyphs, which is why a block
+                // used to stop wherever the typing had got to.
+                applyBlockLayout(to: textStorage, span: span, in: string)
+            } else {
+                // Inline code hugs its own text, so the attribute is right.
+                textStorage.addAttribute(.backgroundColor, value: fill, range: span.range)
+            }
+        }
+    }
+
+    /// Indents a block and sets it apart from whatever is above and below.
+    private static func applyBlockLayout(
+        to textStorage: NSTextStorage,
+        span: MessageSyntax.Span,
+        in string: NSString
+    ) {
+        let indented = NSMutableParagraphStyle()
+        indented.headIndent = blockIndent
+        indented.firstLineHeadIndent = blockIndent
+        textStorage.addAttribute(.paragraphStyle, value: indented, range: span.range)
+
+        // Spacing goes on the outermost lines only, so it separates the block
+        // from its surroundings rather than opening the block up internally.
+        let firstLine = NSIntersectionRange(
+            string.paragraphRange(for: NSRange(location: span.range.location, length: 0)),
+            span.range
+        )
+        let lastIndex = max(span.range.location, span.range.location + span.range.length - 1)
+        let lastLine = NSIntersectionRange(
+            string.paragraphRange(for: NSRange(location: lastIndex, length: 0)),
+            span.range
+        )
+
+        // An open block has nothing after it to be separated from, and the
+        // empty line the caret sits on is still the block's own — trailing
+        // spacing there would open a gap through the middle of it.
+        let wantsClosingSpace = span.isClosed
+
+        if firstLine == lastLine {
+            let style = indented.mutableCopy() as! NSMutableParagraphStyle
+            style.paragraphSpacingBefore = blockSpacing
+            if wantsClosingSpace { style.paragraphSpacing = blockSpacing }
+            if firstLine.length > 0 {
+                textStorage.addAttribute(.paragraphStyle, value: style, range: firstLine)
+            }
+            return
+        }
+
+        if firstLine.length > 0 {
+            let opening = indented.mutableCopy() as! NSMutableParagraphStyle
+            opening.paragraphSpacingBefore = blockSpacing
+            textStorage.addAttribute(.paragraphStyle, value: opening, range: firstLine)
+        }
+        if wantsClosingSpace, lastLine.length > 0 {
+            let closing = indented.mutableCopy() as! NSMutableParagraphStyle
+            closing.paragraphSpacing = blockSpacing
+            textStorage.addAttribute(.paragraphStyle, value: closing, range: lastLine)
+        }
+    }
+
+    /// Where a block's background belongs, one rect per line, in the text
+    /// view's own coordinates.
+    ///
+    /// Separate from the drawing so the geometry can be checked without a
+    /// window. Two things it has to get right, both measured rather than
+    /// assumed:
+    ///
+    /// - **Width comes from the line fragment, height from the used rect.** A
+    ///   fragment already spans the whole container, which is what makes the
+    ///   fill full-width — but it also *includes* the paragraph spacing, so
+    ///   taking its height would paint over the gap that sets the block apart.
+    /// - **The empty line after a shift-return is not a line fragment.** It has
+    ///   no glyphs, so it's the layout manager's extra fragment, and filling
+    ///   only the fragments leaves the line you're about to type on unpainted.
+    static func blockBackgroundRects(for textView: NSTextView) -> [NSRect] {
+        guard let layoutManager = textView.layoutManager,
+              let container = textView.textContainer
+        else { return [] }
+
+        let length = (textView.string as NSString).length
+        guard length > 0 else { return [] }
+
+        layoutManager.ensureLayout(for: container)
+        let origin = textView.textContainerOrigin
+        var rects: [NSRect] = []
+
+        for span in MessageSyntax.codeSpans(in: textView.string) where span.isBlock {
+            let clamped = NSIntersectionRange(span.range, NSRange(location: 0, length: length))
+            guard clamped.length > 0 else { continue }
+
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: clamped, actualCharacterRange: nil)
+            layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { fragment, used, _, _, _ in
+                let rect = NSRect(x: fragment.minX, y: used.minY, width: fragment.width, height: used.height)
+                rects.append(rect.offsetBy(dx: origin.x, dy: origin.y))
+            }
+
+            // Only an *open* block owns the empty line below it. A closed one
+            // that happens to end at the end of the text does not — that line
+            // is the caret's, waiting for whatever comes after the block.
+            let extra = layoutManager.extraLineFragmentRect
+            if !span.isClosed, !extra.isEmpty {
+                rects.append(extra.offsetBy(dx: origin.x, dy: origin.y))
+            }
+        }
+
+        return rects
+    }
+
+    /// Keeps what's about to be typed in step with where the caret is.
+    ///
+    /// Without this the empty line after a shift-return is laid out in the
+    /// prose font, so it's the wrong height and its background is a different
+    /// size from the lines above it.
+    static func updateTypingAttributes(of textView: NSTextView) {
+        let caret = textView.selectedRange().location
+        let insideBlock = MessageSyntax.codeSpans(in: textView.string).contains { span in
+            // Inclusive at the far end: the caret sitting just past a block is
+            // still on the block's own last line.
+            span.isBlock
+                && caret >= span.range.location
+                && caret <= span.range.location + span.range.length
+        }
+
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: insideBlock ? code : body,
+            .foregroundColor: NSColor.labelColor,
+        ]
+        if insideBlock {
+            let indented = NSMutableParagraphStyle()
+            indented.headIndent = blockIndent
+            indented.firstLineHeadIndent = blockIndent
+            attributes[.paragraphStyle] = indented
+        }
+        textView.typingAttributes = attributes
+    }
+}
+
+/// The text view behind the message field, which fills code blocks itself.
+///
+/// A `.backgroundColor` attribute only paints behind glyphs, so a block's
+/// highlight stopped wherever the typing had reached and the line being typed
+/// on had none at all. Drawing it here covers the full width of every line the
+/// block occupies, including the empty one waiting for the next word.
+final class MessageNSTextView: NSTextView {
+
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+
+        MessageTextStyle.fill.setFill()
+        for block in MessageTextStyle.blockBackgroundRects(for: self) where block.intersects(rect) {
+            block.fill()
         }
     }
 }
