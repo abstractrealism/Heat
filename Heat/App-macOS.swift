@@ -20,6 +20,25 @@ struct MainApp: App {
 
     @AppStorage(AppAppearance.preferenceKey) private var appearance: AppAppearance = .system
 
+    init() {
+        // Straight quotes and straight dashes, in an app whose text is prompts
+        // and code. macOS substitutes curly quotes and em dashes system-wide,
+        // and SwiftUI's TextEditor offers no way to decline — but NSTextView
+        // reads these keys when it's built, and an app's own preferences domain
+        // outranks the global one. So this is Heat declining for itself; the
+        // system setting is untouched and nothing else on the machine changes.
+        //
+        // `--` becoming `—` corrupts code as surely as `"` becoming `”` does,
+        // which is why dashes go too. Text replacement is left alone: that one
+        // is something people set up deliberately.
+        //
+        // Note: `register(defaults:)` does NOT work for this. The registration
+        // domain sits *below* the global domain, which is where the system
+        // setting lives, so it loses. Verified both ways.
+        UserDefaults.standard.set(false, forKey: "NSAutomaticQuoteSubstitutionEnabled")
+        UserDefaults.standard.set(false, forKey: "NSAutomaticDashSubstitutionEnabled")
+    }
+
     var body: some Scene {
         Window("Heat", id: "heat") {
             NavigationSplitView {
