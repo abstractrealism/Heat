@@ -7,6 +7,12 @@ struct FileRow: View {
     let tree: FileTree
     let depth: Int
 
+    // Accepted so the shared FileList builds on both platforms, and unused:
+    // dragging files between folders is a macOS-only affordance for now.
+    let parentFolderID: String?
+    @Binding var dropFocus: DropFocus?
+    let onDrop: (_ draggedIDs: [String], _ folderID: String?) -> Bool
+
     var body: some View {
         if let file = try? API.shared.file(tree.id) {
             HStack {

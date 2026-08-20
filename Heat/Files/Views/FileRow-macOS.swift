@@ -7,12 +7,28 @@ struct FileRow: View {
     let tree: FileTree
     let depth: Int
 
-    /// What to do when rows are dropped on a folder. Passed down rather than
-    /// reached for, because deciding *which* files move needs the list's
-    /// selection, which lives with the list.
-    let onDrop: (_ draggedIDs: [String], _ folderID: String) -> Bool
+    /// The folder this row sits in, nil at the top level.
+    ///
+    /// Handed down through the recursion, which already knows it, rather than
+    /// worked out from the path here — that would be a scan of every file for
+    /// every row on every redraw.
+    let parentFolderID: String?
 
-    @State private var isDropping = false
+    /// Which row the cursor is over mid-drag, shared so the *folder* lights up
+    /// when a row inside it is hovered.
+    @Binding var dropFocus: DropFocus?
+
+    /// What to do when rows are dropped. Passed down rather than reached for,
+    /// because deciding *which* files move needs the list's selection, which
+    /// lives with the list.
+    let onDrop: (_ draggedIDs: [String], _ folderID: String?) -> Bool
+
+    /// Where a drop on this row lands: into it if it's a folder, otherwise
+    /// into whatever folder it sits in — so the whole of a folder's contents
+    /// is one target, and a top-level row means the top level.
+    private var dropFolderID: String? {
+        (try? API.shared.file(tree.id))?.isDirectory == true ? tree.id : parentFolderID
+    }
 
     var body: some View {
         if let file = try? API.shared.file(tree.id) {
@@ -52,45 +68,93 @@ struct FileRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            // Was here from the start with nothing ever setting it — there was
-            // no way to drag a file anywhere. Now it marks the folder a drop
-            // would land in.
-            .background(isDropping ? Color.accentColor.opacity(0.25) : .clear, in: .rect(cornerRadius: 4))
-            .modifier(DragAndDrop(file: file, isDropping: $isDropping, onDrop: onDrop))
+            // Marks the folder a drop would land in — which is this row when
+            // the cursor is on the folder itself, and equally when it's on
+            // anything inside it.
+            .background(
+                file.isDirectory && dropFocus?.folderID == file.id
+                    ? Color.accentColor.opacity(0.25) : .clear,
+                in: .rect(cornerRadius: 4)
+            )
+            .modifier(
+                DragAndDrop(
+                    file: file,
+                    rowID: tree.id,
+                    folderID: dropFolderID,
+                    dropFocus: $dropFocus,
+                    onDrop: onDrop
+                )
+            )
 
             // Child references
             if file.isExpanded, let children = tree.children {
                 ForEach(children) { child in
-                    FileRow(tree: child, depth: depth+1, onDrop: onDrop)
-                        .tag(child.id)
+                    // Children of an expanded row are inside it — only
+                    // directories ever expand.
+                    FileRow(
+                        tree: child,
+                        depth: depth+1,
+                        parentFolderID: file.id,
+                        dropFocus: $dropFocus,
+                        onDrop: onDrop
+                    )
+                    .tag(child.id)
                 }
             }
         }
     }
 
-    /// A row is one or the other: a folder takes drops, anything else can be
-    /// dragged into one.
+    /// Every row takes a drop; only files can be dragged.
+    ///
+    /// A folder used to be the only target, which meant landing exactly on its
+    /// name — and left no way back out at all, the top level having no row to
+    /// aim at. Now a drop anywhere in a folder's contents means that folder,
+    /// and anywhere at the top level means the top level.
     ///
     /// Folders are deliberately not draggable — moving one means rewriting
     /// every descendant's path, and dropping it into its own descendant would
     /// strand the subtree. See `FilesProvider.moveFile`.
     private struct DragAndDrop: ViewModifier {
         let file: File
-        @Binding var isDropping: Bool
-        let onDrop: (_ draggedIDs: [String], _ folderID: String) -> Bool
+        let rowID: String
+        let folderID: String?
+        @Binding var dropFocus: DropFocus?
+        let onDrop: (_ draggedIDs: [String], _ folderID: String?) -> Bool
 
         func body(content: Content) -> some View {
-            if file.isDirectory {
-                content.dropDestination(for: String.self) { ids, _ in
-                    onDrop(ids, file.id)
-                } isTargeted: { targeted in
-                    isDropping = targeted
-                }
-            } else {
+            dropTarget(content)
                 // The payload is the file's id. Plain text dragged in from
                 // elsewhere arrives the same way, so the drop handler only
                 // acts on ids it can find a file for.
-                content.draggable(file.id)
+                .modifier(Draggable(file: file))
+        }
+
+        private func dropTarget(_ content: Content) -> some View {
+            content.dropDestination(for: String.self) { ids, _ in
+                dropFocus = nil
+                return onDrop(ids, folderID)
+            } isTargeted: { targeted in
+                if targeted {
+                    dropFocus = DropFocus(rowID: rowID, folderID: folderID)
+                } else if dropFocus?.rowID == rowID {
+                    // Only the row that claimed the focus may give it up.
+                    // Rows inside one folder all point at the same folder, so
+                    // clearing on any leave would blink the highlight off as
+                    // the cursor crossed between them.
+                    dropFocus = nil
+                }
+            }
+        }
+
+        private struct Draggable: ViewModifier {
+            let file: File
+
+            func body(content: Content) -> some View {
+                if file.isDirectory {
+                    content
+                } else {
+                    content.draggable(file.id)
+                }
             }
         }
     }

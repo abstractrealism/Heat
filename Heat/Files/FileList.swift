@@ -21,6 +21,19 @@ enum FileSortOrder: String, CaseIterable, Identifiable {
     }
 }
 
+/// The row a drag is currently over, and the folder a drop there would land in.
+///
+/// The row is carried as well as the folder so a row can tell whether the
+/// focus is still its own to clear — every row inside a folder reports the
+/// same folder, so a leave handler that checked only the folder would blink
+/// the highlight off as the cursor crossed between siblings.
+///
+/// Here rather than beside `FileRow`, which is a separate file per platform.
+struct DropFocus: Equatable {
+    let rowID: String
+    let folderID: String?
+}
+
 struct FileList: View {
     @Environment(AppState.self) var state
     @Environment(\.dismiss) var dismiss
@@ -39,6 +52,13 @@ struct FileList: View {
 
     @State private var pendingDeletion: Set<String> = []
 
+    /// Which row a drag is over, so the folder it would land in can say so.
+    @State private var dropFocus: DropFocus?
+
+    /// Stands in for the empty space below the list, which has no file behind
+    /// it but still claims and releases the drop focus like a row.
+    private static let emptySpaceRowID = "\u{0}top-level"
+
     var body: some View {
         ScrollViewReader { proxy in
             list(proxy)
@@ -48,9 +68,36 @@ struct FileList: View {
     private func list(_ proxy: ScrollViewProxy) -> some View {
         List(selection: $selection) {
             ForEach(sortedTree) { tree in
-                FileRow(tree: tree, depth: 0, onDrop: handleDrop)
-                    .tag(tree.id)
+                FileRow(
+                    tree: tree,
+                    depth: 0,
+                    parentFolderID: nil,
+                    dropFocus: $dropFocus,
+                    onDrop: handleDrop
+                )
+                .tag(tree.id)
             }
+
+            // The way back out of a folder, and the only one that exists when
+            // every top-level row is a folder: the empty space beneath the
+            // list is itself the top level. A real row rather than a drop
+            // destination on the List, so it can't compete with the rows for
+            // the same drop. Untagged, so it can't be selected.
+            Color.clear
+                .frame(minHeight: 60)
+                .contentShape(.rect)
+                .listRowSeparator(.hidden)
+                .listRowInsets(.init())
+                .dropDestination(for: String.self) { ids, _ in
+                    dropFocus = nil
+                    return handleDrop(ids, into: nil)
+                } isTargeted: { targeted in
+                    if targeted {
+                        dropFocus = DropFocus(rowID: Self.emptySpaceRowID, folderID: nil)
+                    } else if dropFocus?.rowID == Self.emptySpaceRowID {
+                        dropFocus = nil
+                    }
+                }
         }
         .onChange(of: selection) { _, highlighted in
             // Opening only makes sense for a single row; a wider selection is
@@ -179,12 +226,12 @@ struct FileList: View {
         FileOrder.sorted(state.fileTree, files: state.files, by: sortOrder)
     }
 
-    /// Files dropped on a folder.
+    /// Files dropped somewhere. A nil folder is the top level.
     ///
     /// Dragging a row that's part of the current selection moves the whole
     /// selection, the way Finder does — the drag itself only carries the one
     /// row it started on, so the rest is read from the selection here.
-    private func handleDrop(_ draggedIDs: [String], into folderID: String) -> Bool {
+    private func handleDrop(_ draggedIDs: [String], into folderID: String?) -> Bool {
         var moving = Set(draggedIDs)
         if draggedIDs.contains(where: { selection.contains($0) }) {
             moving.formUnion(selection)
