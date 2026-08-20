@@ -83,7 +83,7 @@ struct FileList: View {
         }
         #endif
         .confirmationDialog(
-            "Delete \(pendingDeletion.count == 1 ? "File" : "\(pendingDeletion.count) Files")",
+            deletionPrompt.title,
             isPresented: Binding(
                 get: { !pendingDeletion.isEmpty },
                 set: { if !$0 { pendingDeletion = [] } }
@@ -92,7 +92,7 @@ struct FileList: View {
             Button("Delete", role: .destructive) { handleDelete(pendingDeletion) }
             Button("Cancel", role: .cancel) { pendingDeletion = [] }
         } message: {
-            Text("This can't be undone.")
+            Text(deletionPrompt.message)
         }
         .toolbar {
             ToolbarItem {
@@ -296,20 +296,63 @@ struct FileList: View {
         }
     }
 
+    /// Everything a deletion would actually remove: what was chosen, plus the
+    /// contents of any folder among it, at any depth.
+    ///
+    /// Deleting a folder used to remove only the folder. That was harmless
+    /// while nothing could be put in one — now that files can be, the folder's
+    /// directory would go from disk while its contents kept metadata pointing
+    /// into it: gone from the sidebar, still on file, unreachable forever.
+    private func deletionTargets(_ fileIDs: Set<String>) -> [File] {
+        var targets: [String: File] = [:]
+        for id in fileIDs {
+            guard let file = try? API.shared.file(id) else { continue }
+            targets[file.id] = file
+            for child in FileOrder.descendants(of: file, files: state.files) {
+                targets[child.id] = child
+            }
+        }
+        // Deepest first, so a folder is empty by the time it's removed.
+        return targets.values.sorted {
+            $0.path.split(separator: "/").count > $1.path.split(separator: "/").count
+        }
+    }
+
+    /// What the confirmation says. The count in the title is everything that
+    /// goes, and the message calls out contents separately — agreeing to remove
+    /// one folder shouldn't quietly take a year of conversations with it.
+    private var deletionPrompt: (title: String, message: String) {
+        let targets = deletionTargets(pendingDeletion)
+        let hidden = targets.count - pendingDeletion.count
+
+        let title = targets.count == 1 ? "Delete File" : "Delete \(targets.count) Files"
+        guard hidden > 0 else {
+            return (title, "This can't be undone.")
+        }
+        if pendingDeletion.count == 1,
+           let folder = try? API.shared.file(pendingDeletion.first!) {
+            let name = folder.name ?? "this folder"
+            return (title, "Deleting \(name) also deletes the \(hidden) \(hidden == 1 ? "item" : "items") inside it. This can't be undone.")
+        }
+        return (title, "This includes \(hidden) \(hidden == 1 ? "item" : "items") inside the folders being deleted. This can't be undone.")
+    }
+
     func handleDelete(_ fileIDs: Set<String>) {
+        let targets = deletionTargets(fileIDs)
         pendingDeletion = []
         Task {
-            for fileID in fileIDs {
+            for file in targets {
                 do {
-                    try await API.shared.fileDelete(fileID)
+                    try await API.shared.fileDelete(file.id)
                 } catch {
                     // Carry on with the rest rather than stopping partway
                     // through and leaving the outcome unclear.
                     state.log(error: error)
                 }
             }
-            selection.subtract(fileIDs)
-            if let open = selected, fileIDs.contains(open) {
+            let removed = Set(targets.map(\.id))
+            selection.subtract(removed)
+            if let open = selected, removed.contains(open) {
                 selected = nil
             }
         }

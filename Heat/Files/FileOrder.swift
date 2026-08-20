@@ -29,6 +29,18 @@ enum FileOrder {
         return ids[(index + offset + ids.count) % ids.count]
     }
 
+    /// Everything inside a folder, at any depth. Empty for anything else.
+    ///
+    /// Matched on the folder's path plus a separator, rather than the bare
+    /// prefix `calculateFileHierarchy` uses — a folder named `Work` must not
+    /// claim `Workspace`'s contents. Paths are UUID-derived today so the two
+    /// agree, but nothing about deletion should depend on that.
+    static func descendants(of folder: File, files: [File]) -> [File] {
+        guard folder.isDirectory else { return [] }
+        let prefix = folder.path + "/"
+        return files.filter { $0.id != folder.id && $0.path.hasPrefix(prefix) }
+    }
+
     /// The tree in the chosen order, folders sorted the same way inside.
     static func sorted(_ trees: [FileTree], files: [File], by order: FileSortOrder) -> [FileTree] {
         sorted(trees, filesByID: index(files), by: order)
