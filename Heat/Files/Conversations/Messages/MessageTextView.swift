@@ -36,6 +36,7 @@ struct MessageTextView: NSViewRepresentable {
         let textView = MessageNSTextView()
         textView.delegate = context.coordinator
         textView.textStorage?.delegate = context.coordinator
+        textView.layoutManager?.delegate = context.coordinator
 
         textView.isRichText = false
         textView.usesFontPanel = false
@@ -104,7 +105,7 @@ struct MessageTextView: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
-    final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate, NSLayoutManagerDelegate {
         var parent: MessageTextView
         weak var textView: NSTextView?
 
@@ -117,6 +118,9 @@ struct MessageTextView: NSViewRepresentable {
 
         /// Keeps typing and rubbing out in separate undo actions.
         var coalescing = UndoCoalescing()
+
+        /// Backtick ranges currently drawn as nothing.
+        private var hiddenDelimiters: [NSRange] = []
 
         init(parent: MessageTextView) {
             self.parent = parent
@@ -142,12 +146,75 @@ struct MessageTextView: NSViewRepresentable {
             // The block fill is drawn rather than an attribute, so it doesn't
             // follow the text on its own.
             textView.needsDisplay = true
+            refreshHiddenDelimiters()
             reportHeight()
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView else { return }
             MessageTextStyle.updateTypingAttributes(of: textView)
+            refreshHiddenDelimiters()
+        }
+
+        /// Suppresses or restores inline backticks as the caret comes and goes.
+        ///
+        /// Glyphs have to be invalidated for the change to be picked up —
+        /// they're generated once and cached, so an attribute pass alone would
+        /// leave the old ones on screen.
+        func refreshHiddenDelimiters() {
+            guard let textView, let layoutManager = textView.layoutManager else { return }
+
+            let updated = MessageTextStyle.hiddenDelimiterRanges(
+                in: textView.string,
+                caret: textView.selectedRange().location
+            )
+            guard updated != hiddenDelimiters else { return }
+            hiddenDelimiters = updated
+
+            let everything = NSRange(location: 0, length: (textView.string as NSString).length)
+            layoutManager.invalidateGlyphs(forCharacterRange: everything, changeInLength: 0, actualCharacterRange: nil)
+            layoutManager.invalidateLayout(forCharacterRange: everything, actualCharacterRange: nil)
+            textView.needsDisplay = true
+            reportHeight()
+        }
+
+        func layoutManager(
+            _ layoutManager: NSLayoutManager,
+            shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
+            properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
+            characterIndexes charIndexes: UnsafePointer<Int>,
+            font aFont: NSFont,
+            forGlyphRange glyphRange: NSRange
+        ) -> Int {
+            guard !hiddenDelimiters.isEmpty else { return 0 }
+
+            let adjusted = UnsafeMutablePointer<NSLayoutManager.GlyphProperty>.allocate(capacity: glyphRange.length)
+            defer { adjusted.deallocate() }
+
+            var changed = false
+            for offset in 0..<glyphRange.length {
+                let character = charIndexes[offset]
+                if hiddenDelimiters.contains(where: { NSLocationInRange(character, $0) }) {
+                    // Null glyphs take no space at all, which is the difference
+                    // between a hidden backtick and a transparent one.
+                    adjusted[offset] = .null
+                    changed = true
+                } else {
+                    adjusted[offset] = props[offset]
+                }
+            }
+
+            // Returning zero leaves the default generation alone.
+            guard changed else { return 0 }
+
+            layoutManager.setGlyphs(
+                glyphs,
+                properties: adjusted,
+                characterIndexes: charIndexes,
+                font: aFont,
+                forGlyphRange: glyphRange
+            )
+            return glyphRange.length
         }
 
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
@@ -299,6 +366,13 @@ enum MessageTextStyle {
         indented.firstLineHeadIndent = blockIndent
         textStorage.addAttribute(.paragraphStyle, value: indented, range: span.range)
 
+        // Fences are dimmed rather than hidden — see hiddenDelimiterRanges for
+        // why they can't simply go. Faint enough to stop competing with the
+        // code, still legible when the fence carries a language.
+        for fence in fenceRanges(of: span, in: string) {
+            textStorage.addAttribute(.foregroundColor, value: NSColor.tertiaryLabelColor, range: fence)
+        }
+
         // Spacing goes on the outermost lines only, so it separates the block
         // from its surroundings rather than opening the block up internally.
         let firstLine = NSIntersectionRange(
@@ -336,6 +410,34 @@ enum MessageTextStyle {
             closing.paragraphSpacing = blockSpacing
             textStorage.addAttribute(.paragraphStyle, value: closing, range: lastLine)
         }
+    }
+
+    /// A block's fence lines: the opening one always, the closing one when
+    /// there is one. Trailing newline excluded, there being nothing to colour.
+    private static func fenceRanges(of span: MessageSyntax.Span, in string: NSString) -> [NSRange] {
+        var ranges: [NSRange] = []
+
+        let opening = string.lineRange(for: NSRange(location: span.range.location, length: 0))
+        ranges.append(withoutTerminator(opening, in: string))
+
+        guard span.isClosed else { return ranges }
+
+        let lastIndex = max(span.range.location, span.range.location + span.range.length - 1)
+        let closing = string.lineRange(for: NSRange(location: lastIndex, length: 0))
+        if closing.location != opening.location {
+            ranges.append(withoutTerminator(closing, in: string))
+        }
+        return ranges
+    }
+
+    private static func withoutTerminator(_ range: NSRange, in string: NSString) -> NSRange {
+        var trimmed = range
+        while trimmed.length > 0 {
+            let last = string.character(at: trimmed.location + trimmed.length - 1)
+            guard last == 10 || last == 13 else { break }
+            trimmed.length -= 1
+        }
+        return trimmed
     }
 
     /// Where a block's background belongs, one rect per line, in the text
@@ -384,6 +486,33 @@ enum MessageTextStyle {
         }
 
         return rects
+    }
+
+    /// The delimiters to suppress: an inline span's own backticks, once the
+    /// caret has left it.
+    ///
+    /// Revealed while the caret is inside, because otherwise the only way to
+    /// undo the formatting is to backspace over a character that isn't drawn.
+    /// The far end counts as inside, so stepping off the end of a span brings
+    /// its closing backtick back within reach.
+    ///
+    /// **Fences are not in here.** Suppressing a whole fence *line* does work —
+    /// the line collapses — but its characters are then absorbed into the
+    /// preceding fragment, so a block's first line becomes the prose line above
+    /// it and the background would be painted across that prose. They're dimmed
+    /// instead, which also keeps a language tag readable and keeps every line
+    /// the caret can reach visible.
+    static func hiddenDelimiterRanges(in text: String, caret: Int) -> [NSRange] {
+        var ranges: [NSRange] = []
+        for span in MessageSyntax.codeSpans(in: text) where !span.isBlock {
+            let start = span.range.location
+            let end = start + span.range.length
+            guard span.range.length >= 2 else { continue }
+            if caret >= start && caret <= end { continue }
+            ranges.append(NSRange(location: start, length: 1))
+            ranges.append(NSRange(location: end - 1, length: 1))
+        }
+        return ranges
     }
 
     /// Keeps what's about to be typed in step with where the caret is.
