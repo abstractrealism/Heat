@@ -816,8 +816,21 @@ final class ConversationViewModel {
                let contextLength = state.config.contextLength(serviceID: serviceID, modelID: model.id) {
                 req.with(option: "num_ctx", value: .int(contextLength))
             }
-            if !isThinkingEnabled {
+            // A level rather than a switch, because some models accept nothing
+            // else: GPT-OSS ignores true/false outright — `think: false` still
+            // produced 980 characters of reasoning against gpt-oss:20b — so
+            // without one there is no way to ask it for less. Models that don't
+            // implement levels take one and discard it, so this costs nothing
+            // where it does nothing.
+            switch thinkingEffort {
+            case .off:
                 req.with(option: "think", value: .bool(false))
+            case .brief:
+                req.with(option: "think", value: .string("low"))
+            case .full:
+                // Nothing said, so the model reasons as it would unprompted —
+                // which is what Full means.
+                break
             }
 
             // Generate response stream
