@@ -84,6 +84,21 @@ extension Config {
     /// Only ever the starting point: a conversation takes its own copy the
     /// first time it sends, so changing this reaches conversations started
     /// afterwards and leaves existing ones as they were.
+    /// How hard new conversations think by default.
+    ///
+    /// Falls back to `thinkingByDefault`, which is what this replaced, so a
+    /// preference set before there were levels still means what it meant.
+    public var thinkingEffortByDefault: ThinkingEffort {
+        set { metadata["thinkingEffortByDefault"] = .string(newValue.rawValue) }
+        get {
+            if let stored = metadata["thinkingEffortByDefault"]?.stringValue,
+               let effort = ThinkingEffort(rawValue: stored) {
+                return effort
+            }
+            return thinkingByDefault ? .full : .off
+        }
+    }
+
     public var thinkingByDefault: Bool {
         set { metadata["thinkingByDefault"] = .bool(newValue) }
         get { metadata["thinkingByDefault"]?.boolValue ?? true }

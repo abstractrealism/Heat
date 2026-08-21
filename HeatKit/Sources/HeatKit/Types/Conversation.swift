@@ -29,12 +29,25 @@ public struct Conversation: Codable, Sendable {
     public var serviceID: String?
     public var modelID: String?
 
-    /// Whether the model reasons before answering here.
+    /// How hard the model thinks before answering here.
     ///
     /// Settled on the same terms as `serviceID`: follows the default until the
-    /// conversation is used or the toggle is touched, and is its own from then
+    /// conversation is used or the control is touched, and is its own from then
     /// on.
+    public var thinkingEffort: ThinkingEffort?
+
+    /// What `thinkingEffort` replaced, kept so conversations written before it
+    /// keep the setting they were given. Read when `thinkingEffort` is absent
+    /// and never written again — see `Conversation.effort`.
     public var thinkingEnabled: Bool?
+
+    /// The effort this conversation was given, whichever field carries it, or
+    /// nil while it's still following the default.
+    public var effort: ThinkingEffort? {
+        if let thinkingEffort { return thinkingEffort }
+        guard let thinkingEnabled else { return nil }
+        return thinkingEnabled ? .full : .off
+    }
 
     /// Whether the tool set was chosen for this conversation rather than
     /// inherited from the Assistant instruction.

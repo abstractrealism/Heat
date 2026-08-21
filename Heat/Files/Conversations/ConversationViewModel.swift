@@ -283,10 +283,16 @@ final class ConversationViewModel {
         conversation.serviceID != nil && conversation.modelID != nil
     }
 
-    /// Whether the model reasons before answering here — this conversation's
-    /// own answer, or the default when it hasn't got one.
+    /// How hard the model thinks here — this conversation's own answer, or the
+    /// default when it hasn't got one.
+    var thinkingEffort: ThinkingEffort {
+        conversation.effort ?? state.config.thinkingEffortByDefault
+    }
+
+    /// Whether the model reasons at all, which is all the request carries.
+    /// Brief is the prompt's doing, not the request's — see `ThinkingEffort`.
     var isThinkingEnabled: Bool {
-        conversation.thinkingEnabled ?? state.config.thinkingByDefault
+        thinkingEffort.isThinking
     }
 
     /// Switches a tool on or off for this conversation alone.
@@ -315,9 +321,14 @@ final class ConversationViewModel {
     /// Settles the question for this conversation, so it stops following the
     /// default. Turning it back to match the default doesn't resume following
     /// it: an explicit choice stays explicit, which is the point of making it.
-    func setThinkingEnabled(_ enabled: Bool) {
-        conversation.thinkingEnabled = enabled
+    func setThinkingEffort(_ effort: ThinkingEffort) {
+        conversation.thinkingEffort = effort
+        // Cleared rather than left behind: the two would otherwise disagree,
+        // and `effort` prefers this one, so a stale value would be a trap for
+        // anyone reading the file.
+        conversation.thinkingEnabled = nil
         persistConversation()
+        ChatDebug.log("◇ thinking effort for this conversation: \(effort.rawValue)")
     }
 
     /// Records a model against this conversation, so it keeps answering with
@@ -389,8 +400,8 @@ final class ConversationViewModel {
             conversation.serviceID = service.id
             conversation.modelID = model.id
         }
-        if conversation.thinkingEnabled == nil {
-            conversation.thinkingEnabled = state.config.thinkingByDefault
+        if conversation.effort == nil {
+            conversation.thinkingEffort = state.config.thinkingEffortByDefault
         }
     }
 
@@ -570,7 +581,12 @@ final class ConversationViewModel {
     /// choosing a role to attribute it to — either inventing a user turn that
     /// would sit next to a real one, or putting words in the assistant's mouth.
     private func systemForRequest(context: [String: Value]) -> String {
-        let instructions = PromptTemplate(conversation.instructions, with: context)
+        var instructions = PromptTemplate(conversation.instructions, with: context)
+
+        if let steer = briefThinkingSteer() {
+            instructions += "\n\n\(steer)"
+        }
+
         guard let summary = conversation.contextSummary?.trimmingCharacters(in: .whitespacesAndNewlines),
               !summary.isEmpty
         else { return instructions }
@@ -585,6 +601,26 @@ final class ConversationViewModel {
             \(summary)
             </conversation_summary>
             """
+    }
+
+    /// The line that keeps reasoning short, when this conversation asked for
+    /// brief thinking.
+    ///
+    /// Added to the prompt as it goes out, never to the stored instruction:
+    /// effort is a per-conversation choice that can change between messages,
+    /// and writing it into the Assistant prompt would apply it everywhere and
+    /// leave it there.
+    ///
+    /// This is the whole of what Brief does. Ollama's graded `think` was
+    /// measured across four local models and only one honoured it — see
+    /// `ThinkingEffort` for the numbers.
+    private func briefThinkingSteer() -> String? {
+        guard thinkingEffort == .brief else { return nil }
+        guard let instruction = try? state.file(Instruction.self, fileID: Defaults.instructionThinkingBriefID) else {
+            return nil
+        }
+        let text = instruction.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
     }
 
     /// The conversation as it goes out to the model, with earlier reasoning

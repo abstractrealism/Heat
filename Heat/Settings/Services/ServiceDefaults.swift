@@ -30,8 +30,12 @@ struct ServiceDefaults: View {
         }
 
         Section {
-            Toggle("Thinking on in new conversations", isOn: thinkingBinding)
-                .help("Whether new conversations start with reasoning switched on. Each conversation keeps whatever it started with, so changing this affects conversations begun afterwards and leaves existing ones alone. Any conversation can be switched the other way from the button beside its message field. Models that can't reason are unaffected.")
+            Picker("Thinking in new conversations", selection: thinkingEffortBinding) {
+                ForEach(ThinkingEffort.allCases) { effort in
+                    Text(effort.label).tag(effort)
+                }
+            }
+            .help("How hard the model thinks in new conversations. Each conversation keeps whatever it started with, so changing this affects conversations begun afterwards and leaves existing ones alone. Any conversation can be changed from the button beside its message field. Brief asks the model in the prompt to keep its reasoning short — how well that lands varies by model, and the wording is editable under Instructions. Models that can't reason are unaffected.")
 
             Toggle("Remove thinking from prompt context", isOn: stripThinkingBinding)
                 .help("Leaves earlier reasoning out of what's sent back to the model. Reasoning is the model's working, not its answer, and it often runs many times the length of the reply — so keeping it means every later message re-sends all of it, filling the context window and slowing each turn. Your conversation keeps its thinking either way; Show Thinking still works. Turn this off only if you want the model to reread how it got to its earlier answers.")
@@ -47,12 +51,15 @@ struct ServiceDefaults: View {
     /// Written straight to the config rather than through the manager, which
     /// saves on dismissal: this is one switch, and a conversation opened
     /// before the settings window closes should already see it.
-    private var thinkingBinding: Binding<Bool> {
+    private var thinkingEffortBinding: Binding<ThinkingEffort> {
         Binding(
-            get: { state.config.thinkingByDefault },
-            set: { enabled in
+            get: { state.config.thinkingEffortByDefault },
+            set: { effort in
                 var config = state.config
-                config.thinkingByDefault = enabled
+                config.thinkingEffortByDefault = effort
+                // Kept in step so a downgrade, or anything still reading the
+                // old key, doesn't disagree with what was just chosen.
+                config.thinkingByDefault = effort.isThinking
                 Task { try? await API.shared.configUpdate(config) }
             }
         )

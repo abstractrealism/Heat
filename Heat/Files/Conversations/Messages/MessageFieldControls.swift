@@ -328,21 +328,37 @@ struct MessageFieldControls: View {
         conversationViewModel.selectedModel?.supports(.thinking) ?? true
     }
 
-    /// Filled and tinted when on, plain when off — the state has to be
-    /// readable without opening anything, which is the whole reason it moved
-    /// out of the + menu.
+    /// Filled and tinted when reasoning is on, plain when off, and labelled
+    /// with the effort — the state has to be readable without opening
+    /// anything, which is the whole reason it moved out of the + menu.
+    ///
+    /// A menu rather than a cycle now there are three states: cycling hides
+    /// what the options are, and getting back to one you overshot means going
+    /// round again.
     @ViewBuilder
     private var thinkingToggle: some View {
-        let isOn = conversationViewModel.isThinkingEnabled && modelCanThink
-        Button {
-            conversationViewModel.setThinkingEnabled(!conversationViewModel.isThinkingEnabled)
+        let effort = conversationViewModel.thinkingEffort
+        let isOn = effort.isThinking && modelCanThink
+
+        Menu {
+            Picker("Thinking", selection: Binding(
+                get: { conversationViewModel.thinkingEffort },
+                set: { conversationViewModel.setThinkingEffort($0) }
+            )) {
+                ForEach(ThinkingEffort.allCases) { option in
+                    Text(option.label).tag(option)
+                }
+            }
+            .pickerStyle(.inline)
         } label: {
             pill(isOn: isOn) {
-                Label("Thinking", systemImage: "brain")
+                Label(thinkingLabel(for: effort), systemImage: "brain")
                     .labelStyle(.titleAndIcon)
             }
         }
+        .menuStyle(.button)
         .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .disabled(!modelCanThink)
         // Shown greyed and unclickable rather than hidden: a control that
         // vanishes reads as a bug, while one that's visibly unavailable
@@ -351,13 +367,28 @@ struct MessageFieldControls: View {
         .help(thinkingHelp)
     }
 
+    /// "Thinking" on its own while the effort is whatever it always was, so
+    /// the row doesn't grow a qualifier nobody asked for; named only once it
+    /// says something.
+    private func thinkingLabel(for effort: ThinkingEffort) -> String {
+        switch effort {
+        case .off, .full: "Thinking"
+        case .brief: "Thinking · Brief"
+        }
+    }
+
     private var thinkingHelp: String {
         guard modelCanThink else {
             let name = conversationViewModel.selectedModelName
             return "\(name) can't reason, so there's nothing to turn on. Pick a model that supports thinking to use this."
         }
-        return conversationViewModel.isThinkingEnabled
-            ? "Reasoning is on for this conversation. The model thinks before answering."
-            : "Reasoning is off for this conversation. The model answers directly."
+        switch conversationViewModel.thinkingEffort {
+        case .off:
+            return "Reasoning is off for this conversation. The model answers directly."
+        case .brief:
+            return "The model reasons briefly here, asked in the prompt to keep it short. How well that lands varies by model."
+        case .full:
+            return "The model reasons as much as it wants to here."
+        }
     }
 }
