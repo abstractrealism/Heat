@@ -292,7 +292,48 @@ final class ConversationViewModel {
     /// Whether the model reasons at all, which is all the request carries.
     /// Brief is the prompt's doing, not the request's — see `ThinkingEffort`.
     var isThinkingEnabled: Bool {
-        thinkingEffort.isThinking
+        effectiveThinkingEffort.isThinking
+    }
+
+    /// Models that reason whatever they're told.
+    ///
+    /// GPT-OSS ignores `think: false` outright. Measured rather than assumed:
+    /// Off against `gpt-oss:20b` still produced 980 characters of reasoning,
+    /// the same as `true` and the same as saying nothing — and Ollama's own
+    /// documentation states the trace cannot be disabled.
+    ///
+    /// Matched on the id because nothing the server reports distinguishes it:
+    /// the capability list is the same shape as every other reasoning model's.
+    /// It does report `general.architecture: "gptoss"`, which would be a better
+    /// key since it survives retagging, but that isn't carried as far as
+    /// `Model`. If a model is ever found that belongs here and isn't caught,
+    /// this is the list to add it to.
+    private static let alwaysReasoningModels = ["gpt-oss"]
+
+    var modelAlwaysReasons: Bool {
+        guard let id = selectedModel?.id.lowercased() else { return false }
+        return Self.alwaysReasoningModels.contains { id.contains($0) }
+    }
+
+    /// The efforts this model can actually be asked for.
+    ///
+    /// Offering Off where it does nothing is worse than not offering it: the
+    /// control would read Off while the model reasoned anyway.
+    var availableThinkingEfforts: [ThinkingEffort] {
+        modelAlwaysReasons ? [.brief, .full] : ThinkingEffort.allCases
+    }
+
+    /// What the model will actually do — which is what the control should say
+    /// and what the request should carry.
+    ///
+    /// Off on a model that can't stop becomes Brief, the least it can be asked
+    /// for. That is closer to what was wanted than the alternative: sending
+    /// `false` to GPT-OSS is ignored and lands on its *medium* default, so
+    /// asking for none currently gets more reasoning than asking for little.
+    var effectiveThinkingEffort: ThinkingEffort {
+        let chosen = thinkingEffort
+        guard modelAlwaysReasons, chosen == .off else { return chosen }
+        return .brief
     }
 
     /// Switches a tool on or off for this conversation alone.
@@ -615,7 +656,7 @@ final class ConversationViewModel {
     /// measured across four local models and only one honoured it — see
     /// `ThinkingEffort` for the numbers.
     private func briefThinkingSteer() -> String? {
-        guard thinkingEffort == .brief else { return nil }
+        guard effectiveThinkingEffort == .brief else { return nil }
         guard let instruction = try? state.file(Instruction.self, fileID: Defaults.instructionThinkingBriefID) else {
             return nil
         }
@@ -822,7 +863,7 @@ final class ConversationViewModel {
             // without one there is no way to ask it for less. Models that don't
             // implement levels take one and discard it, so this costs nothing
             // where it does nothing.
-            switch thinkingEffort {
+            switch effectiveThinkingEffort {
             case .off:
                 req.with(option: "think", value: .bool(false))
             case .brief:

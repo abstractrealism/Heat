@@ -337,19 +337,27 @@ struct MessageFieldControls: View {
     /// round again.
     @ViewBuilder
     private var thinkingToggle: some View {
-        let effort = conversationViewModel.thinkingEffort
+        // What the model will actually do, not what was asked for — those
+        // differ on a model that can't stop reasoning, and the control should
+        // show the truth.
+        let effort = conversationViewModel.effectiveThinkingEffort
         let isOn = effort.isThinking && modelCanThink
 
         Menu {
             Picker("Thinking", selection: Binding(
-                get: { conversationViewModel.thinkingEffort },
+                get: { conversationViewModel.effectiveThinkingEffort },
                 set: { conversationViewModel.setThinkingEffort($0) }
             )) {
-                ForEach(ThinkingEffort.allCases) { option in
+                ForEach(conversationViewModel.availableThinkingEfforts) { option in
                     Text(option.label).tag(option)
                 }
             }
             .pickerStyle(.inline)
+
+            if conversationViewModel.modelAlwaysReasons {
+                Divider()
+                Text("\(conversationViewModel.selectedModelName) always reasons")
+            }
         } label: {
             pill(isOn: isOn) {
                 Label(thinkingLabel(for: effort), systemImage: "brain")
@@ -382,10 +390,14 @@ struct MessageFieldControls: View {
             let name = conversationViewModel.selectedModelName
             return "\(name) can't reason, so there's nothing to turn on. Pick a model that supports thinking to use this."
         }
-        switch conversationViewModel.thinkingEffort {
+        let name = conversationViewModel.selectedModelName
+        switch conversationViewModel.effectiveThinkingEffort {
         case .off:
             return "Reasoning is off for this conversation. The model answers directly."
         case .brief:
+            if conversationViewModel.modelAlwaysReasons {
+                return "\(name) can't be told to stop reasoning, so there's no Off — this asks it for as little as it will do."
+            }
             return "The model reasons briefly here, asked in the prompt to keep it short. How well that lands varies by model."
         case .full:
             return "The model reasons as much as it wants to here."
