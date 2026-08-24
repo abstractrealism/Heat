@@ -11,7 +11,9 @@ struct RenderText: View {
 
     init(_ text: String?, tags: [String] = []) {
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        self.text = LaTeXUnicode.convert(trimmed)
+        // Marked before rendering rather than styled during it: a link cannot
+        // be styled by where it points — see SuggestionLinks.
+        self.text = SuggestionLinks.marked(LaTeXUnicode.convert(trimmed))
         self.tags = tags
     }
 
