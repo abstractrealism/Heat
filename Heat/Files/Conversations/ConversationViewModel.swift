@@ -1084,6 +1084,62 @@ final class ConversationViewModel {
     func generateTitle() async throws {
         guard file.name == nil else { return }
 
+        // Two attempts at most. What this recovers from is a reply carrying no
+        // usable tag, which is a sampling accident rather than a settled fact
+        // about the model — the same request often lands the second time, and
+        // naming a conversation is one short call to the summarization model.
+        //
+        // It works *because* nothing pins a temperature on this request. An
+        // identical sample would fail identically, so anyone adding one here
+        // should expect the retry to stop earning its keep.
+        for attempt in 1...2 {
+            let outcome: TitleOutcome
+            do {
+                outcome = try await attemptTitle(attempt)
+            } catch {
+                // A cancelled turn is deliberate; it must not try again, and it
+                // must not report a failure either.
+                if error is CancellationError || Task.isCancelled { throw error }
+                guard attempt == 1 else { throw error }
+                ChatDebug.log("← title attempt 1 failed (\(error)) — trying once more")
+                continue
+            }
+
+            switch outcome {
+            case .named, .declined:
+                return
+            case .unusable:
+                try Task.checkCancellation()
+                if attempt == 1 {
+                    ChatDebug.log("← title attempt 1 was unusable — trying once more")
+                }
+            }
+        }
+    }
+
+    /// How an attempt at naming a conversation turned out.
+    private enum TitleOutcome {
+        /// A title, which is the end of it.
+        case named
+
+        /// A well-formed but empty `<title>`, which the instruction explicitly
+        /// asks for when a conversation has no clear topic — greetings, thanks,
+        /// a question too vague to summarise.
+        ///
+        /// **This is an answer, not a failure.** Measured on the shape titles
+        /// are actually generated on — one exchange, right after the first turn
+        /// — the model declines about a third of thin conversations and titles
+        /// every substantial one (20/20). Retrying a decline would cost a
+        /// second call on the commonest thin case and still, correctly, produce
+        /// no title.
+        case declined
+
+        /// Nothing to work with: no tag, or a mangled one. The only outcome
+        /// worth another draw, since it's a sampling accident.
+        case unusable
+    }
+
+    private func attemptTitle(_ attempt: Int) async throws -> TitleOutcome {
         let (service, model) = try taskService()
 
         // Cached instructions
@@ -1106,7 +1162,7 @@ final class ConversationViewModel {
         // is the leg that changes when Summarization points somewhere other
         // than the chat model, and the gap to "← title" covers both loading
         // that model and generating with it.
-        ChatDebug.log("→ title request | model: \(model.id)")
+        ChatDebug.log("→ title request | model: \(model.id)\(attempt > 1 ? " | attempt \(attempt)" : "")")
 
         // Generate suggestions stream
         var lastResponse = ""
@@ -1139,10 +1195,27 @@ final class ConversationViewModel {
         }
 
         if let name = file.name {
-            ChatDebug.log("← title: \(name)")
-        } else {
-            ChatDebug.log("← title: none — no usable tag in the reply: \(unparsed(lastResponse))")
+            ChatDebug.log("← title: \(name)\(attempt > 1 ? " (attempt \(attempt))" : "")")
+            return .named
         }
+
+        // Read once more from the finished reply rather than trusting what the
+        // stream left behind: mid-stream, an unclosed <title> also parses as an
+        // empty one, and that would read as a decline.
+        let closingTag = (try? ContentParser.shared.parse(input: lastResponse, tags: ["title"]))?
+            .first(tag: "title")
+        if let closingTag, closingTag.hasClosingTag {
+            ChatDebug.log("← title: none — the model judged there was no clear topic")
+            return .declined
+        }
+
+        if attempt > 1 {
+            // The first attempt's miss is already logged by the caller, which
+            // says it's about to try again — saying "none" there would read as
+            // the end of the story.
+            ChatDebug.log("← title: none after \(attempt) attempts — no usable tag in the reply: \(unparsed(lastResponse))")
+        }
+        return .unusable
     }
 
     /// Content from whatever tag a reply used, when it didn't use the one it
