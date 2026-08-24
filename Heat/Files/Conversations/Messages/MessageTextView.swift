@@ -217,11 +217,27 @@ struct MessageTextView: NSViewRepresentable {
             return glyphRange.length
         }
 
-        func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-            guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
+        /// Return and the keypad's Enter, which are different keys sending
+        /// different characters — carriage return against ETX.
+        ///
+        /// The standard bindings send both to `insertNewline:`, but a keyboard
+        /// or a `DefaultKeyBinding.dict` can route Enter to `insertLineBreak:`
+        /// instead, and that used to fall through to AppKit and quietly insert
+        /// a line. Both are claimed so the two keys can't disagree.
+        ///
+        /// Option+Return is deliberately left alone: it maps to
+        /// `insertNewlineIgnoringFieldEditor:`, so it stays a way to break a
+        /// line without reaching for Shift.
+        private static let newlineCommands: Set<Selector> = [
+            #selector(NSResponder.insertNewline(_:)),
+            #selector(NSResponder.insertLineBreak(_:)),
+        ]
 
-            // Shift+Return makes a new line; Return sends. Both arrive as
-            // insertNewline:, so the modifier has to come from the event.
+        func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            guard Self.newlineCommands.contains(selector) else { return false }
+
+            // Shift makes a new line, alone sends. Which key it was doesn't
+            // matter, so the modifier has to come from the event.
             if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
                 textView.insertNewlineIgnoringFieldEditor(nil)
                 return true
