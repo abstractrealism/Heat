@@ -1536,20 +1536,42 @@ final class ConversationViewModel {
         var answer = ""
         var furtherReasoning: String?
 
+        // The counts arrive on the streamed message, and the reply is written
+        // into the interrupted one — so they have to be carried across, or the
+        // turn ends with no model name and no tokens under it.
+        var usage: [String: Value] = [:]
+
         let stream = ChatSession.shared.stream(req)
         for try await message in stream {
             try Task.checkCancellation()
             let (extra, visible) = separateReasoning(from: message.content ?? "")
             answer = visible
             if let extra { furtherReasoning = extra }
-            merge(compose(reasoning, furtherReasoning, answer), into: messageID)
+            usage = message.metadata
+            merge(compose(reasoning, furtherReasoning, answer), usage: usage, into: messageID)
         }
 
         try Task.checkCancellation()
-        merge(compose(reasoning, furtherReasoning, answer), into: messageID)
+        merge(compose(reasoning, furtherReasoning, answer), usage: usage, into: messageID)
 
+        // No thinking split here, unlike an ordinary turn. That apportions the
+        // token total between reasoning and answer by counting deltas, and the
+        // reasoning above was paid for by a request that was cancelled — its
+        // tokens were never counted. Almost all of this reply's output is
+        // answer, so the figures stand as they are.
+        liveTokensPerSecond = nil
         conversation.state = .none
         ChatDebug.log("← answer now: \(answer.count) chars")
+
+        // The rest of what finishing a turn means. Skipping straight to saving
+        // left the conversation with no suggestions, no title, and no usage
+        // line — the turn had ended without ever being finished.
+        NotificationManager.shared.responseCompleted(
+            conversation: file.name ?? "Heat",
+            preview: responsePreview
+        )
+        try await generateSuggestions()
+        try await generateTitle()
 
         try await API.shared.fileUpdate(file.id, object: conversation)
         try await API.shared.fileUpdate(file)
@@ -1589,8 +1611,15 @@ final class ConversationViewModel {
 
     /// Writes into the interrupted message rather than adding another, keeping
     /// the reasoning and the answer as one turn.
-    private func merge(_ content: String, into messageID: String) {
+    private func merge(_ content: String, usage: [String: Value], into messageID: String) {
         guard let index = conversation.messages.firstIndex(where: { $0.id == messageID }) else { return }
+
+        // Merged rather than assigned, so anything the interrupted turn was
+        // already carrying — pictures a tool found, say — isn't dropped along
+        // with it.
+        for (key, value) in usage {
+            conversation.messages[index].metadata[key] = value
+        }
         // `content` is a read-only view over `contents`, so the text has to go
         // back the way it came. Images and anything else the turn was carrying
         // are kept — only the text is replaced.
