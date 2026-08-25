@@ -108,16 +108,29 @@ struct MessageField: View {
                 // be offering to restart a reply already arriving.
                 if conversationViewModel.canAnswerNow {
                     Button(action: conversationViewModel.answerNow) {
-                        Image(systemName: "forward.end.fill")
-                            .fontWeight(.medium)
-                            .frame(width: primaryButtonSize.width, height: primaryButtonSize.height)
-                            .foregroundStyle(.secondary)
-                            .background(.quaternary, in: .rect(cornerRadius: 8))
-                            .padding(.vertical, 2)
+                        // Named as well as drawn. The glyph reads as "skip" to
+                        // anyone who has met it before, and as nothing to
+                        // anyone who hasn't — and this is the one control here
+                        // that discards work, which is a poor thing to guess at.
+                        HStack(spacing: 5) {
+                            Image(systemName: "forward.end.fill")
+                            Text("Skip Thinking")
+                        }
+                        .font(.footnote)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .frame(height: primaryButtonSize.height)
+                        .background(.quaternary, in: .rect(cornerRadius: 8))
+                        .padding(.vertical, 2)
                     }
                     .buttonStyle(.plain)
+                    // Sized to its label rather than to what's left over: the
+                    // field beside it takes all the width it can get, and would
+                    // otherwise squeeze the words to an ellipsis.
+                    .fixedSize()
                     .padding(.trailing, 4)
-                    .help("Answer now — stop reasoning and reply from what it has worked out so far")
+                    .help("Stop reasoning and answer from what it has worked out so far. The reasoning is kept.")
                 }
 
                 if showStopGenerating {
