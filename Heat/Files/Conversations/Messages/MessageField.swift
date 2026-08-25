@@ -103,6 +103,23 @@ struct MessageField: View {
 
                 Spacer(minLength: 8)
 
+                // Only while the model is still reasoning. Once it has started
+                // answering there is nothing to cut short, and the button would
+                // be offering to restart a reply already arriving.
+                if conversationViewModel.canAnswerNow {
+                    Button(action: conversationViewModel.answerNow) {
+                        Image(systemName: "forward.end.fill")
+                            .fontWeight(.medium)
+                            .frame(width: primaryButtonSize.width, height: primaryButtonSize.height)
+                            .foregroundStyle(.secondary)
+                            .background(.quaternary, in: .rect(cornerRadius: 8))
+                            .padding(.vertical, 2)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 4)
+                    .help("Answer now — stop reasoning and reply from what it has worked out so far")
+                }
+
                 if showStopGenerating {
                     Button(action: handleStop) {
                         Image(systemName: "stop.fill")

@@ -1425,6 +1425,191 @@ final class ConversationViewModel {
     /// turn, nothing is about to take ownership of the conversation here, so
     /// this resets the state itself and saves whatever did arrive rather than
     /// discarding a partial answer.
+    /// Whether a turn is far enough along that its reasoning could be cut
+    /// short — the model is thinking and hasn't started answering.
+    var canAnswerNow: Bool {
+        isGenerating && isReasoning && partialReasoning != nil
+    }
+
+    /// Stops the model reasoning and asks it to answer from what it has.
+    ///
+    /// Ollama offers nothing for this: a generation cannot be told to stop
+    /// thinking and start answering, so the turn is cancelled and reissued.
+    /// What makes that cheap rather than wasteful is that the reasoning
+    /// already written is handed back — the model doesn't start again, it
+    /// concludes.
+    ///
+    /// The reasoning travels as an ordinary assistant turn, which was the one
+    /// shape that behaved on every model tested. Prefilling a closed `<think>`
+    /// block is faster on GPT-OSS but leaks stray tags into the answer on
+    /// models that write reasoning inline, and it leans on prefill continuation
+    /// that varies by template. A `thinking` field on an input message is
+    /// accepted and ignored outright.
+    ///
+    /// The nudge is sent and not stored, like the Brief steer: it's an
+    /// instruction about this one reply, not something said in the
+    /// conversation.
+    func answerNow() {
+        guard canAnswerNow else { return }
+        generateTask?.cancel()
+
+        let token = UUID()
+        currentTurn = token
+        ConversationViewModelStore.shared.setGenerating(true, for: file.id)
+
+        generateTask = Task {
+            defer {
+                if currentTurn == token {
+                    ConversationViewModelStore.shared.setGenerating(false, for: file.id)
+                }
+            }
+            do {
+                try await concludeFromReasoning()
+            } catch {
+                if error is CancellationError || Task.isCancelled { return }
+                conversation.state = .none
+                self.error = errorMessage(for: error)
+                state.log(error: error)
+            }
+        }
+    }
+
+    /// The reasoning written so far, and which message holds it.
+    private var partialReasoning: (messageID: String, text: String)? {
+        guard let message = conversation.messages.last, message.role == .assistant,
+              let content = message.content
+        else { return nil }
+
+        for tag in ["think", "thinking"] {
+            guard let open = content.range(of: "<\(tag)>") else { continue }
+            var reasoning = String(content[open.upperBound...])
+            if let close = reasoning.range(of: "</\(tag)>") {
+                reasoning = String(reasoning[..<close.lowerBound])
+            }
+            let trimmed = reasoning.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return (message.id, trimmed)
+        }
+        return nil
+    }
+
+    private func concludeFromReasoning() async throws {
+        guard let (messageID, reasoning) = partialReasoning else { return }
+        error = nil
+
+        let (service, model) = try chatService()
+        var context: [String: Value] = ["datetime": .string(Date.now.formatted())]
+        if let profile = state.userProfile {
+            context["MEMORIES"] = .string(profile)
+        }
+
+        // Everything before the half-written turn, then the reasoning as its
+        // own turn and the ask. The unfinished message itself is left out —
+        // it's the thing being replaced.
+        var history = historyForRequest()
+        if history.last?.id == messageID {
+            history.removeLast()
+        }
+        history.append(Message(role: .assistant, content: reasoning))
+        history.append(Message(role: .user, content: Self.answerNowPrompt))
+
+        var req = ChatSessionRequest(service: service, model: model, toolCallback: prepareToolResponse)
+        req.with(system: systemForRequest(context: context))
+        req.with(history: history)
+        req.with(tools: Toolbox.get(names: conversation.toolIDs))
+        req.with(context: context)
+        if let serviceID = conversation.serviceID,
+           let contextLength = state.config.contextLength(serviceID: serviceID, modelID: model.id) {
+            req.with(option: "num_ctx", value: .int(contextLength))
+        }
+        // For this reply only. The conversation's own setting is untouched, so
+        // the next turn reasons as before.
+        req.with(option: "think", value: .bool(false))
+
+        ChatDebug.log("→ answer now | model: \(model.id) | reasoning handed back: \(reasoning.count) chars")
+
+        conversation.state = .streaming
+
+        // The reasoning is kept, closed off where it was interrupted, and the
+        // answer written after it — so the turn ends up looking like any other
+        // rather than as two messages, one of them half a thought.
+        var answer = ""
+        var furtherReasoning: String?
+
+        let stream = ChatSession.shared.stream(req)
+        for try await message in stream {
+            try Task.checkCancellation()
+            let (extra, visible) = separateReasoning(from: message.content ?? "")
+            answer = visible
+            if let extra { furtherReasoning = extra }
+            merge(compose(reasoning, furtherReasoning, answer), into: messageID)
+        }
+
+        try Task.checkCancellation()
+        merge(compose(reasoning, furtherReasoning, answer), into: messageID)
+
+        conversation.state = .none
+        ChatDebug.log("← answer now: \(answer.count) chars")
+
+        try await API.shared.fileUpdate(file.id, object: conversation)
+        try await API.shared.fileUpdate(file)
+    }
+
+    /// One reasoning block, then the answer — the shape an uninterrupted turn
+    /// already has.
+    private func compose(_ reasoning: String, _ further: String?, _ answer: String) -> String {
+        var thinking = reasoning
+        if let further, !further.isEmpty {
+            thinking += "\n\n" + further
+        }
+        return "<think>\n\(thinking)\n</think>\n\n" + answer
+    }
+
+    /// Splits a reply into any reasoning it carried and the answer itself.
+    ///
+    /// A model that cannot stop reasoning produces a fresh block even with
+    /// thinking switched off — GPT-OSS returned 159 characters of it when asked
+    /// to answer now. Left alone that would sit beside the reasoning already
+    /// preserved, giving one turn two thinking blocks; folded together there is
+    /// one, as there would have been had nothing interrupted it.
+    private func separateReasoning(from content: String) -> (reasoning: String?, answer: String) {
+        for tag in ["think", "thinking"] {
+            guard let open = content.range(of: "<\(tag)>"),
+                  let close = content.range(of: "</\(tag)>", range: open.upperBound..<content.endIndex)
+            else { continue }
+
+            let reasoning = content[open.upperBound..<close.lowerBound]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let answer = (content[..<open.lowerBound] + content[close.upperBound...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return (reasoning.isEmpty ? nil : reasoning, answer)
+        }
+        return (nil, content)
+    }
+
+    /// Writes into the interrupted message rather than adding another, keeping
+    /// the reasoning and the answer as one turn.
+    private func merge(_ content: String, into messageID: String) {
+        guard let index = conversation.messages.firstIndex(where: { $0.id == messageID }) else { return }
+        // `content` is a read-only view over `contents`, so the text has to go
+        // back the way it came. Images and anything else the turn was carrying
+        // are kept — only the text is replaced.
+        var contents = conversation.messages[index].contents ?? []
+        contents.removeAll { if case .text = $0 { true } else { false } }
+        conversation.messages[index].contents = [.text(content)] + contents
+        conversation.messages[index].modified = .now
+        file.modified = .now
+    }
+
+    /// What's asked for when the reasoning is cut short.
+    ///
+    /// Measured against the alternatives: without an explicit instruction the
+    /// models restated the question or rambled. Naming the reasoning as the
+    /// thing to conclude from is what produces an answer rather than a
+    /// re-derivation.
+    private static let answerNowPrompt =
+        "Answer now, based on the reasoning above. Don't reason further."
+
     func cancel() {
         generateTask?.cancel()
         generateTask = nil
