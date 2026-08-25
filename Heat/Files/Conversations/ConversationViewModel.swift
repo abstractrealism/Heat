@@ -1451,6 +1451,13 @@ final class ConversationViewModel {
     /// conversation.
     func answerNow() {
         guard canAnswerNow else { return }
+
+        // Counted before cancelling, because cancelling is what makes it
+        // uncountable: the server reports its totals only on a final chunk,
+        // which a cancelled stream never sends. One delta is one token for
+        // Ollama — the same assumption the live rate already runs on — so this
+        // is an estimate, and shown as one.
+        let abandonedTokens = streamedDeltas
         generateTask?.cancel()
 
         let token = UUID()
@@ -1464,7 +1471,7 @@ final class ConversationViewModel {
                 }
             }
             do {
-                try await concludeFromReasoning()
+                try await concludeFromReasoning(abandonedTokens: abandonedTokens)
             } catch {
                 if error is CancellationError || Task.isCancelled { return }
                 conversation.state = .none
@@ -1493,7 +1500,7 @@ final class ConversationViewModel {
         return nil
     }
 
-    private func concludeFromReasoning() async throws {
+    private func concludeFromReasoning(abandonedTokens: Int) async throws {
         guard let (messageID, reasoning) = partialReasoning else { return }
         error = nil
 
@@ -1541,24 +1548,44 @@ final class ConversationViewModel {
         // turn ends with no model name and no tokens under it.
         var usage: [String: Value] = [:]
 
+        // A model that can't stop reasoning does it again here, so this reply
+        // gets the same delta-boundary split an ordinary turn gets — counted
+        // separately from the reasoning that was abandoned, which came from a
+        // different request.
+        var deltas = 0
+        var deltasAtClose: Int?
+
         let stream = ChatSession.shared.stream(req)
         for try await message in stream {
             try Task.checkCancellation()
+            deltas += 1
             let (extra, visible) = separateReasoning(from: message.content ?? "")
             answer = visible
-            if let extra { furtherReasoning = extra }
+            if let extra {
+                furtherReasoning = extra
+                if deltasAtClose == nil { deltasAtClose = deltas }
+            }
             usage = message.metadata
             merge(compose(reasoning, furtherReasoning, answer), usage: usage, into: messageID)
         }
 
         try Task.checkCancellation()
+
+        usage["interruptedThinkingTokens"] = .int(abandonedTokens)
+        // Named explicitly either way, so a figure from the cancelled turn
+        // can't survive on the message and be read as this reply's.
+        usage["thinkingTokens"] = .int(furtherThinkingTokens(
+            total: usage["outputTokens"]?.intValue,
+            closedAt: deltasAtClose,
+            of: deltas
+        ))
+
         merge(compose(reasoning, furtherReasoning, answer), usage: usage, into: messageID)
 
-        // No thinking split here, unlike an ordinary turn. That apportions the
-        // token total between reasoning and answer by counting deltas, and the
-        // reasoning above was paid for by a request that was cancelled — its
-        // tokens were never counted. Almost all of this reply's output is
-        // answer, so the figures stand as they are.
+        // applyThinkingSplit isn't used: it reads the counters of the turn that
+        // was cancelled, which describe the abandoned reasoning rather than
+        // this reply. The same apportioning is done above from this stream's
+        // own deltas, and the abandoned tokens are carried separately.
         liveTokensPerSecond = nil
         conversation.state = .none
         ChatDebug.log("← answer now: \(answer.count) chars")
@@ -1575,6 +1602,15 @@ final class ConversationViewModel {
 
         try await API.shared.fileUpdate(file.id, object: conversation)
         try await API.shared.fileUpdate(file)
+    }
+
+    /// How much of this reply was the model reasoning again rather than
+    /// answering, apportioned the way an ordinary turn's is.
+    private func furtherThinkingTokens(total: Int?, closedAt: Int?, of deltas: Int) -> Int {
+        guard let total, let closedAt, deltas > 0 else { return 0 }
+        let share = Double(closedAt) / Double(deltas)
+        let thinking = Int(((Double(total) * share) / 10).rounded()) * 10
+        return min(thinking, total)
     }
 
     /// One reasoning block, then the answer — the shape an uninterrupted turn

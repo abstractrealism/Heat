@@ -365,15 +365,37 @@ struct MessageUsageView: View {
             parts.append(model)
         }
 
-        // The split is approximate — see applyThinkingSplit — so it's marked
-        // with ≈ rather than presented as a counted figure.
-        var outputDetail = "\(format(output)) out"
-        if let thinking = message.metadata["thinkingTokens"]?.intValue, thinking > 0 {
-            outputDetail += " ≈ \(format(thinking)) thinking + \(format(output - thinking)) answer"
+        // Reasoning the model was doing when Skip Thinking cut it off. Counted
+        // from the abandoned request, so it's shown apart from anything this
+        // reply reasoned: pressing Skip usually means wanting to know how long
+        // it had been going round in circles, and folding the two together
+        // would answer a different question.
+        let interrupted = message.metadata["interruptedThinkingTokens"]?.intValue ?? 0
+        let thinking = message.metadata["thinkingTokens"]?.intValue ?? 0
+
+        // Everything the model produced, across both requests when there were
+        // two. Input is counted once: the second request re-sent much the same
+        // prompt, and there's no figure for what the cancelled one evaluated.
+        let produced = output + interrupted
+
+        // The splits are approximate — deltas standing in for tokens, see
+        // applyThinkingSplit — so they're marked with ≈ rather than presented
+        // as counted figures.
+        var outputDetail = "\(format(produced)) out"
+        var breakdown: [String] = []
+        if interrupted > 0 {
+            breakdown.append("\(format(interrupted)) thinking (interrupted)")
+        }
+        if thinking > 0 {
+            breakdown.append("\(format(thinking)) thinking")
+        }
+        if !breakdown.isEmpty {
+            breakdown.append("\(format(output - thinking)) answer")
+            outputDetail += " ≈ " + breakdown.joined(separator: " + ")
         }
 
         if let input = message.metadata["inputTokens"]?.intValue {
-            parts.append("\(format(input + output)) tokens (\(format(input)) in, \(outputDetail))")
+            parts.append("\(format(input + produced)) tokens (\(format(input)) in, \(outputDetail))")
         } else {
             parts.append("\(outputDetail) tokens")
         }
