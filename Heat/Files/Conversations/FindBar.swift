@@ -23,7 +23,7 @@ struct FindBar: View {
             ))
             .textFieldStyle(.plain)
             .font(.footnote)
-            .frame(width: 160)
+            .frame(width: 150)
             .focused($isFocused)
             // Return steps forward, Shift+Return back, as everywhere else that
             // has a find bar.
@@ -34,32 +34,41 @@ struct FindBar: View {
                     .font(.footnote)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .frame(minWidth: 54, alignment: .trailing)
+                    .frame(minWidth: 96, alignment: .trailing)
             }
 
+            // Only the stepping is disabled with nothing to step through.
+            // This was on the whole bar, which disabled the field as well: a
+            // fresh find bar has no matches yet, so it opened unable to be
+            // typed into, and `.disabled` is cumulative — a descendant cannot
+            // re-enable itself, which is what the exemption here used to
+            // pretend to do.
             Button(action: conversationViewModel.findPrevious) {
                 Image(systemName: "chevron.up")
             }
             .keyboardShortcut("g", modifiers: [.command, .shift])
-            .help("Previous match")
+            .disabled(conversationViewModel.findMatches.isEmpty)
+            .help("Previous message")
 
             Button(action: conversationViewModel.findNext) {
                 Image(systemName: "chevron.down")
             }
             .keyboardShortcut("g", modifiers: .command)
-            .help("Next match")
+            .disabled(conversationViewModel.findMatches.isEmpty)
+            .help("Next message")
 
             Button(action: conversationViewModel.endFind) {
                 Image(systemName: "xmark")
             }
+            // Escape as well as the button. A disabled bar swallowed
+            // onExitCommand, which is how the bar became impossible to close
+            // at all; the shortcut is a second way out that doesn't depend on
+            // the container being enabled.
+            .keyboardShortcut(.cancelAction)
             .help("Close find")
         }
         .buttonStyle(.borderless)
         .imageScale(.small)
-        .disabled(conversationViewModel.findMatches.isEmpty)
-        // The close button stays live even with nothing found, since that's
-        // exactly when you want to give up on a search.
-        .environment(\.isEnabled, true)
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(.regularMaterial, in: .rect(cornerRadius: 8))
@@ -76,13 +85,18 @@ struct FindBar: View {
         .onExitCommand { conversationViewModel.endFind() }
     }
 
-    /// "3 of 12", or that there's nothing — a count of zero reads as a broken
-    /// search rather than an answered one.
+    /// Counted in messages, because messages are what the arrows move between.
+    ///
+    /// It counted every occurrence before, which made the number a promise the
+    /// buttons couldn't keep: five matches inside one message read as "1 of 5"
+    /// and then refused to go anywhere, there being one message to go to. The
+    /// unit is named so the number can't be read as anything else.
     private var position: String {
-        guard conversationViewModel.findMatchTotal > 0 else { return "none" }
-        let matchesBefore = conversationViewModel.findMatches
-            .prefix(conversationViewModel.findIndex)
-            .reduce(0) { $0 + $1.count }
-        return "\(matchesBefore + 1) of \(conversationViewModel.findMatchTotal)"
+        let total = conversationViewModel.findMatches.count
+        switch total {
+        case 0: return "none"
+        case 1: return "1 message"
+        default: return "\(conversationViewModel.findIndex + 1) of \(total) messages"
+        }
     }
 }

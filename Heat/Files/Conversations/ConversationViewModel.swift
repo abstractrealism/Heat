@@ -753,12 +753,6 @@ final class ConversationViewModel {
         return Set(findMatches.map(\.messageID))
     }
 
-    /// Counted across messages, since the bar shows a position within the
-    /// whole conversation rather than within a message.
-    var findMatchTotal: Int {
-        findMatches.reduce(0) { $0 + $1.count }
-    }
-
     func beginFind() {
         isFinding = true
         updateFindMatches()
