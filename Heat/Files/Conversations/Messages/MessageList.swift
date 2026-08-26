@@ -64,15 +64,24 @@ struct MessageList: View {
         ScrollViewReader { proxy in
             MessageListScrollView {
 
-                // Show message run history
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(conversationViewModel.runs) { run in
-                        RunView(run)
-                        // Drawn after the run it falls in, so everything above
-                        // it is what the model no longer reads.
-                        if run.id == conversationViewModel.compactedThroughRunID {
-                            ContextBoundaryView(summary: conversationViewModel.conversation.contextSummary)
-                        }
+                // Each run is a row of its own rather than all of them inside
+                // one, because **only a list's rows are scroll anchors**. An
+                // `.id()` nested inside a row cannot be reached, however
+                // explicitly it's named — which is why find scrolled nowhere
+                // while "bottom" below, a row, always worked.
+                //
+                // The spacing is unchanged: the 12 points the enclosing stack
+                // used to provide are the 6 above and 6 below that
+                // MessageListScrollView already gives every row.
+                ForEach(conversationViewModel.runs) { run in
+                    RunView(run)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .id(run.id)
+
+                    // Drawn after the run it falls in, so everything above it
+                    // is what the model no longer reads.
+                    if run.id == conversationViewModel.compactedThroughRunID {
+                        ContextBoundaryView(summary: conversationViewModel.conversation.contextSummary)
                     }
                 }
 
@@ -152,8 +161,13 @@ struct MessageList: View {
                     scroll.isFollowing = true
                 }
             }
-            .onChange(of: conversationViewModel.currentFindMessageID) { _, match in
-                guard let match else { return }
+            .onChange(of: conversationViewModel.currentFindMessageID) { _, message in
+                // Scrolled to by run rather than by message: the run is the
+                // row, and a row is the only thing a list can be scrolled to.
+                // The message is still what gets marked, so stepping between
+                // two matches in one run moves the highlight without moving
+                // the view, which is right — it's already on screen.
+                guard message != nil, let match = conversationViewModel.currentFindRunID else { return }
                 // Following is switched off first: bringing a match into view
                 // is a move away from the newest message, which is exactly
                 // what following would undo.
@@ -167,7 +181,7 @@ struct MessageList: View {
                 // yet lands nowhere.
                 Task {
                     try? await Task.sleep(for: .milliseconds(150))
-                    guard conversationViewModel.currentFindMessageID == match else { return }
+                    guard conversationViewModel.currentFindRunID == match else { return }
                     proxy.scrollTo(match, anchor: .center)
                 }
             }

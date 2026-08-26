@@ -36,9 +36,9 @@ struct RunView: View {
             ForEach(run.messages) { message in
                 if showAllMessages || message.shouldShowInRun {
                     MessageView(message)
-                        // Named so find can scroll to it. Identity from the
-                        // ForEach isn't an anchor a ScrollViewReader can reach
-                        // — it has to be asked for.
+                        // Reachable on iOS, where the list is a ScrollView and
+                        // anything named is an anchor. On macOS it's a List,
+                        // where only rows are — find scrolls to the run there.
                         .id(message.id)
                 }
             }

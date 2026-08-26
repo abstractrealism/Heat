@@ -753,6 +753,13 @@ final class ConversationViewModel {
         return findMatches[findIndex].messageID
     }
 
+    /// The run holding the current match, which is what the list can actually
+    /// be scrolled to — a run is a row, and only rows are scroll anchors.
+    var currentFindRunID: String? {
+        guard let messageID = currentFindMessageID else { return nil }
+        return runs.first { run in run.messages.contains { $0.id == messageID } }?.id
+    }
+
     /// Every message holding the query, so the ones that aren't current can be
     /// marked more faintly — knowing there are others, and roughly where, is
     /// most of what a find bar is for.
