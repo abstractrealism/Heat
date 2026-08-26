@@ -36,6 +36,10 @@ struct RunView: View {
             ForEach(run.messages) { message in
                 if showAllMessages || message.shouldShowInRun {
                     MessageView(message)
+                        // Named so find can scroll to it. Identity from the
+                        // ForEach isn't an anchor a ScrollViewReader can reach
+                        // — it has to be asked for.
+                        .id(message.id)
                 }
             }
         }

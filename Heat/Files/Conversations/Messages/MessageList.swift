@@ -161,6 +161,15 @@ struct MessageList: View {
                 withAnimation(.easeOut(duration: 0.2)) {
                     proxy.scrollTo(match, anchor: .center)
                 }
+                // Again once the messages have laid out. Arriving from a
+                // search result asks for this while the conversation is still
+                // being measured, and a scroll into a view that has no height
+                // yet lands nowhere.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard conversationViewModel.currentFindMessageID == match else { return }
+                    proxy.scrollTo(match, anchor: .center)
+                }
             }
             .onChange(of: conversationViewModel.messages.count) { _, _ in
                 // Sending is an explicit act, so bring the new prompt and the
@@ -186,6 +195,13 @@ struct MessageList: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
             .task(id: conversationViewModel.file.id) {
+                // Unless a find is already pointing somewhere. Arriving from a
+                // search result is arriving *at* a match, and opening at the
+                // newest message would scroll straight past it — including the
+                // settling pass below, which lands after the match scroll and
+                // would undo it.
+                guard conversationViewModel.currentFindMessageID == nil else { return }
+
                 // Open a conversation showing its most recent activity.
                 scroll.isFollowing = true
                 proxy.scrollTo("bottom", anchor: .bottom)
@@ -195,6 +211,7 @@ struct MessageList: View {
                 // Settle once more after that work has had a chance to run.
                 try? await Task.sleep(for: .milliseconds(150))
                 guard scroll.isFollowing else { return }
+                guard conversationViewModel.currentFindMessageID == nil else { return }
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
             .onOpenURL { url in

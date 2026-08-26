@@ -45,6 +45,14 @@ struct ConversationView: View {
             .onAppear {
                 handleLoad()
             }
+            // Leaving a conversation closes its find bar. It used to be kept,
+            // on the reasoning that a browser keeps find per tab — but a tab
+            // you return to still shows the page you left, whereas coming back
+            // here is starting again, and a bar left open reads as one you
+            // never dismissed.
+            .onDisappear {
+                conversationViewModel.endFind()
+            }
             // Only the conversation on screen answers ⌘F. Others hold view
             // models too, and would otherwise all open a find bar nobody can
             // see.

@@ -487,6 +487,14 @@ final class ConversationViewModel {
             self.conversation = conversation
             self.file = file
             hasLoadedFromDisk = true
+
+            // A find can be set up before the conversation is here: opening a
+            // search result asks the store for a view model, which arrives
+            // empty, and hands it the query — so the matches were counted
+            // against nothing and stayed at nothing until ⌘F recounted them.
+            if isFinding {
+                updateFindMatches()
+            }
         } catch {
             state.log(error: error)
         }
