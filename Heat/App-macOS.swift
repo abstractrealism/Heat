@@ -136,6 +136,18 @@ struct MainApp: App {
                 }
             }
 
+            // Into the Edit menu's find group, where ⌘F lives in every other
+            // app. The text-editing group above it already owns ⌘G, which the
+            // bar's own next/previous buttons carry.
+            CommandGroup(after: .textEditing) {
+                Section {
+                    Button("Find…") {
+                        state.findRequests += 1
+                    }
+                    .keyboardShortcut("f", modifiers: .command)
+                }
+            }
+
             // Into View, beside the sidebar commands, these being about which
             // file the sidebar is showing. ⌃⇥ and ⌃⇧⇥ are what the gesture is
             // everywhere else it appears, and Heat has a single window rather

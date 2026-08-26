@@ -725,6 +725,79 @@ final class ConversationViewModel {
         conversation.messages[index].metadata["thinkingTokens"] = .int(min(thinking, total))
     }
 
+    // MARK: - Find
+
+    /// Whether the find bar is up for this conversation.
+    ///
+    /// Held here rather than in the view so it survives the view being torn
+    /// down and rebuilt — switching away from a conversation and back keeps
+    /// the search that was running, the same reason the view model is shared.
+    var isFinding = false
+
+    private(set) var findQuery = ""
+    private(set) var findMatches: [ConversationSearch.Match] = []
+    private(set) var findIndex = 0
+
+    /// The message the find bar is pointing at, which the list scrolls to and
+    /// the message draws itself against.
+    var currentFindMessageID: String? {
+        guard isFinding, findMatches.indices.contains(findIndex) else { return nil }
+        return findMatches[findIndex].messageID
+    }
+
+    /// Every message holding the query, so the ones that aren't current can be
+    /// marked more faintly — knowing there are others, and roughly where, is
+    /// most of what a find bar is for.
+    var findMatchIDs: Set<String> {
+        guard isFinding else { return [] }
+        return Set(findMatches.map(\.messageID))
+    }
+
+    /// Counted across messages, since the bar shows a position within the
+    /// whole conversation rather than within a message.
+    var findMatchTotal: Int {
+        findMatches.reduce(0) { $0 + $1.count }
+    }
+
+    func beginFind() {
+        isFinding = true
+        updateFindMatches()
+    }
+
+    func endFind() {
+        isFinding = false
+        findQuery = ""
+        findMatches = []
+        findIndex = 0
+    }
+
+    func setFindQuery(_ query: String) {
+        findQuery = query
+        updateFindMatches()
+    }
+
+    func findNext() {
+        guard !findMatches.isEmpty else { return }
+        findIndex = (findIndex + 1) % findMatches.count
+    }
+
+    func findPrevious() {
+        guard !findMatches.isEmpty else { return }
+        findIndex = (findIndex - 1 + findMatches.count) % findMatches.count
+    }
+
+    /// Recomputed from scratch on every change rather than kept in step.
+    ///
+    /// A conversation is a few hundred kilobytes at most and the scan is one
+    /// pass over it; state that had to be invalidated as messages stream in
+    /// would be a standing source of wrong answers.
+    private func updateFindMatches() {
+        findMatches = ConversationSearch.matches(for: findQuery, in: conversation.messages)
+        // Clamped rather than reset: typing another letter usually narrows the
+        // same match rather than meaning a fresh search.
+        findIndex = min(findIndex, max(findMatches.count - 1, 0))
+    }
+
     // MARK: - Generators
 
     /// Starts a new turn of the conversation, cancelling whatever is still

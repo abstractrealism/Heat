@@ -36,6 +36,14 @@ final class AppState {
 
     var selectedFileID: String? = nil
 
+    /// Asks the open conversation to show its find bar.
+    ///
+    /// A counter rather than a flag, so pressing ⌘F while the bar is already
+    /// up is still a request — it refocuses the field and selects what's in
+    /// it, which is what the shortcut does everywhere else. A flag already
+    /// true would be no change at all.
+    var findRequests = 0
+
     /// Whether the confirmation for Reset All Data is up.
     ///
     /// Here rather than on the app itself. State declared on an `App` doesn't

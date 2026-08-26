@@ -6,6 +6,7 @@ import HeatKit
 
 struct MessageView: View {
     @Environment(AppState.self) var state
+    @Environment(ConversationViewModel.self) private var conversationViewModel
 
     let message: Message
 
@@ -38,6 +39,21 @@ struct MessageView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: frameAlignment)
+        // Where find has got to. The current match is marked plainly and the
+        // rest faintly — knowing there are others, and roughly where they sit,
+        // is most of what a find bar is for.
+        .background(findHighlight, in: .rect(cornerRadius: 6))
+        .animation(.easeOut(duration: 0.15), value: conversationViewModel.currentFindMessageID)
+    }
+
+    private var findHighlight: Color {
+        if conversationViewModel.currentFindMessageID == message.id {
+            return .accentColor.opacity(0.28)
+        }
+        if conversationViewModel.findMatchIDs.contains(message.id) {
+            return .accentColor.opacity(0.10)
+        }
+        return .clear
     }
 
     /// User messages align to the trailing edge; everything else stays leading.

@@ -21,6 +21,16 @@ struct ConversationView: View {
 
     var body: some View {
         MessageList()
+            // Over the thread rather than above it: a bar that takes its own
+            // row would push the messages down at the moment you go looking
+            // for one.
+            .overlay(alignment: .topTrailing) {
+                if conversationViewModel.isFinding {
+                    FindBar()
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.15), value: conversationViewModel.isFinding)
             .navigationTitle(conversationViewModel.title)
             .safeAreaInset(edge: .bottom, alignment: .center) {
                 MessageField { (prompt, images, context, toolIDs) in
@@ -34,6 +44,12 @@ struct ConversationView: View {
             }
             .onAppear {
                 handleLoad()
+            }
+            // Only the conversation on screen answers ⌘F. Others hold view
+            // models too, and would otherwise all open a find bar nobody can
+            // see.
+            .onChange(of: state.findRequests) { _, _ in
+                conversationViewModel.beginFind()
             }
     }
 

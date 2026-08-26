@@ -152,6 +152,16 @@ struct MessageList: View {
                     scroll.isFollowing = true
                 }
             }
+            .onChange(of: conversationViewModel.currentFindMessageID) { _, match in
+                guard let match else { return }
+                // Following is switched off first: bringing a match into view
+                // is a move away from the newest message, which is exactly
+                // what following would undo.
+                scroll.isFollowing = false
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo(match, anchor: .center)
+                }
+            }
             .onChange(of: conversationViewModel.messages.count) { _, _ in
                 // Sending is an explicit act, so bring the new prompt and the
                 // status below it into view and start following again. Only

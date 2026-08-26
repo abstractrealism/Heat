@@ -45,6 +45,8 @@
 		D4FECDD32B817A3900E1BA13 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FECDD22B817A3900E1BA13 /* HapticManager.swift */; };
 		A1B2C3D40000000000000001 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000002 /* NotificationManager.swift */; };
 		A1B2C3D40000000000000005 /* SlashCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000006 /* SlashCommand.swift */; };
+		A1B2C3D40000000000000013 /* FindBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000014 /* FindBar.swift */; };
+		A1B2C3D40000000000000011 /* ConversationSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000012 /* ConversationSearch.swift */; };
 		A1B2C3D4000000000000000F /* SuggestionLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000010 /* SuggestionLinks.swift */; };
 		A1B2C3D40000000000000003 /* MessageFieldControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000004 /* MessageFieldControls.swift */; };
 		A1B2C3D4000000000000000D /* MessageTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000E /* MessageTextView.swift */; };
@@ -129,6 +131,8 @@
 		D4FECDD22B817A3900E1BA13 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000002 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000006 /* SlashCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommand.swift; sourceTree = "<group>"; };
+		A1B2C3D40000000000000014 /* FindBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindBar.swift; sourceTree = "<group>"; };
+		A1B2C3D40000000000000012 /* ConversationSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSearch.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000010 /* SuggestionLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionLinks.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000004 /* MessageFieldControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFieldControls.swift; sourceTree = "<group>"; };
 		A1B2C3D4000000000000000E /* MessageTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTextView.swift; sourceTree = "<group>"; };
@@ -266,6 +270,8 @@
 				D838D6A62B0A65F100988FDD /* ConversationViewModel.swift */,
 				D85FAE442C852E1100DA153F /* ConversationViewInspector.swift */,
 				A1B2C3D40000000000000006 /* SlashCommand.swift */,
+				A1B2C3D40000000000000014 /* FindBar.swift */,
+				A1B2C3D40000000000000012 /* ConversationSearch.swift */,
 			);
 			path = Conversations;
 			sourceTree = "<group>";
@@ -585,6 +591,8 @@
 				D41E194C2AE591EA002516C1 /* GeneralView.swift in Sources */,
 				D85FAE452C852E1100DA153F /* ConversationViewInspector.swift in Sources */,
 				A1B2C3D40000000000000005 /* SlashCommand.swift in Sources */,
+				A1B2C3D40000000000000013 /* FindBar.swift in Sources */,
+				A1B2C3D40000000000000011 /* ConversationSearch.swift in Sources */,
 				A1B2C3D4000000000000000F /* SuggestionLinks.swift in Sources */,
 				D8015CC72CB8EDBF0068749D /* MessageInstructions.swift in Sources */,
 				A1B2C3D40000000000000003 /* MessageFieldControls.swift in Sources */,
