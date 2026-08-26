@@ -63,10 +63,41 @@ struct FileList: View {
     private static let emptySpaceRowID = "\u{0}top-level"
 
     var body: some View {
-        ScrollViewReader { proxy in
-            list(proxy)
+        VStack(spacing: 0) {
+            #if os(macOS)
+            searchButton
+            Divider()
+            #endif
+            ScrollViewReader { proxy in
+                list(proxy)
+            }
         }
     }
+
+    #if os(macOS)
+    /// Pinned above the files rather than listed among them: it isn't one of
+    /// them, and a row that scrolls away is a poor place for the thing you
+    /// reach for when you can't find something.
+    private var searchButton: some View {
+        Button {
+            state.isSearching = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .imageScale(.small)
+                Text("Search")
+                Spacer(minLength: 0)
+            }
+            .font(.callout)
+            .foregroundStyle(state.isSearching ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .help("Search across every conversation")
+    }
+    #endif
 
     private func list(_ proxy: ScrollViewProxy) -> some View {
         List(selection: $selection) {
@@ -108,6 +139,9 @@ struct FileList: View {
             // for doing something to the group, so leave the open file alone.
             if highlighted.count == 1, let only = highlighted.first, only != selected {
                 selected = only
+                // Picking a file is asking to read it, which search was in the
+                // way of.
+                state.isSearching = false
             }
         }
         .onChange(of: selected) { _, openFile in

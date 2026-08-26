@@ -46,7 +46,9 @@ struct MainApp: App {
                     .frame(minWidth: 200)
                     .navigationSplitViewStyle(.prominentDetail)
             } detail: {
-                if let fileID = state.selectedFileID {
+                if state.isSearching {
+                    SearchView()
+                } else if let fileID = state.selectedFileID {
                     FileDetail(fileID: fileID)
                 } else {
                     ContentUnavailableView {
@@ -145,6 +147,11 @@ struct MainApp: App {
                         state.findRequests += 1
                     }
                     .keyboardShortcut("f", modifiers: .command)
+
+                    Button("Find in All Conversations…") {
+                        state.isSearching = true
+                    }
+                    .keyboardShortcut("f", modifiers: [.command, .shift])
                 }
             }
 

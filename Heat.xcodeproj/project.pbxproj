@@ -47,6 +47,7 @@
 		A1B2C3D40000000000000005 /* SlashCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000006 /* SlashCommand.swift */; };
 		A1B2C3D40000000000000013 /* FindBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000014 /* FindBar.swift */; };
 		A1B2C3D40000000000000011 /* ConversationSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000012 /* ConversationSearch.swift */; };
+		A1B2C3D40000000000000015 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000016 /* SearchView.swift */; };
 		A1B2C3D4000000000000000F /* SuggestionLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000010 /* SuggestionLinks.swift */; };
 		A1B2C3D40000000000000003 /* MessageFieldControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000004 /* MessageFieldControls.swift */; };
 		A1B2C3D4000000000000000D /* MessageTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000E /* MessageTextView.swift */; };
@@ -133,6 +134,15 @@
 		A1B2C3D40000000000000006 /* SlashCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlashCommand.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000014 /* FindBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindBar.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000012 /* ConversationSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSearch.swift; sourceTree = "<group>"; };
+		A1B2C3D40000000000000017 /* Search */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D40000000000000016 /* SearchView.swift */,
+			);
+			path = Search;
+			sourceTree = "<group>";
+		};
+		A1B2C3D40000000000000016 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000010 /* SuggestionLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionLinks.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000004 /* MessageFieldControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFieldControls.swift; sourceTree = "<group>"; };
 		A1B2C3D4000000000000000E /* MessageTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTextView.swift; sourceTree = "<group>"; };
@@ -434,6 +444,7 @@
 		D8F5C1642DBE8BF400E3C1DC /* Files */ = {
 			isa = PBXGroup;
 			children = (
+				A1B2C3D40000000000000017 /* Search */,
 				D4FB72632DC01C3D008CC1DF /* Views */,
 				D41E194A2AE58D29002516C1 /* Conversations */,
 				D4FB726C2DC03755008CC1DF /* Documents */,
@@ -593,6 +604,7 @@
 				A1B2C3D40000000000000005 /* SlashCommand.swift in Sources */,
 				A1B2C3D40000000000000013 /* FindBar.swift in Sources */,
 				A1B2C3D40000000000000011 /* ConversationSearch.swift in Sources */,
+				A1B2C3D40000000000000015 /* SearchView.swift in Sources */,
 				A1B2C3D4000000000000000F /* SuggestionLinks.swift in Sources */,
 				D8015CC72CB8EDBF0068749D /* MessageInstructions.swift in Sources */,
 				A1B2C3D40000000000000003 /* MessageFieldControls.swift in Sources */,

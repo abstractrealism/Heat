@@ -44,6 +44,16 @@ final class AppState {
     /// true would be no change at all.
     var findRequests = 0
 
+    /// Whether search is showing instead of a file.
+    ///
+    /// Beside `selectedFileID` rather than replacing it, so leaving search
+    /// returns to whatever was open before rather than to nothing.
+    var isSearching = false
+
+    /// Kept here so leaving search and coming back doesn't lose what was
+    /// typed — the view is torn down whenever the detail pane changes.
+    var searchQuery = ""
+
     /// Whether the confirmation for Reset All Data is up.
     ///
     /// Here rather than on the app itself. State declared on an `App` doesn't
