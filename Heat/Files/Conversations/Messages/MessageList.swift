@@ -147,7 +147,13 @@ struct MessageList: View {
             .onScrollGeometryChange(for: ScrollState.self) { geometry in
                 ScrollState(
                     offset: geometry.contentOffset.y,
-                    distanceFromEnd: geometry.contentSize.height
+                    // The bottom inset counts as content the view can still
+                    // travel over. The message field sits in a bottom
+                    // `safeAreaInset`, which is inside `containerSize` but
+                    // outside `contentSize` — so without it this reads short by
+                    // the height of the field, and sitting exactly at the end
+                    // measures as 82 points *past* it.
+                    distanceFromEnd: geometry.contentSize.height + geometry.contentInsets.bottom
                         - (geometry.contentOffset.y + geometry.containerSize.height),
                     contentHeight: geometry.contentSize.height,
                     containerHeight: geometry.containerSize.height,
@@ -239,6 +245,13 @@ struct MessageList: View {
                 // nothing below to follow, and scrolling would cancel the
                 // bounce mid-flight — which reads as the view juddering.
                 // Let it settle; following resumes on the next token.
+                //
+                // This depends entirely on the measurement above being honest.
+                // While it read short by the height of the message field,
+                // sitting at the end looked like being 82 points past it, so
+                // this rejected every follow until that much new text had
+                // arrived — the view moved in steps of three or four lines with
+                // the newest one below the fold in between.
                 guard scroll.distanceFromEnd >= 0 else { return }
 
                 proxy.scrollTo("bottom", anchor: .bottom)
