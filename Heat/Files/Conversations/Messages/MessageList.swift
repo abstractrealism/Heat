@@ -40,6 +40,11 @@ struct MessageList: View {
         /// Distance from the end as of the last scroll geometry change.
         /// Negative while the view is rubber-banded past the end.
         var distanceFromEnd: CGFloat = 0
+
+        /// TEMPORARY — instrumentation for the follow cadence. See the
+        /// `file.modified` handler.
+        var lastGeometry = ScrollState(offset: 0, distanceFromEnd: 0, contentHeight: 0)
+        var lastFollowLog = Date.distantPast
     }
 
     @State private var scroll = ScrollIntent()
@@ -58,6 +63,13 @@ struct MessageList: View {
         /// Carried so an offset change can be told apart from a layout change.
         /// See the scroll geometry handler.
         var contentHeight: CGFloat
+
+        /// TEMPORARY — instrumentation only. Whether `contentHeight` already
+        /// accounts for the space the message field takes at the bottom
+        /// decides whether `distanceFromEnd` reads zero at the end or short
+        /// by the height of the field.
+        var containerHeight: CGFloat = 0
+        var insetBottom: CGFloat = 0
     }
 
     var body: some View {
@@ -137,10 +149,13 @@ struct MessageList: View {
                     offset: geometry.contentOffset.y,
                     distanceFromEnd: geometry.contentSize.height
                         - (geometry.contentOffset.y + geometry.containerSize.height),
-                    contentHeight: geometry.contentSize.height
+                    contentHeight: geometry.contentSize.height,
+                    containerHeight: geometry.containerSize.height,
+                    insetBottom: geometry.contentInsets.bottom
                 )
             } action: { old, new in
                 scroll.distanceFromEnd = new.distanceFromEnd
+                scroll.lastGeometry = new
 
                 // Only when the content stayed the same size. Text that is
                 // still being laid out settles at slightly different heights
@@ -198,6 +213,26 @@ struct MessageList: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
             .onChange(of: conversationViewModel.file.modified) { _, _ in
+                #if DEBUG
+                // TEMPORARY. Following is driven from here, ten times a second
+                // while a turn streams, and the guard below is what decides
+                // whether each of those actually moves the view. Logged at four
+                // a second so the cadence is readable rather than a wall.
+                if Date().timeIntervalSince(scroll.lastFollowLog) >= 0.25 {
+                    scroll.lastFollowLog = .now
+                    let g = scroll.lastGeometry
+                    let numbers = String(
+                        format: "content %.1f | offset %.1f | container %.1f | insetBottom %.1f | distance %.1f",
+                        Double(g.contentHeight), Double(g.offset), Double(g.containerHeight),
+                        Double(g.insetBottom), Double(g.distanceFromEnd)
+                    )
+                    let acted = scroll.isFollowing
+                        ? (scroll.distanceFromEnd >= 0 ? "scrolls" : "SKIPPED — reads as past the end")
+                        : "not following"
+                    ChatDebug.log("follow | \(numbers) | \(acted)")
+                }
+                #endif
+
                 guard scroll.isFollowing else { return }
 
                 // While the view is rubber-banded past the end there is
