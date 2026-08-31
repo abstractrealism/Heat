@@ -69,6 +69,7 @@
 		D85FAE452C852E1100DA153F /* ConversationViewInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D85FAE442C852E1100DA153F /* ConversationViewInspector.swift */; };
 		D85FE37F2C8FCA0B004CA2F3 /* RunView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D85FE37E2C8FCA0B004CA2F3 /* RunView.swift */; };
 		D85FE3822C8FDD4F004CA2F3 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = D85FE3812C8FDD4F004CA2F3 /* MarkdownUI */; };
+		A1B2C3D40000000000000103 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D40000000000000102 /* Textual */; };
 		D884AAF52BD7F50E00B90E9B /* FloatingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D884AAF42BD7F50E00B90E9B /* FloatingPanel.swift */; };
 		D884AAF92BD7F54500B90E9B /* VisualEffectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D884AAF82BD7F54500B90E9B /* VisualEffectView.swift */; };
 		D884AAFE2BD9B40000B90E9B /* PermissionList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D884AAFD2BD9B40000B90E9B /* PermissionList.swift */; };
@@ -193,6 +194,7 @@
 				D8271A5A2C7A4E3E008C345B /* Highlightr in Frameworks */,
 				D41E19322AE467F5002516C1 /* HeatKit in Frameworks */,
 				D85FE3822C8FDD4F004CA2F3 /* MarkdownUI in Frameworks */,
+				A1B2C3D40000000000000103 /* Textual in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -476,6 +478,7 @@
 				D41E19312AE467F5002516C1 /* HeatKit */,
 				D8271A592C7A4E3E008C345B /* Highlightr */,
 				D85FE3812C8FDD4F004CA2F3 /* MarkdownUI */,
+				A1B2C3D40000000000000102 /* Textual */,
 			);
 			productName = Heat;
 			productReference = D800BF8D2D8C73F300CD1D99 /* Heat.app */;
@@ -508,6 +511,7 @@
 			packageReferences = (
 				D8271A582C7A4E3E008C345B /* XCRemoteSwiftPackageReference "Highlightr" */,
 				D85FE3802C8FDD4F004CA2F3 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+				A1B2C3D40000000000000101 /* XCRemoteSwiftPackageReference "textual" */,
 			);
 			productRefGroup = D41E19122AE45C9B002516C1;
 			projectDirPath = "";
@@ -888,6 +892,14 @@
 				kind = branch;
 			};
 		};
+		A1B2C3D40000000000000101 /* XCRemoteSwiftPackageReference "textual" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/textual";
+			requirement = {
+				kind = exactVersion;
+				version = 0.5.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -904,6 +916,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D85FE3802C8FDD4F004CA2F3 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
 			productName = MarkdownUI;
+		};
+		A1B2C3D40000000000000102 /* Textual */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D40000000000000101 /* XCRemoteSwiftPackageReference "textual" */;
+			productName = Textual;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

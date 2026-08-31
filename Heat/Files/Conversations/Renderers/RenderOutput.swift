@@ -11,5 +11,8 @@ struct RenderOutput: View {
 
     var body: some View {
         RenderText(tag.content, tags: ["reflection", "image_search_query"])
+            // Tool output is deliberately outside find's reach; keep the
+            // in-text marks out of it too.
+            .environment(\.findHighlightQuery, nil)
     }
 }

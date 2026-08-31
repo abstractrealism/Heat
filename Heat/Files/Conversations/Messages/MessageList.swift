@@ -139,6 +139,13 @@ struct MessageList: View {
                 }
                 .id("bottom")
             }
+            // What find is looking for, handed down to the text renderers so
+            // matches can be marked inside the text itself.
+            .environment(
+                \.findHighlightQuery,
+                conversationViewModel.isFinding && !conversationViewModel.findQuery.isEmpty
+                    ? conversationViewModel.findQuery : nil
+            )
             .onScrollGeometryChange(for: ScrollState.self) { geometry in
                 ScrollState(
                     offset: geometry.contentOffset.y,
