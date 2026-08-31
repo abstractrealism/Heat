@@ -41,6 +41,16 @@ struct MessageList: View {
         /// Negative while the view is rubber-banded past the end.
         var distanceFromEnd: CGFloat = 0
 
+        /// How many upward offset moves in a row, counted so a lone one can
+        /// be ignored. Textual re-settles text at slightly different heights
+        /// *across frames* — height shrinks a few points in one geometry
+        /// event, the offset follows in the next — and that second event is
+        /// indistinguishable from a small reader scroll on its own numbers.
+        /// It is distinguishable in aggregate: a settle is one isolated blip
+        /// amid growth, while a reader's gesture delivers a run of upward
+        /// events. So one upward move is layout until a second follows it.
+        var upwardMoves = 0
+
         /// TEMPORARY — instrumentation for the Textual streaming glitch. See
         /// the geometry handler.
         var lastLog = Date.distantPast
@@ -177,6 +187,18 @@ struct MessageList: View {
                 // off and on throughout.
                 let contentSettled = new.contentHeight == old.contentHeight
 
+                // A same-event height check isn't enough on its own. Textual
+                // splits a re-settle across frames — height shrank 7 points in
+                // one event, the offset followed it down in the *next*, where
+                // the height was already equal again — so the second frame
+                // passes the check and reads as a 7-point reader scroll. Hence
+                // the counter: see its declaration.
+                if contentSettled, new.offset < old.offset - scrollUpTolerance {
+                    scroll.upwardMoves += 1
+                } else {
+                    scroll.upwardMoves = 0
+                }
+
                 #if DEBUG
                 // TEMPORARY — Textual streaming diagnosis. The throttled line
                 // shows the resting figures and the dance; the transition
@@ -190,25 +212,36 @@ struct MessageList: View {
                         Double(new.distanceFromEnd),
                         scroll.isFollowing ? "following" : "off"))
                 }
-                if scroll.isFollowing, contentSettled, new.offset < old.offset - scrollUpTolerance {
+                if scroll.isFollowing, scroll.upwardMoves >= 2 {
                     ChatDebug.log(String(
-                        format: "follow OFF | offset %.1f → %.1f with height settled at %.1f | distance %.1f",
+                        format: "follow OFF | offset %.1f → %.1f, %d consecutive upward moves | distance %.1f",
                         Double(old.offset), Double(new.offset),
-                        Double(new.contentHeight), Double(new.distanceFromEnd)))
+                        scroll.upwardMoves, Double(new.distanceFromEnd)))
                 }
-                if !scroll.isFollowing, !(contentSettled && new.offset < old.offset - scrollUpTolerance),
-                   new.distanceFromEnd <= endThreshold {
+                if !scroll.isFollowing, scroll.upwardMoves < 2, new.distanceFromEnd <= endThreshold {
                     ChatDebug.log(String(
                         format: "follow resumes | distance %.1f", Double(new.distanceFromEnd)))
                 }
                 #endif
 
-                if contentSettled, new.offset < old.offset - scrollUpTolerance {
-                    // Moving up is the reader's doing; leave the view put.
+                if scroll.upwardMoves >= 2 {
+                    // A run of upward moves is the reader's doing; leave the
+                    // view put. (A reader's gesture trips this on its second
+                    // event, one frame in — an isolated settle never does.)
                     scroll.isFollowing = false
                 } else if new.distanceFromEnd <= endThreshold {
                     // Back at the newest content, so resume following it.
                     scroll.isFollowing = true
+                } else if scroll.isFollowing, !contentSettled, new.distanceFromEnd > endThreshold {
+                    // The content just grew while following, and the view is
+                    // now more than a line behind. Catch up from here rather
+                    // than waiting for the next publish tick: this event fires
+                    // *after* layout, so the scroll lands on sizes that are
+                    // already true — the tick handler was landing one
+                    // line-growth late, leaving the current line half below
+                    // the fold, and lumps of growth arriving at once left it
+                    // far below.
+                    proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
             .onChange(of: conversationViewModel.currentFindMessageID) { _, message in
