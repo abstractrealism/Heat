@@ -40,6 +40,10 @@ struct MessageList: View {
         /// Distance from the end as of the last scroll geometry change.
         /// Negative while the view is rubber-banded past the end.
         var distanceFromEnd: CGFloat = 0
+
+        /// TEMPORARY — instrumentation for the Textual streaming glitch. See
+        /// the geometry handler.
+        var lastLog = Date.distantPast
     }
 
     @State private var scroll = ScrollIntent()
@@ -172,6 +176,32 @@ struct MessageList: View {
                 // more than a plain answer does, and following was being turned
                 // off and on throughout.
                 let contentSettled = new.contentHeight == old.contentHeight
+
+                #if DEBUG
+                // TEMPORARY — Textual streaming diagnosis. The throttled line
+                // shows the resting figures and the dance; the transition
+                // lines show every time following is switched off and exactly
+                // which numbers did it.
+                if Date().timeIntervalSince(scroll.lastLog) >= 0.25 {
+                    scroll.lastLog = .now
+                    ChatDebug.log(String(
+                        format: "geometry | offset %.1f | height %.1f | distance %.1f | %@",
+                        Double(new.offset), Double(new.contentHeight),
+                        Double(new.distanceFromEnd),
+                        scroll.isFollowing ? "following" : "off"))
+                }
+                if scroll.isFollowing, contentSettled, new.offset < old.offset - scrollUpTolerance {
+                    ChatDebug.log(String(
+                        format: "follow OFF | offset %.1f → %.1f with height settled at %.1f | distance %.1f",
+                        Double(old.offset), Double(new.offset),
+                        Double(new.contentHeight), Double(new.distanceFromEnd)))
+                }
+                if !scroll.isFollowing, !(contentSettled && new.offset < old.offset - scrollUpTolerance),
+                   new.distanceFromEnd <= endThreshold {
+                    ChatDebug.log(String(
+                        format: "follow resumes | distance %.1f", Double(new.distanceFromEnd)))
+                }
+                #endif
 
                 if contentSettled, new.offset < old.offset - scrollUpTolerance {
                     // Moving up is the reader's doing; leave the view put.
