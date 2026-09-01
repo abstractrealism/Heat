@@ -39,10 +39,12 @@ struct RenderText: View {
                         .textual.codeBlockStyle(ChatCodeBlockStyle())
                 case let .tag(tag):
                     RenderTag(tag)
+                        // Tags render plain SwiftUI text among other things,
+                        // which has no selection of its own.
+                        .textSelection(.enabled)
                 }
             }
         }
-        .textSelection(.enabled)
     }
 
     var toAttributedString: AttributedString {

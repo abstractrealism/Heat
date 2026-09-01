@@ -202,7 +202,15 @@ struct ContentsView: View {
                     }
                 }
             }
-            .fixedSize(horizontal: false, vertical: true) // HACK: Prevents occasional word truncation
+            // The truncation hack this used to carry —
+            // `.fixedSize(horizontal: false, vertical: true)` — is gone. It
+            // forced an ideal-height measurement of every message before the
+            // real layout, doubling the layout work for a whole transcript,
+            // and it was guarding against MarkdownUI clipping a word.
+            // StructuredText sets `.lineLimit(nil)` itself for exactly that
+            // reason, so the guard has a better owner now. If truncation ever
+            // comes back, it belongs on the one view that truncates, not on
+            // every message.
         }
     }
 }
