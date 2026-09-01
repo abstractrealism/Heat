@@ -232,7 +232,8 @@ struct MessageList: View {
                 } else if new.distanceFromEnd <= endThreshold {
                     // Back at the newest content, so resume following it.
                     scroll.isFollowing = true
-                } else if scroll.isFollowing, new.contentHeight > old.contentHeight,
+                } else if scroll.isFollowing, conversationViewModel.isGenerating,
+                          new.contentHeight > old.contentHeight,
                           new.distanceFromEnd > endThreshold {
                     // The content just grew while following, and the view is
                     // now more than a line behind. Catch up from here rather
@@ -250,6 +251,15 @@ struct MessageList: View {
                     // amplifying a 12-point content flap into a 30-point
                     // scroll flap. Shrinks are left for the next growth to
                     // absorb.
+                    //
+                    // And only while generating. A thread *opening* fits the
+                    // other conditions perfectly — following starts true and
+                    // the height grows in steps as rows are measured — so this
+                    // was scrolling on every step, each scroll forcing more
+                    // rows to lay out, which grew the height, which fired the
+                    // next event: a feedback loop that made opening a thread
+                    // take half a second. The catch-up exists for streaming
+                    // lag; streaming is when it runs.
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
@@ -420,14 +430,21 @@ struct MessageListScrollView<Content: View>: View {
         }
         .scrollClipDisabled()
         .scrollDismissesKeyboard(.interactively)
-        .defaultScrollAnchor(.bottom)
+        // Initial position only. Unscoped, the anchor also applies to *size
+        // changes*: the scroll view re-pins the bottom edge whenever the
+        // content's height moves, which is a second scroller fighting the
+        // explicit follow logic. Every flap of a streaming message's height
+        // moved the offset to hold the bottom still, so the whole view —
+        // including the top of the message being written — visibly bobbed.
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
         #else
         ScrollView {
             content()
         }
         .scrollClipDisabled()
         .scrollDismissesKeyboard(.interactively)
-        .defaultScrollAnchor(.bottom)
+        // Scoped for the same reason as macOS above.
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
         #endif
     }
 }
