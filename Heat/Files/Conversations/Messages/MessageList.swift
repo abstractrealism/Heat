@@ -153,13 +153,9 @@ struct MessageList: View {
                 }
                 .id("bottom")
             }
-            // What find is looking for, handed down to the text renderers so
-            // matches can be marked inside the text itself.
-            .environment(
-                \.findHighlightQuery,
-                conversationViewModel.isFinding && !conversationViewModel.findQuery.isEmpty
-                    ? conversationViewModel.findQuery : nil
-            )
+            // The find query reaches renderers per message, from MessageView —
+            // set here it changed for every message on every keystroke, and
+            // every StructuredText rebuilt each time.
             .onScrollGeometryChange(for: ScrollState.self) { geometry in
                 ScrollState(
                     offset: geometry.contentOffset.y,
@@ -318,6 +314,12 @@ struct MessageList: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
             .task(id: conversationViewModel.file.id) {
+                #if DEBUG
+                // TEMPORARY — the opening bracket for slow-open attribution:
+                // everything between this line and the geometry settling is
+                // the open.
+                ChatDebug.log("⏱ open | \(conversationViewModel.runs.count) runs")
+                #endif
                 // Unless a find is already pointing somewhere. Arriving from a
                 // search result is arriving *at* a match, and opening at the
                 // newest message would scroll straight past it — including the

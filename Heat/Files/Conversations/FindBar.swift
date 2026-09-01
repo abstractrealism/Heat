@@ -11,23 +11,35 @@ struct FindBar: View {
 
     @FocusState private var isFocused: Bool
 
+    /// What's been typed, ahead of what's being searched. The field writes
+    /// here and the search follows a pause behind it: searching on every
+    /// keystroke re-marked matching messages per character, and with each
+    /// mark being a re-parse the typing itself stopped echoing.
+    @State private var draft = ""
+
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.tertiary)
                 .font(.footnote)
 
-            TextField("Find in conversation", text: Binding(
-                get: { conversationViewModel.findQuery },
-                set: { conversationViewModel.setFindQuery($0) }
-            ))
+            TextField("Find in conversation", text: $draft)
             .textFieldStyle(.plain)
             .font(.footnote)
             .frame(width: 150)
             .focused($isFocused)
             // Return steps forward, Shift+Return back, as everywhere else that
-            // has a find bar.
-            .onSubmit { conversationViewModel.findNext() }
+            // has a find bar. Stepping is against what's typed, not what the
+            // pause has caught up to.
+            .onSubmit {
+                commitDraft()
+                conversationViewModel.findNext()
+            }
+            .task(id: draft) {
+                guard draft != conversationViewModel.findQuery else { return }
+                try? await Task.sleep(for: .milliseconds(200))
+                conversationViewModel.setFindQuery(draft)
+            }
 
             if !conversationViewModel.findQuery.isEmpty {
                 Text(position)
@@ -79,10 +91,23 @@ struct FindBar: View {
         .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
         .padding(.top, 10)
         .padding(.trailing, 14)
-        .onAppear { isFocused = true }
+        .onAppear {
+            isFocused = true
+            // A search result primes the query before the bar exists; the
+            // field has to open showing it.
+            draft = conversationViewModel.findQuery
+        }
         // Escape closes, which is what the key is for and what stops the bar
         // needing the mouse to dismiss.
         .onExitCommand { conversationViewModel.endFind() }
+    }
+
+    /// Runs the search on what's typed right now, for the paths that act on
+    /// the query rather than wait for it.
+    private func commitDraft() {
+        if draft != conversationViewModel.findQuery {
+            conversationViewModel.setFindQuery(draft)
+        }
     }
 
     /// Counted in messages, because messages are what the arrows move between.

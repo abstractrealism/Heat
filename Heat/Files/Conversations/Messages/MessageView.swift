@@ -44,6 +44,20 @@ struct MessageView: View {
         // is most of what a find bar is for.
         .background(findHighlight, in: .rect(cornerRadius: 6))
         .animation(.easeOut(duration: 0.15), value: conversationViewModel.currentFindMessageID)
+        .environment(\.findHighlightQuery, inTextQuery)
+    }
+
+    /// Only messages that match hand the query down to their renderers.
+    ///
+    /// The query used to ride the environment of the whole list, so every
+    /// keystroke changed it for every message — and `.id(findQuery)` then
+    /// rebuilt, re-parsed and re-laid-out every StructuredText in the thread
+    /// per character typed, which is why the characters couldn't even echo.
+    /// Scoped here, a keystroke touches only the messages it matches.
+    private var inTextQuery: String? {
+        guard conversationViewModel.findMatchIDs.contains(message.id) else { return nil }
+        let query = conversationViewModel.findQuery
+        return query.isEmpty ? nil : query
     }
 
     private var findHighlight: Color {

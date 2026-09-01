@@ -483,10 +483,14 @@ final class ConversationViewModel {
         guard !isGenerating else { return }
         if hasLoadedFromDisk, file.modified == self.file.modified { return }
         do {
+            // TEMPORARY — brackets the decode-and-assign for the slow-open
+            // attribution; the assign is what invalidates every observer.
+            let started = ContinuousClock.now
             let conversation = try state.file(Conversation.self, fileID: file.id)
             self.conversation = conversation
             self.file = file
             hasLoadedFromDisk = true
+            ChatDebug.log("⏱ load \(ContinuousClock.now - started) | \(conversation.messages.count) messages")
 
             // A find can be set up before the conversation is here: opening a
             // search result asks the store for a view model, which arrives

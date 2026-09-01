@@ -122,18 +122,28 @@ extension EnvironmentValues {
 struct HeatMarkupParser: MarkupParser {
     var findQuery: String?
 
+    /// One parser for every message, not one per parse — building one sets up
+    /// its pattern processor, and this is called for every message on open
+    /// and ten times a second while streaming.
+    @MainActor private static let markdown = AttributedStringMarkdownParser.markdown()
+
+    /// TEMPORARY — cumulative attribution for the slow-open question: the Σ
+    /// after an open says what share of it was parsing.
+    @MainActor private static var parseCount = 0
+    @MainActor private static var parseTotal: Duration = .zero
+
     func attributedString(for input: String) throws -> AttributedString {
         let start = ContinuousClock.now
-        var text = try AttributedStringMarkdownParser.markdown().attributedString(for: input)
+        var text = try Self.markdown.attributedString(for: input)
         markSuggestionLinks(in: &text)
         if let findQuery, !findQuery.isEmpty {
             highlight(findQuery, in: &text)
         }
-        // The whole message is re-parsed on every streamed publish, ten times
-        // a second — this is the number that decides whether that's viable.
         let elapsed = ContinuousClock.now - start
-        if elapsed > .milliseconds(8) {
-            ChatDebug.log("⚠ textual parse \(elapsed) | \(input.count) chars")
+        Self.parseCount += 1
+        Self.parseTotal += elapsed
+        if elapsed >= .milliseconds(2) || Self.parseCount % 25 == 0 {
+            ChatDebug.log("⏱ textual parse \(elapsed) | \(input.count) chars | Σ \(Self.parseCount) parses, \(Self.parseTotal)")
         }
         return text
     }
