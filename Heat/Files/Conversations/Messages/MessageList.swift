@@ -232,7 +232,8 @@ struct MessageList: View {
                 } else if new.distanceFromEnd <= endThreshold {
                     // Back at the newest content, so resume following it.
                     scroll.isFollowing = true
-                } else if scroll.isFollowing, !contentSettled, new.distanceFromEnd > endThreshold {
+                } else if scroll.isFollowing, new.contentHeight > old.contentHeight,
+                          new.distanceFromEnd > endThreshold {
                     // The content just grew while following, and the view is
                     // now more than a line behind. Catch up from here rather
                     // than waiting for the next publish tick: this event fires
@@ -241,6 +242,14 @@ struct MessageList: View {
                     // line-growth late, leaving the current line half below
                     // the fold, and lumps of growth arriving at once left it
                     // far below.
+                    //
+                    // On growth *only*. Textual re-flows the live message on a
+                    // cadence — height dips ~12 points and then grows as a
+                    // paragraph's trailing edge streams — and scrolling on the
+                    // dips slammed the view flush against the end each time,
+                    // amplifying a 12-point content flap into a 30-point
+                    // scroll flap. Shrinks are left for the next growth to
+                    // absorb.
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
