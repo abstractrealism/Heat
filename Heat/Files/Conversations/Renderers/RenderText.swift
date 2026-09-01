@@ -198,6 +198,12 @@ private struct ChatCodeBlock: View {
     let configuration: StructuredText.CodeBlockStyleConfiguration
 
     @State private var isCopied = false
+    @State private var saveOutcome: SaveOutcome = .none
+
+    /// See CodeBlockView: the only report a Downloads write gets.
+    private enum SaveOutcome {
+        case none, saved, failed
+    }
 
     /// Same parse CodeBlockView does — the language and, if the model named
     /// one, the file.
@@ -212,15 +218,22 @@ private struct ChatCodeBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(fence.displayLabel)
+                Text(headerLabel)
                     .font(.subheadline)
                 Spacer()
 
-                // No save-to-Downloads, unlike CodeBlockView: CodeBlockProxy
-                // keeps the code text private and offers only
-                // copyToPasteboard(), so there is nothing to hand
-                // CodeDownload. An upstream accessor is the route if the
-                // spike graduates.
+                // The save needs the code itself, which upstream's proxy
+                // keeps private — `plainText` is our fork's accessor, and
+                // this button is why it exists.
+                #if os(macOS)
+                Button(action: saveCodeAction) {
+                    Image(systemName: saveSymbol)
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+                .help(saveHelp)
+                #endif
+
                 Button(action: copyCodeAction) {
                     Image(systemName: isCopied ? "checkmark" : "square.on.square")
                         .font(.system(size: 12))
@@ -247,6 +260,53 @@ private struct ChatCodeBlock: View {
         .clipShape(.rect(cornerRadius: 5))
         .padding(.horizontal, -12)
     }
+
+    /// Normally what the block is; briefly what just happened to it. See
+    /// CodeBlockView for why the outcome has to be legible here.
+    private var headerLabel: String {
+        #if os(macOS)
+        switch saveOutcome {
+        case .none: fence.displayLabel
+        case .saved: "Saved to Downloads"
+        case .failed: "Couldn't save"
+        }
+        #else
+        fence.displayLabel
+        #endif
+    }
+
+    #if os(macOS)
+    private var saveSymbol: String {
+        switch saveOutcome {
+        case .none: "square.and.arrow.down"
+        case .saved: "checkmark"
+        case .failed: "exclamationmark.triangle"
+        }
+    }
+
+    private var saveHelp: String {
+        switch saveOutcome {
+        case .none: "Save \(fence.suggestedFilename) to Downloads"
+        case .saved: "Saved to Downloads"
+        case .failed: "Couldn't save — see Settings ▸ Logs"
+        }
+    }
+
+    @MainActor
+    private func saveCodeAction() {
+        do {
+            try CodeDownload.save(configuration.codeBlock.plainText, as: fence.suggestedFilename)
+            saveOutcome = .saved
+        } catch {
+            AppState.shared.log(error: error)
+            saveOutcome = .failed
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            saveOutcome = .none
+        }
+    }
+    #endif
 
     private func copyCodeAction() {
         configuration.codeBlock.copyToPasteboard()
