@@ -39,6 +39,11 @@ struct RenderThinking: View {
 
             if isDisclosed {
                 RenderText(tag.content, tags: ["reflection"])
+                    // Reasoning is deliberately outside find's reach, so the
+                    // in-text marks stay out of it too — a highlight here in a
+                    // message the count doesn't include would contradict the
+                    // bar.
+                    .environment(\.findHighlightQuery, nil)
                     .padding(.leading)
                     .overlay(
                         Rectangle()

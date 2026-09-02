@@ -1,10 +1,11 @@
 import SwiftUI
-import MarkdownUI
+import Textual
 import GenKit
 import HeatKit
 
 struct RenderText: View {
     @Environment(AppState.self) var state
+    @Environment(\.findHighlightQuery) private var findQuery
 
     let text: String
     let tags: [String]
@@ -27,14 +28,23 @@ struct RenderText: View {
             ForEach(contents.indices, id: \.self) { index in
                 switch contents[index] {
                 case let .text(text):
-                    Markdown(text)
-                        .markdownCodeSyntaxHighlighter(.app)
+                    StructuredText(text, parser: HeatMarkupParser(findQuery: findQuery))
+                        // Recreated when the query changes. StructuredText
+                        // re-parses only when its *markup* changes, so a new
+                        // query over unchanged text would keep stale marks.
+                        .id(findQuery)
+                        .font(.system(size: chatFontSize))
+                        .textual.textSelection(.enabled)
+                        .textual.headingStyle(ChatHeadingStyle())
+                        .textual.codeBlockStyle(ChatCodeBlockStyle())
                 case let .tag(tag):
                     RenderTag(tag)
+                        // Tags render plain SwiftUI text among other things,
+                        // which has no selection of its own.
+                        .textSelection(.enabled)
                 }
             }
         }
-        .textSelection(.enabled)
     }
 
     var toAttributedString: AttributedString {
@@ -54,16 +64,24 @@ struct RenderModifier: ViewModifier {
 
     let role: Message.Role
 
+    /// Mirrors the MarkdownUI themes this replaces: primary links for the
+    /// assistant, white text and links inside the user bubble.
+    private static let assistantInline = InlineStyle()
+        .link(.foregroundColor(.primary), .underlineStyle(.single))
+    private static let userInline = InlineStyle()
+        .link(.foregroundColor(.white), .underlineStyle(.single))
+
     func body(content: Content) -> some View {
         switch role {
         case .system:
             content
         case .assistant:
             content
-                .markdownTheme(.assistant)
+                .textual.inlineStyle(Self.assistantInline)
         case .user:
             content
-                .markdownTheme(.user)
+                .foregroundStyle(.white)
+                .textual.inlineStyle(Self.userInline)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(.tint, in: .rect(cornerRadius: 10))
@@ -76,6 +94,238 @@ struct RenderModifier: ViewModifier {
 extension View {
     func render(role: Message.Role) -> some View {
         self.modifier(RenderModifier(role: role))
+    }
+}
+
+// MARK: - Textual
+
+/// SPIKE (`textual-spike`): everything from here to the LaTeX mark exists to
+/// answer three questions about Textual before adopting it — whether
+/// attributes set by a custom parser survive rendering, what a full re-parse
+/// costs at streaming rate, and whether the code block chrome can be kept.
+
+#if os(macOS)
+private let chatFontSize: CGFloat = 14
+#else
+private let chatFontSize: CGFloat = 16
+#endif
+
+extension EnvironmentValues {
+    /// What find is looking for, or nil when no find is active. Carried in the
+    /// environment rather than read off a view model because RenderText also
+    /// draws in places that have none.
+    @Entry var findHighlightQuery: String? = nil
+}
+
+/// Textual's stock markdown parser plus the two passes MarkdownUI had no seam
+/// for: marking suggestion links by their destination, and highlighting find
+/// matches inside the text. Both work because the pipeline is markdown →
+/// AttributedString → layout, and this sits in the middle of it.
+struct HeatMarkupParser: MarkupParser {
+    var findQuery: String?
+
+    /// One parser for every message, not one per parse — building one sets up
+    /// its pattern processor, and this is called for every message on open
+    /// and ten times a second while streaming.
+    @MainActor private static let markdown = AttributedStringMarkdownParser.markdown()
+
+    /// TEMPORARY — cumulative attribution for the slow-open question: the Σ
+    /// after an open says what share of it was parsing.
+    @MainActor private static var parseCount = 0
+    @MainActor private static var parseTotal: Duration = .zero
+
+    func attributedString(for input: String) throws -> AttributedString {
+        let start = ContinuousClock.now
+        var text = try Self.markdown.attributedString(for: input)
+        markSuggestionLinks(in: &text)
+        if let findQuery, !findQuery.isEmpty {
+            highlight(findQuery, in: &text)
+        }
+        let elapsed = ContinuousClock.now - start
+        Self.parseCount += 1
+        Self.parseTotal += elapsed
+        if elapsed >= .milliseconds(2) || Self.parseCount % 25 == 0 {
+            ChatDebug.log("⏱ textual parse \(elapsed) | \(input.count) chars | Σ \(Self.parseCount) parses, \(Self.parseTotal)")
+        }
+        return text
+    }
+
+    /// A link is finally styled by where it points: the run carries its URL.
+    /// The ✦ the input already carries stays — belt and braces until this is
+    /// confirmed rendering.
+    private func markSuggestionLinks(in text: inout AttributedString) {
+        // Ranges first, mutation second — attribute writes can coalesce runs,
+        // and mutating what's being iterated is undefined.
+        let ranges = text.runs.compactMap { run in
+            run.link?.scheme == "heat" ? run.range : nil
+        }
+        for range in ranges {
+            text[range].foregroundColor = .accentColor
+            text[range].backgroundColor = Color.accentColor.opacity(0.12)
+        }
+    }
+
+    /// Yellow rather than accent so the marks read against the accent-tinted
+    /// row the matched message already gets.
+    private func highlight(_ query: String, in text: inout AttributedString) {
+        var start = text.startIndex
+        while start < text.endIndex,
+              let range = text[start..<text.endIndex].range(
+                  of: query,
+                  options: [.caseInsensitive, .diacriticInsensitive]
+              ) {
+            text[range].backgroundColor = Color.yellow.opacity(0.45)
+            start = range.upperBound
+        }
+    }
+}
+
+/// Headings at body size, distinguished by weight — a chat message is not a
+/// document, and the old MarkdownUI theme made the same choice.
+private struct ChatHeadingStyle: StructuredText.HeadingStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: chatFontSize, weight: weight(configuration.headingLevel)))
+    }
+
+    private func weight(_ level: Int) -> Font.Weight {
+        switch level {
+        case 1: .bold
+        case 2: .semibold
+        default: .medium
+        }
+    }
+}
+
+/// CodeBlockView's chrome, rebuilt on Textual's style protocol.
+private struct ChatCodeBlockStyle: StructuredText.CodeBlockStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        // A nested view rather than state on the style: the one style value
+        // serves every block, so state here would be shared between them.
+        ChatCodeBlock(configuration: configuration)
+    }
+}
+
+private struct ChatCodeBlock: View {
+    let configuration: StructuredText.CodeBlockStyleConfiguration
+
+    @State private var isCopied = false
+    @State private var saveOutcome: SaveOutcome = .none
+
+    /// See CodeBlockView: the only report a Downloads write gets.
+    private enum SaveOutcome {
+        case none, saved, failed
+    }
+
+    /// Same parse CodeBlockView does — the language and, if the model named
+    /// one, the file.
+    private var fence: CodeFence {
+        CodeFence(fenceInfo: configuration.languageHint)
+    }
+
+    /// See CodeBlockView for why these are absolute colours.
+    private static let background = Color(red: 0.157, green: 0.173, blue: 0.204)
+    private static let chrome = Color.white.opacity(0.6)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(headerLabel)
+                    .font(.subheadline)
+                Spacer()
+
+                // The save needs the code itself, which upstream's proxy
+                // keeps private — `plainText` is our fork's accessor, and
+                // this button is why it exists.
+                #if os(macOS)
+                Button(action: saveCodeAction) {
+                    Image(systemName: saveSymbol)
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+                .help(saveHelp)
+                #endif
+
+                Button(action: copyCodeAction) {
+                    Image(systemName: isCopied ? "checkmark" : "square.on.square")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+                .help("Copy this code")
+            }
+            .foregroundStyle(Self.chrome)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+
+            Rectangle()
+                .fill(.white.opacity(0.12))
+                .frame(height: 1)
+
+            configuration.label
+                // The block is fixed dark whatever the app's appearance, so
+                // the highlighter theme has to resolve dark too — in light
+                // mode it would otherwise pick colours for a white page.
+                .environment(\.colorScheme, .dark)
+                .padding(12)
+        }
+        .background(Self.background)
+        .clipShape(.rect(cornerRadius: 5))
+        .padding(.horizontal, -12)
+    }
+
+    /// Normally what the block is; briefly what just happened to it. See
+    /// CodeBlockView for why the outcome has to be legible here.
+    private var headerLabel: String {
+        #if os(macOS)
+        switch saveOutcome {
+        case .none: fence.displayLabel
+        case .saved: "Saved to Downloads"
+        case .failed: "Couldn't save"
+        }
+        #else
+        fence.displayLabel
+        #endif
+    }
+
+    #if os(macOS)
+    private var saveSymbol: String {
+        switch saveOutcome {
+        case .none: "square.and.arrow.down"
+        case .saved: "checkmark"
+        case .failed: "exclamationmark.triangle"
+        }
+    }
+
+    private var saveHelp: String {
+        switch saveOutcome {
+        case .none: "Save \(fence.suggestedFilename) to Downloads"
+        case .saved: "Saved to Downloads"
+        case .failed: "Couldn't save — see Settings ▸ Logs"
+        }
+    }
+
+    @MainActor
+    private func saveCodeAction() {
+        do {
+            try CodeDownload.save(configuration.codeBlock.plainText, as: fence.suggestedFilename)
+            saveOutcome = .saved
+        } catch {
+            AppState.shared.log(error: error)
+            saveOutcome = .failed
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            saveOutcome = .none
+        }
+    }
+    #endif
+
+    private func copyCodeAction() {
+        configuration.codeBlock.copyToPasteboard()
+        isCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            isCopied = false
+        }
     }
 }
 

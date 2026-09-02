@@ -40,6 +40,20 @@ struct MessageList: View {
         /// Distance from the end as of the last scroll geometry change.
         /// Negative while the view is rubber-banded past the end.
         var distanceFromEnd: CGFloat = 0
+
+        /// How many upward offset moves in a row, counted so a lone one can
+        /// be ignored. Textual re-settles text at slightly different heights
+        /// *across frames* — height shrinks a few points in one geometry
+        /// event, the offset follows in the next — and that second event is
+        /// indistinguishable from a small reader scroll on its own numbers.
+        /// It is distinguishable in aggregate: a settle is one isolated blip
+        /// amid growth, while a reader's gesture delivers a run of upward
+        /// events. So one upward move is layout until a second follows it.
+        var upwardMoves = 0
+
+        /// TEMPORARY — instrumentation for the Textual streaming glitch. See
+        /// the geometry handler.
+        var lastLog = Date.distantPast
     }
 
     @State private var scroll = ScrollIntent()
@@ -139,6 +153,9 @@ struct MessageList: View {
                 }
                 .id("bottom")
             }
+            // The find query reaches renderers per message, from MessageView —
+            // set here it changed for every message on every keystroke, and
+            // every StructuredText rebuilt each time.
             .onScrollGeometryChange(for: ScrollState.self) { geometry in
                 ScrollState(
                     offset: geometry.contentOffset.y,
@@ -166,12 +183,80 @@ struct MessageList: View {
                 // off and on throughout.
                 let contentSettled = new.contentHeight == old.contentHeight
 
+                // A same-event height check isn't enough on its own. Textual
+                // splits a re-settle across frames — height shrank 7 points in
+                // one event, the offset followed it down in the *next*, where
+                // the height was already equal again — so the second frame
+                // passes the check and reads as a 7-point reader scroll. Hence
+                // the counter: see its declaration.
                 if contentSettled, new.offset < old.offset - scrollUpTolerance {
-                    // Moving up is the reader's doing; leave the view put.
+                    scroll.upwardMoves += 1
+                } else {
+                    scroll.upwardMoves = 0
+                }
+
+                #if DEBUG
+                // TEMPORARY — Textual streaming diagnosis. The throttled line
+                // shows the resting figures and the dance; the transition
+                // lines show every time following is switched off and exactly
+                // which numbers did it.
+                if Date().timeIntervalSince(scroll.lastLog) >= 0.25 {
+                    scroll.lastLog = .now
+                    ChatDebug.log(String(
+                        format: "geometry | offset %.1f | height %.1f | distance %.1f | %@",
+                        Double(new.offset), Double(new.contentHeight),
+                        Double(new.distanceFromEnd),
+                        scroll.isFollowing ? "following" : "off"))
+                }
+                if scroll.isFollowing, scroll.upwardMoves >= 2 {
+                    ChatDebug.log(String(
+                        format: "follow OFF | offset %.1f → %.1f, %d consecutive upward moves | distance %.1f",
+                        Double(old.offset), Double(new.offset),
+                        scroll.upwardMoves, Double(new.distanceFromEnd)))
+                }
+                if !scroll.isFollowing, scroll.upwardMoves < 2, new.distanceFromEnd <= endThreshold {
+                    ChatDebug.log(String(
+                        format: "follow resumes | distance %.1f", Double(new.distanceFromEnd)))
+                }
+                #endif
+
+                if scroll.upwardMoves >= 2 {
+                    // A run of upward moves is the reader's doing; leave the
+                    // view put. (A reader's gesture trips this on its second
+                    // event, one frame in — an isolated settle never does.)
                     scroll.isFollowing = false
                 } else if new.distanceFromEnd <= endThreshold {
                     // Back at the newest content, so resume following it.
                     scroll.isFollowing = true
+                } else if scroll.isFollowing, conversationViewModel.isGenerating,
+                          new.contentHeight > old.contentHeight,
+                          new.distanceFromEnd > endThreshold {
+                    // The content just grew while following, and the view is
+                    // now more than a line behind. Catch up from here rather
+                    // than waiting for the next publish tick: this event fires
+                    // *after* layout, so the scroll lands on sizes that are
+                    // already true — the tick handler was landing one
+                    // line-growth late, leaving the current line half below
+                    // the fold, and lumps of growth arriving at once left it
+                    // far below.
+                    //
+                    // On growth *only*. Textual re-flows the live message on a
+                    // cadence — height dips ~12 points and then grows as a
+                    // paragraph's trailing edge streams — and scrolling on the
+                    // dips slammed the view flush against the end each time,
+                    // amplifying a 12-point content flap into a 30-point
+                    // scroll flap. Shrinks are left for the next growth to
+                    // absorb.
+                    //
+                    // And only while generating. A thread *opening* fits the
+                    // other conditions perfectly — following starts true and
+                    // the height grows in steps as rows are measured — so this
+                    // was scrolling on every step, each scroll forcing more
+                    // rows to lay out, which grew the height, which fired the
+                    // next event: a feedback loop that made opening a thread
+                    // take half a second. The catch-up exists for streaming
+                    // lag; streaming is when it runs.
+                    proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
             .onChange(of: conversationViewModel.currentFindMessageID) { _, message in
@@ -229,6 +314,12 @@ struct MessageList: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
             .task(id: conversationViewModel.file.id) {
+                #if DEBUG
+                // TEMPORARY — the opening bracket for slow-open attribution:
+                // everything between this line and the geometry settling is
+                // the open.
+                ChatDebug.log("⏱ open | \(conversationViewModel.runs.count) runs")
+                #endif
                 // Unless a find is already pointing somewhere. Arriving from a
                 // search result is arriving *at* a match, and opening at the
                 // newest message would scroll straight past it — including the
@@ -341,14 +432,21 @@ struct MessageListScrollView<Content: View>: View {
         }
         .scrollClipDisabled()
         .scrollDismissesKeyboard(.interactively)
-        .defaultScrollAnchor(.bottom)
+        // Initial position only. Unscoped, the anchor also applies to *size
+        // changes*: the scroll view re-pins the bottom edge whenever the
+        // content's height moves, which is a second scroller fighting the
+        // explicit follow logic. Every flap of a streaming message's height
+        // moved the offset to hold the bottom still, so the whole view —
+        // including the top of the message being written — visibly bobbed.
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
         #else
         ScrollView {
             content()
         }
         .scrollClipDisabled()
         .scrollDismissesKeyboard(.interactively)
-        .defaultScrollAnchor(.bottom)
+        // Scoped for the same reason as macOS above.
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
         #endif
     }
 }
