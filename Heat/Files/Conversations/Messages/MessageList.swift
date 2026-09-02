@@ -58,6 +58,14 @@ struct MessageList: View {
 
     @State private var scroll = ScrollIntent()
 
+    /// Which runs are rendered for real. Everything else reserves its height.
+    ///
+    /// This *is* `@State`, unlike the scroll bookkeeping, because what's drawn
+    /// depends on it. That's also why it must change as rarely as possible: it
+    /// is recomputed on every scroll event but only assigned when the span
+    /// actually differs, so a scroll within the overscan redraws nothing.
+    @State private var renderWindow = RunWindow.all
+
     /// Sub-pixel drift and re-layout can nudge the offset; a real scroll
     /// gesture moves considerably further than this.
     private let scrollUpTolerance: CGFloat = 4
@@ -79,6 +87,13 @@ struct MessageList: View {
         /// Carried so an offset change can be told apart from a layout change.
         /// See the scroll geometry handler.
         var contentHeight: CGFloat
+
+        /// The viewport, for working out which runs fall inside it.
+        var viewportHeight: CGFloat
+
+        /// Width invalidates measured heights, since how tall a message is
+        /// depends on how wide it may run.
+        var viewportWidth: CGFloat
     }
 
     var body: some View {
@@ -94,10 +109,22 @@ struct MessageList: View {
                 // The spacing is unchanged: the 12 points the enclosing stack
                 // used to provide are the 6 above and 6 below that
                 // MessageListScrollView already gives every row.
-                ForEach(conversationViewModel.runs) { run in
-                    RunView(run)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .id(run.id)
+                ForEach(Array(conversationViewModel.runs.enumerated()), id: \.element.id) { index, run in
+                    if renderWindow.contains(index) {
+                        RunView(run)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .reportingHeight(of: run.id, into: conversationViewModel.runHeights)
+                            .id(run.id)
+                    } else {
+                        // Off screen: reserve what it measured and draw
+                        // nothing. The row still exists and still carries its
+                        // id, so the list's total height stays honest and find
+                        // can still scroll to it — it renders for real by the
+                        // time the scroll lands.
+                        Color.clear
+                            .frame(height: conversationViewModel.runHeights.height(for: run))
+                            .id(run.id)
+                    }
 
                     // Drawn after the run it falls in, so everything above it
                     // is what the model no longer reads.
@@ -167,10 +194,28 @@ struct MessageList: View {
                     // measures as 82 points *past* it.
                     distanceFromEnd: geometry.contentSize.height + geometry.contentInsets.bottom
                         - (geometry.contentOffset.y + geometry.containerSize.height),
-                    contentHeight: geometry.contentSize.height
+                    contentHeight: geometry.contentSize.height,
+                    viewportHeight: geometry.containerSize.height,
+                    viewportWidth: geometry.containerSize.width
                 )
             } action: { old, new in
                 scroll.distanceFromEnd = new.distanceFromEnd
+
+                // Which runs are worth rendering, recomputed here because the
+                // answer depends only on the offset and the heights already
+                // recorded — no measuring involved. Assigned only when the
+                // span really changes, so scrolling inside the overscan costs
+                // nothing.
+                conversationViewModel.runHeights.invalidateIfNeeded(width: new.viewportWidth)
+                let window = RunWindow.around(
+                    offset: new.offset,
+                    viewportHeight: new.viewportHeight,
+                    runs: conversationViewModel.runs,
+                    heights: conversationViewModel.runHeights
+                )
+                if window != renderWindow {
+                    renderWindow = window
+                }
 
                 // Only when the content stayed the same size. Text that is
                 // still being laid out settles at slightly different heights
