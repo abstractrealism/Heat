@@ -122,7 +122,14 @@ struct RunWindow: Equatable {
         runs: [Run],
         heights: RunHeightCache
     ) -> RunWindow {
-        guard !runs.isEmpty, viewportHeight > 0 else { return .all }
+        // Before the scroll view has been laid out there is no viewport to
+        // measure against. Answering "everything" there is how the first
+        // attempt built the whole conversation on a second visit: the runs
+        // were already loaded, so a zero-height geometry event assigned the
+        // widest possible window before the tail one could apply.
+        guard !runs.isEmpty, viewportHeight > 0 else {
+            return .tail(runs: runs, heights: heights)
+        }
 
         let padding = viewportHeight * overscan
         let top = offset - padding

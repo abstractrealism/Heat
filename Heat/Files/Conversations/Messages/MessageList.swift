@@ -71,6 +71,15 @@ struct MessageList: View {
     /// the entire cost being avoided.
     @State private var renderWindow: RunWindow?
 
+    /// The conversation whose opening scroll has finished.
+    ///
+    /// Until it has, scroll geometry does not get to choose the window. A
+    /// transcript is laid out from the top and only then scrolled to its
+    /// newest message, so the geometry during that stretch describes the top
+    /// of the conversation — and acting on it built six runs nobody was going
+    /// to look at, before building the one they were.
+    @State private var openedFileID: String?
+
     /// The runs to build now — what scrolling last decided, or the tail of the
     /// conversation before anything has scrolled.
     private var window: RunWindow {
@@ -225,6 +234,11 @@ struct MessageList: View {
                 // span really changes, so scrolling inside the overscan costs
                 // nothing.
                 conversationViewModel.runHeights.invalidateIfNeeded(width: new.viewportWidth)
+
+                // Only once this conversation has finished opening: see
+                // `openedFileID`. The tail window stands until then.
+                guard openedFileID == conversationViewModel.file.id else { return }
+
                 let computed = RunWindow.around(
                     offset: new.offset,
                     viewportHeight: new.viewportHeight,
@@ -388,8 +402,12 @@ struct MessageList: View {
                 #endif
 
                 // A different conversation opens at its own tail, rather than
-                // wherever the last one had been scrolled to.
+                // wherever the last one had been scrolled to — and geometry
+                // doesn't get a say until the opening scroll has landed.
+                let openingFileID = conversationViewModel.file.id
                 renderWindow = nil
+                openedFileID = nil
+                defer { openedFileID = openingFileID }
 
                 // Unless a find is already pointing somewhere. Arriving from a
                 // search result is arriving *at* a match, and opening at the
