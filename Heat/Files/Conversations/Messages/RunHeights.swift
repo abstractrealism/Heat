@@ -41,6 +41,10 @@ final class RunHeightCache {
     /// time. Resizing therefore degrades to a cold open rather than breaking
     /// anything, and re-measures as the reader scrolls.
     func invalidateIfNeeded(width newWidth: CGFloat) {
+        // A width of zero is the scroll view before it has been laid out, not
+        // a resize. Acting on it would throw away everything measured during
+        // the very pass that is being optimised.
+        guard newWidth > 0 else { return }
         guard abs(newWidth - width) > 0.5 else { return }
         width = newWidth
         measured.removeAll(keepingCapacity: true)
@@ -150,9 +154,39 @@ struct RunWindow: Equatable {
             lower = max(runs.count - 1, 0)
             upper = runs.count - 1
         }
-        // The newest run always renders — see above.
-        upper = max(upper, runs.count - 1 - 0)
         return RunWindow(lowerBound: lower, upperBound: max(upper, lower))
+    }
+
+    /// The window to open with, before any scroll geometry exists.
+    ///
+    /// This is the whole point of the exercise and the easy thing to get
+    /// wrong: the geometry handler cannot narrow the window until the list has
+    /// been laid out once, and laying it out once is exactly the cost being
+    /// avoided. Starting wide and narrowing later builds every run and then
+    /// throws the work away.
+    ///
+    /// A transcript opens at its newest message, so the runs worth building
+    /// are the last few. Walks back from the end until a screen and its
+    /// overscan are covered, using whatever heights are known — measurements
+    /// if this thread has been opened before, estimates if not.
+    ///
+    /// The viewport height is a guess because nothing has been measured yet.
+    /// Guessing too large only costs a few extra runs; too small would leave a
+    /// gap at the bottom, so it errs high.
+    @MainActor
+    static func tail(runs: [Run], heights: RunHeightCache, viewportHeight: CGFloat = 1000) -> RunWindow {
+        guard !runs.isEmpty else { return .all }
+
+        let budget = viewportHeight * (1 + overscan)
+        var covered: CGFloat = 0
+        var lower = runs.count - 1
+
+        for index in stride(from: runs.count - 1, through: 0, by: -1) {
+            lower = index
+            covered += heights.height(for: runs[index])
+            if covered >= budget { break }
+        }
+        return RunWindow(lowerBound: lower, upperBound: runs.count - 1)
     }
 }
 

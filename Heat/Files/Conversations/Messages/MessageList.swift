@@ -64,7 +64,21 @@ struct MessageList: View {
     /// depends on it. That's also why it must change as rarely as possible: it
     /// is recomputed on every scroll event but only assigned when the span
     /// actually differs, so a scroll within the overscan redraws nothing.
-    @State private var renderWindow = RunWindow.all
+    ///
+    /// Nil until the view has been scrolled, when `RunWindow.tail` stands in.
+    /// It cannot simply start wide and narrow later: the geometry handler
+    /// can't run until the list has been laid out once, and that lay-out is
+    /// the entire cost being avoided.
+    @State private var renderWindow: RunWindow?
+
+    /// The runs to build now — what scrolling last decided, or the tail of the
+    /// conversation before anything has scrolled.
+    private var window: RunWindow {
+        renderWindow ?? RunWindow.tail(
+            runs: conversationViewModel.runs,
+            heights: conversationViewModel.runHeights
+        )
+    }
 
     /// Sub-pixel drift and re-layout can nudge the offset; a real scroll
     /// gesture moves considerably further than this.
@@ -110,7 +124,11 @@ struct MessageList: View {
                 // used to provide are the 6 above and 6 below that
                 // MessageListScrollView already gives every row.
                 ForEach(Array(conversationViewModel.runs.enumerated()), id: \.element.id) { index, run in
-                    if renderWindow.contains(index) {
+                    // The newest run is always built, wherever the view is
+                    // scrolled: it's where a streaming answer is written, and
+                    // reserving space for it would leave the answer invisible
+                    // as it arrived.
+                    if window.contains(index) || index == conversationViewModel.runs.count - 1 {
                         RunView(run)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .reportingHeight(of: run.id, into: conversationViewModel.runHeights)
@@ -207,14 +225,17 @@ struct MessageList: View {
                 // span really changes, so scrolling inside the overscan costs
                 // nothing.
                 conversationViewModel.runHeights.invalidateIfNeeded(width: new.viewportWidth)
-                let window = RunWindow.around(
+                let computed = RunWindow.around(
                     offset: new.offset,
                     viewportHeight: new.viewportHeight,
                     runs: conversationViewModel.runs,
                     heights: conversationViewModel.runHeights
                 )
-                if window != renderWindow {
-                    renderWindow = window
+                if computed != renderWindow {
+                    #if DEBUG
+                    ChatDebug.log("⏱ window \(computed.lowerBound)…\(computed.upperBound) of \(conversationViewModel.runs.count) | offset \(Int(new.offset))")
+                    #endif
+                    renderWindow = computed
                 }
 
                 // Only when the content stayed the same size. Text that is
@@ -363,8 +384,13 @@ struct MessageList: View {
                 // TEMPORARY — the opening bracket for slow-open attribution:
                 // everything between this line and the geometry settling is
                 // the open.
-                ChatDebug.log("⏱ open | \(conversationViewModel.runs.count) runs")
+                ChatDebug.log("⏱ open | \(conversationViewModel.runs.count) runs | window \(window.lowerBound)…\(window.upperBound)")
                 #endif
+
+                // A different conversation opens at its own tail, rather than
+                // wherever the last one had been scrolled to.
+                renderWindow = nil
+
                 // Unless a find is already pointing somewhere. Arriving from a
                 // search result is arriving *at* a match, and opening at the
                 // newest message would scroll straight past it — including the
