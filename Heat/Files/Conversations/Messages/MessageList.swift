@@ -427,6 +427,8 @@ struct MessageList: View {
                 guard scroll.isFollowing else { return }
                 guard conversationViewModel.currentFindMessageID == nil else { return }
                 proxy.scrollTo("bottom", anchor: .bottom)
+
+                await measureRemainingRuns(proxy: proxy)
             }
             .onOpenURL { url in
                 if let suggestion = url.queryParameters["suggestion"] {
@@ -435,6 +437,57 @@ struct MessageList: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
+    }
+
+    /// Builds the rest of the conversation a few runs at a time, once the
+    /// newest ones are on screen.
+    ///
+    /// Scrolling up used to jump, and this is why: a run reserved at an
+    /// *estimated* height and then built at its real one changes the height of
+    /// everything above the reader, and the scroll offset is measured from the
+    /// top — so the content under the cursor slides out from under it. The
+    /// estimates run low, so each run scrolled into grows and shoves the reader
+    /// further up. It settled only at the top of the thread, because by then
+    /// everything had been measured.
+    ///
+    /// Better estimates would only make the jump smaller. What removes it is
+    /// having measured everything before the reader arrives — the same trick a
+    /// browser plays when a fast scroll shows blank space that fills in a
+    /// moment later. The work is the same as it ever was; it just happens after
+    /// the first paint rather than before it, which is the difference between
+    /// a slow open and none at all.
+    ///
+    /// Batched with a breath between, so the main thread stays answerable
+    /// rather than blocking for a second while somebody reads.
+    private func measureRemainingRuns(proxy: ScrollViewProxy) async {
+        let total = conversationViewModel.runs.count
+        var lower = window.lowerBound
+
+        while lower > 0 {
+            try? await Task.sleep(for: .milliseconds(80))
+            if Task.isCancelled { return }
+
+            // A turn in flight owns the view: growing the content above the
+            // newest message while it's being written is exactly the fight
+            // that made the whole message bob.
+            guard !conversationViewModel.isGenerating else { return }
+
+            // The reader has scrolled somewhere of their own accord; leave the
+            // window to the scroll geometry from here.
+            guard scroll.isFollowing else { return }
+
+            lower = max(0, lower - 2)
+            renderWindow = RunWindow(lowerBound: lower, upperBound: total - 1)
+
+            // The content just grew above the reader, so put them back where
+            // they were. They're at the newest message — that's what
+            // `isFollowing` means here — so the bottom is where they were.
+            proxy.scrollTo("bottom", anchor: .bottom)
+        }
+
+        #if DEBUG
+        ChatDebug.log("⏱ measured all \(total) runs")
+        #endif
     }
 
     /// The running rate, once there's been long enough to mean anything. The
