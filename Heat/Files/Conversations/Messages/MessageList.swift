@@ -1,5 +1,6 @@
 import SwiftUI
 import SharedKit
+import GenKit
 import HeatKit
 
 struct MessageList: View {
@@ -140,6 +141,24 @@ struct MessageList: View {
                     if window.contains(index) || index == conversationViewModel.runs.count - 1 {
                         RunView(run)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            // Floored at what it last measured, so the row can
+                            // never report less than it already has.
+                            //
+                            // The content height was seen collapsing from
+                            // 19,840 to 8,466 and back while scrolling, with
+                            // every run rendered and no placeholders involved —
+                            // the list under-reports rows it hasn't settled.
+                            // An offset that was valid against the taller
+                            // figure is past the end of the shorter one, and
+                            // clamping it to the end is the view being yanked
+                            // to the bottom.
+                            //
+                            // A floor rather than a fixed height: the number
+                            // came from measuring this run, but a run measured
+                            // while far off screen may have been measured
+                            // early, and pinning it exactly would clip the
+                            // text. Too tall is a gap; too short is lost words.
+                            .frame(minHeight: floorHeight(for: run, at: index))
                             .reportingHeight(of: run.id, into: conversationViewModel.runHeights)
                             .id(run.id)
                     } else {
@@ -439,6 +458,16 @@ struct MessageList: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
+    }
+
+    /// The least a run may report, being whatever it last measured.
+    ///
+    /// Nothing for the newest run: it's the one a streaming answer is written
+    /// into, so its height is supposed to change, and holding it at what it
+    /// measured a moment ago would fight every token.
+    private func floorHeight(for run: Run, at index: Int) -> CGFloat? {
+        guard index != conversationViewModel.runs.count - 1 else { return nil }
+        return conversationViewModel.runHeights.measuredHeight(for: run.id)
     }
 
     /// Builds the rest of the conversation a few runs at a time, once the
