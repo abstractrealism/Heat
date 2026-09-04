@@ -252,7 +252,7 @@ struct MessageList: View {
                 // recorded — no measuring involved. Assigned only when the
                 // span really changes, so scrolling inside the overscan costs
                 // nothing.
-                conversationViewModel.runHeights.invalidateIfNeeded(width: new.viewportWidth)
+                conversationViewModel.runHeights.noteViewport(width: new.viewportWidth)
 
                 // Only once this conversation has finished opening: see
                 // `openedFileID`. The tail window stands until then.
@@ -304,9 +304,9 @@ struct MessageList: View {
                 if Date().timeIntervalSince(scroll.lastLog) >= 0.25 {
                     scroll.lastLog = .now
                     ChatDebug.log(String(
-                        format: "geometry | offset %.1f | height %.1f | distance %.1f | %@",
+                        format: "geometry | offset %.1f | height %.1f | distance %.1f | width %.1f | %@",
                         Double(new.offset), Double(new.contentHeight),
-                        Double(new.distanceFromEnd),
+                        Double(new.distanceFromEnd), Double(new.viewportWidth),
                         scroll.isFollowing ? "following" : "off"))
                 }
                 if scroll.isFollowing, scroll.upwardMoves >= 2 {

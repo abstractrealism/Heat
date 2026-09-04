@@ -27,43 +27,61 @@ import HeatKit
 @MainActor
 final class RunHeightCache {
 
-    /// Measured heights by run id, valid only for `width`.
-    private var measured: [String: CGFloat] = [:]
-
-    /// The pane width these measurements were taken at. Height depends on how
-    /// wide the text may run, so a different width invalidates all of them.
-    private var width: CGFloat = 0
-
-    /// Drops everything if the pane changed width.
+    /// What each run measured, and how wide it was when it did.
     ///
-    /// An invalidated cache is a cache *miss*, not a failure — the estimate
-    /// takes over, which is the same path a thread opens through the first
-    /// time. Resizing therefore degrades to a cold open rather than breaking
-    /// anything, and re-measures as the reader scrolls.
-    func invalidateIfNeeded(width newWidth: CGFloat) {
-        // A width of zero is the scroll view before it has been laid out, not
-        // a resize. Acting on it would throw away everything measured during
-        // the very pass that is being optimised.
-        guard newWidth > 0 else { return }
-        guard abs(newWidth - width) > 0.5 else { return }
-        width = newWidth
-        measured.removeAll(keepingCapacity: true)
+    /// The width travels with the height because a height is only meaningful
+    /// at the width it was taken at — and, more sharply, because a row can be
+    /// measured before the list has given it its real width, which produces a
+    /// height several times too large. Keeping the width lets those be
+    /// recognised and thrown away rather than believed.
+    private var measured: [String: (width: CGFloat, height: CGFloat)] = [:]
+
+    /// The pane's current width, as last reported by scroll geometry.
+    private var paneWidth: CGFloat = 0
+
+    /// How far a measurement's width may be from the pane's and still count.
+    ///
+    /// Wide enough to absorb a macOS overlay scrollbar arriving and leaving,
+    /// which changes the container width by a handful of points mid-scroll.
+    /// Clearing every measurement each time that happened is what produced the
+    /// yank: the content lost half its height in a single event, and an offset
+    /// valid a moment earlier was past the end.
+    private static let widthTolerance: CGFloat = 24
+
+    func noteViewport(width: CGFloat) {
+        guard width > 0 else { return }
+        paneWidth = width
     }
 
-    func record(_ height: CGFloat, for runID: String) {
+    /// Records a height, unless the row plainly wasn't laid out properly.
+    ///
+    /// A row built far outside the viewport — as the background pass does —
+    /// can be measured before the list has told it how wide it is, and text
+    /// asked to fit a sliver is very tall indeed. Those readings inflated a
+    /// thread to twice its real height, and pinning rows to them made the
+    /// collapse worse when they were eventually corrected.
+    func record(_ height: CGFloat, at width: CGFloat, for runID: String) {
+        guard height > 0, width > 0, paneWidth > 0 else { return }
+        guard abs(width - paneWidth) <= Self.widthTolerance else { return }
         // Rounded, so sub-pixel jitter between passes doesn't count as a
         // change worth reacting to.
-        measured[runID] = (height * 2).rounded() / 2
+        measured[runID] = (width, (height * 2).rounded() / 2)
     }
 
+    /// What a run measured, if that measurement still applies at this width.
+    ///
+    /// Checked per entry rather than by clearing the lot: a stale entry simply
+    /// stops answering, and is replaced the moment its run is drawn again.
     func measuredHeight(for runID: String) -> CGFloat? {
-        measured[runID]
+        guard let entry = measured[runID] else { return nil }
+        guard abs(entry.width - paneWidth) <= Self.widthTolerance else { return nil }
+        return entry.height
     }
 
     /// What a run should occupy: what it measured, or failing that a guess
     /// from how much text it holds.
     func height(for run: Run) -> CGFloat {
-        measured[run.id] ?? Self.estimate(for: run, width: width)
+        measuredHeight(for: run.id) ?? Self.estimate(for: run, width: paneWidth)
     }
 
     /// A stable guess, from character count.
@@ -74,8 +92,18 @@ final class RunHeightCache {
     /// the transcript opens at the bottom, so corrections higher up don't move
     /// what's being looked at.
     static func estimate(for run: Run, width: CGFloat) -> CGFloat {
+        // Only what is actually set as text. A tool message draws one line —
+        // "Browsed website", disclosing its detail when asked — while carrying
+        // thousands of characters of results, so counting its content
+        // estimated a tool-heavy thread at several times its real height. That
+        // is why a conversation full of code and tool calls behaved worse than
+        // a longer one without them.
         let characters = run.messages.reduce(0) { total, message in
-            total + (message.content?.count ?? 0)
+            guard message.role != .tool else { return total }
+            return total + (message.content?.count ?? 0)
+        }
+        let toolLines = run.messages.reduce(0) { total, message in
+            message.role == .tool ? total + 1 : total
         }
 
         // Roughly: how many characters fit on a line at this width, at the
@@ -83,8 +111,8 @@ final class RunHeightCache {
         // message carries (padding, the usage line, spacing between runs).
         let charactersPerLine = max(20.0, Double(width > 0 ? width : 700) / 7.4)
         let lines = max(1.0, (Double(characters) / charactersPerLine).rounded(.up))
-        let messageChrome = 44.0 * Double(max(1, run.messages.count))
-        return CGFloat(lines * 20.0 + messageChrome)
+        let messageChrome = 44.0 * Double(max(1, run.messages.count - toolLines))
+        return CGFloat(lines * 20.0 + messageChrome + Double(toolLines) * 30.0)
     }
 }
 
@@ -230,11 +258,13 @@ struct RunHeightReporter: ViewModifier {
     func body(content: Content) -> some View {
         content.background {
             Color.clear
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    proxy.size.height
-                } action: { height in
-                    guard height > 0 else { return }
-                    heights.record(height, for: runID)
+                // Width as well as height: the cache uses it to tell a real
+                // measurement from one taken before the list said how wide the
+                // row was.
+                .onGeometryChange(for: CGSize.self) { proxy in
+                    proxy.size
+                } action: { size in
+                    heights.record(size.height, at: size.width, for: runID)
                 }
         }
     }
