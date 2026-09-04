@@ -275,13 +275,16 @@ struct MessageList: View {
                     runs: conversationViewModel.runs,
                     heights: conversationViewModel.runHeights
                 )
-                // Grown into, never shrunk back — see `RunWindow.union`.
-                let grown = window.union(computed)
-                if grown != renderWindow {
+                // Narrowing again is safe now that rows are pinned: a run that
+                // stops being drawn reserves the very height it was being held
+                // at, so the total doesn't move. The rule that windows could
+                // only grow existed because that wasn't true, and it cost the
+                // memory of every run scrolled past.
+                if computed != renderWindow {
                     #if DEBUG
-                    ChatDebug.log("⏱ window \(grown.lowerBound)…\(grown.upperBound) of \(conversationViewModel.runs.count) | offset \(Int(new.offset))")
+                    ChatDebug.log("⏱ window \(computed.lowerBound)…\(computed.upperBound) of \(conversationViewModel.runs.count) | offset \(Int(new.offset))")
                     #endif
-                    renderWindow = grown
+                    renderWindow = computed
                 }
 
                 // Only when the content stayed the same size. Text that is
@@ -473,11 +476,18 @@ struct MessageList: View {
 
     /// The height a run is held at, being the tallest it has measured.
     ///
-    /// Nothing for the newest run: it's the one a streaming answer is written
-    /// into, so its height is supposed to change, and holding it at what it
-    /// measured a moment ago would fight every token.
+    /// Nothing while a turn is generating: the newest run is where the answer
+    /// is being written, so its height is supposed to change, and holding it
+    /// at what it measured a moment ago would fight every token.
+    ///
+    /// Only *while generating*, though. Exempting the newest run at all times
+    /// left the largest row in the conversation free to move, and it was the
+    /// whole of the remaining wobble — the content sat perfectly still for
+    /// stretches and then dipped by two thousand points, which is the size of
+    /// that one message.
     private func pinnedHeight(for run: Run, at index: Int) -> CGFloat? {
-        guard index != conversationViewModel.runs.count - 1 else { return nil }
+        let isNewest = index == conversationViewModel.runs.count - 1
+        if isNewest, conversationViewModel.isGenerating { return nil }
         return conversationViewModel.runHeights.measuredHeight(for: run.id)
     }
 

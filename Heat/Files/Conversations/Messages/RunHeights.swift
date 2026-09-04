@@ -147,20 +147,13 @@ struct RunWindow: Equatable {
         index >= lowerBound && index <= upperBound
     }
 
-    /// The span covering both, because a window is only ever allowed to grow.
+    /// The span covering both.
     ///
-    /// A run that has been built and then reverts to reserving its height
-    /// gives back the difference between what it measured and what was
-    /// recorded for it — and those disagree, because a row measured while it
-    /// sits far outside the viewport hasn't finished being laid out. Nine runs
-    /// reverting at once took 8,248 points out of the content, which put the
-    /// scroll offset past the end, and clamping an offset to the end *is* the
-    /// view being yanked to the bottom.
-    ///
-    /// Growing only makes that impossible: the height a run reserves is
-    /// replaced by the height it measures, never the other way round. What is
-    /// given up is reclaiming the memory of a run scrolled past, which is what
-    /// the app did before any of this — the open was the thing worth fixing.
+    /// Kept for the tail window, which is unioned into whatever scrolling
+    /// decides. It was briefly used to stop windows narrowing at all, on the
+    /// theory that a run reverting to a reserved height is what dropped the
+    /// content size — it wasn't, and rows are pinned now, so a run reserves
+    /// exactly the height it was being held at either way.
     func union(_ other: RunWindow) -> RunWindow {
         RunWindow(
             lowerBound: min(lowerBound, other.lowerBound),
