@@ -245,11 +245,13 @@ struct MessageList: View {
                     runs: conversationViewModel.runs,
                     heights: conversationViewModel.runHeights
                 )
-                if computed != renderWindow {
+                // Grown into, never shrunk back — see `RunWindow.union`.
+                let grown = window.union(computed)
+                if grown != renderWindow {
                     #if DEBUG
-                    ChatDebug.log("⏱ window \(computed.lowerBound)…\(computed.upperBound) of \(conversationViewModel.runs.count) | offset \(Int(new.offset))")
+                    ChatDebug.log("⏱ window \(grown.lowerBound)…\(grown.upperBound) of \(conversationViewModel.runs.count) | offset \(Int(new.offset))")
                     #endif
-                    renderWindow = computed
+                    renderWindow = grown
                 }
 
                 // Only when the content stayed the same size. Text that is
