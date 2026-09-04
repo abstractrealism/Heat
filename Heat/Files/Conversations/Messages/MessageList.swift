@@ -153,13 +153,24 @@ struct MessageList: View {
                             // clamping it to the end is the view being yanked
                             // to the bottom.
                             //
-                            // A floor rather than a fixed height: the number
-                            // came from measuring this run, but a run measured
-                            // while far off screen may have been measured
-                            // early, and pinning it exactly would clip the
-                            // text. Too tall is a gap; too short is lost words.
-                            .frame(minHeight: floorHeight(for: run, at: index))
+                            // Measured *inside* the pin, so what's recorded is
+                            // what the content wants rather than what it has
+                            // been given — otherwise the pin would freeze the
+                            // first measurement and never learn it was wrong.
                             .reportingHeight(of: run.id, into: conversationViewModel.runHeights)
+                            // Pinned to the tallest this run has measured, so
+                            // rebuilding it cannot change the content's height.
+                            //
+                            // The list recycles rows as it scrolls — its own
+                            // virtualization, under ours — and a rebuilt row
+                            // reports a different height while its content
+                            // settles, which is why the height dips line up
+                            // exactly with the parse lines in the log. Pinning
+                            // takes that out of the total: the content size
+                            // becomes the sum of numbers we chose, so it cannot
+                            // collapse, and an offset can never be left past
+                            // the end.
+                            .frame(height: pinnedHeight(for: run, at: index), alignment: .top)
                             .id(run.id)
                     } else {
                         // Off screen: reserve what it measured and draw
@@ -460,12 +471,12 @@ struct MessageList: View {
         }
     }
 
-    /// The least a run may report, being whatever it last measured.
+    /// The height a run is held at, being the tallest it has measured.
     ///
     /// Nothing for the newest run: it's the one a streaming answer is written
     /// into, so its height is supposed to change, and holding it at what it
     /// measured a moment ago would fight every token.
-    private func floorHeight(for run: Run, at index: Int) -> CGFloat? {
+    private func pinnedHeight(for run: Run, at index: Int) -> CGFloat? {
         guard index != conversationViewModel.runs.count - 1 else { return nil }
         return conversationViewModel.runHeights.measuredHeight(for: run.id)
     }

@@ -63,9 +63,24 @@ final class RunHeightCache {
     func record(_ height: CGFloat, at width: CGFloat, for runID: String) {
         guard height > 0, width > 0, paneWidth > 0 else { return }
         guard abs(width - paneWidth) <= Self.widthTolerance else { return }
+
         // Rounded, so sub-pixel jitter between passes doesn't count as a
         // change worth reacting to.
-        measured[runID] = (width, (height * 2).rounded() / 2)
+        let rounded = (height * 2).rounded() / 2
+
+        // The tallest this run has been seen at this width, not the latest.
+        //
+        // A row is measured many times over its life and the readings
+        // disagree, because content settles after it is first built — a code
+        // block is highlighted asynchronously, a picture arrives late. Taking
+        // the latest lets a row shrink back to a half-built state; taking the
+        // tallest cannot, and being too tall shows a gap where being too short
+        // overlaps the next message.
+        if let existing = measured[runID], abs(existing.width - paneWidth) <= Self.widthTolerance {
+            measured[runID] = (width, max(existing.height, rounded))
+        } else {
+            measured[runID] = (width, rounded)
+        }
     }
 
     /// What a run measured, if that measurement still applies at this width.
