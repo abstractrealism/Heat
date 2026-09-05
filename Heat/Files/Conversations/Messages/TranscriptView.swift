@@ -374,11 +374,19 @@ final class TranscriptCoordinator: NSObject {
     /// placed at an under-reported height is a row the next message rides up
     /// over. The width is fixed on the content itself — see
     /// `rootView(for:width:)` — so there is nothing left to be ideal about.
+    /// Asked without forcing a layout pass.
+    ///
+    /// `fittingSize` and `layoutSubtreeIfNeeded` both lay the subtree out, and
+    /// AppKit refuses that from inside a layout it is already doing — "not
+    /// legal … this may break in the future". Since the content carries its own
+    /// explicit width, its intrinsic size already answers the question, and
+    /// asking that way is legal anywhere.
     static func height(of view: NSView, at width: CGFloat) -> CGFloat {
         if abs(view.frame.width - width) > 0.5 {
             view.setFrameSize(NSSize(width: width, height: view.frame.height))
         }
-        view.layoutSubtreeIfNeeded()
+        let intrinsic = view.intrinsicContentSize.height
+        if intrinsic > 0, intrinsic != NSView.noIntrinsicMetric { return intrinsic }
         return view.fittingSize.height
     }
 
@@ -508,6 +516,17 @@ final class RunHostingView: NSHostingView<AnyView> {
 
     private var lastReported: CGFloat = 0
 
+    required init(rootView: AnyView) {
+        super.init(rootView: rootView)
+        // So the intrinsic size is maintained and can be asked for without
+        // laying anything out.
+        sizingOptions = [.intrinsicContentSize]
+    }
+
+    @MainActor required dynamic init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
     override func invalidateIntrinsicContentSize() {
         super.invalidateIntrinsicContentSize()
         reportHeight()
@@ -520,8 +539,12 @@ final class RunHostingView: NSHostingView<AnyView> {
 
     private func reportHeight() {
         guard bounds.width > 0 else { return }
-        let height = fittingSize.height
-        guard height > 0, abs(height - lastReported) > 0.5 else { return }
+        // Intrinsic rather than fitting: this is called from `layout()`, and
+        // `fittingSize` lays the subtree out, which is not legal from inside a
+        // layout pass. See `TranscriptCoordinator.height(of:at:)`.
+        let height = intrinsicContentSize.height
+        guard height > 0, height != NSView.noIntrinsicMetric else { return }
+        guard abs(height - lastReported) > 0.5 else { return }
         lastReported = height
         onHeightChange?(runID, height)
     }
