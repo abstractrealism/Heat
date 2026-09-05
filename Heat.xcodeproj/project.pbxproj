@@ -25,6 +25,7 @@
 		D4EDDC812D5E91190079D53E /* Message+.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EDDC802D5E91190079D53E /* Message+.swift */; };
 		D4F518BD2CAF47CE005E147E /* MessageList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4F518BC2CAF47CE005E147E /* MessageList.swift */; };
 		A1B2C3D40000000000000202 /* RunHeights.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000201 /* RunHeights.swift */; };
+		A1B2C3D40000000000000302 /* TranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000301 /* TranscriptView.swift */; };
 		D4F518BF2CAF8BA8005E147E /* RenderOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4F518BE2CAF8BA8005E147E /* RenderOutput.swift */; };
 		D4FB72652DC01C46008CC1DF /* FileRow-iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FB72642DC01C46008CC1DF /* FileRow-iOS.swift */; platformFilter = ios; };
 		D4FB72672DC01C4C008CC1DF /* FileRow-macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FB72662DC01C4C008CC1DF /* FileRow-macOS.swift */; platformFilters = (macos, ); };
@@ -114,6 +115,7 @@
 		D4EDDC802D5E91190079D53E /* Message+.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Message+.swift"; sourceTree = "<group>"; };
 		D4F518BC2CAF47CE005E147E /* MessageList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageList.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000201 /* RunHeights.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunHeights.swift; sourceTree = "<group>"; };
+		A1B2C3D40000000000000301 /* TranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptView.swift; sourceTree = "<group>"; };
 		D4F518BE2CAF8BA8005E147E /* RenderOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderOutput.swift; sourceTree = "<group>"; };
 		D4FB72642DC01C46008CC1DF /* FileRow-iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FileRow-iOS.swift"; sourceTree = "<group>"; };
 		D4FB72662DC01C4C008CC1DF /* FileRow-macOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FileRow-macOS.swift"; sourceTree = "<group>"; };
@@ -377,6 +379,7 @@
 			children = (
 				D4F518BC2CAF47CE005E147E /* MessageList.swift */,
 				A1B2C3D40000000000000201 /* RunHeights.swift */,
+				A1B2C3D40000000000000301 /* TranscriptView.swift */,
 				D88D23082B3CFB5100CCCC61 /* MessageView.swift */,
 				D4B2D2682B6563DB0017FB52 /* MessageField.swift */,
 				D8015CC62CB8EDBF0068749D /* MessageInstructions.swift */,
@@ -563,6 +566,7 @@
 				D884AAFE2BD9B40000B90E9B /* PermissionList.swift in Sources */,
 				D4F518BD2CAF47CE005E147E /* MessageList.swift in Sources */,
 				A1B2C3D40000000000000202 /* RunHeights.swift in Sources */,
+				A1B2C3D40000000000000302 /* TranscriptView.swift in Sources */,
 				D85FAE062C84C80E00DA153F /* RenderArtifact.swift in Sources */,
 				D838D6A72B0A65F100988FDD /* ConversationViewModel.swift in Sources */,
 				D8F5C1592DBD2C0A00E3C1DC /* PermissionForm.swift in Sources */,

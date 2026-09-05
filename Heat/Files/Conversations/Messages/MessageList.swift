@@ -81,6 +81,12 @@ struct MessageList: View {
     /// to look at, before building the one they were.
     @State private var openedFileID: String?
 
+    #if os(macOS)
+    /// The scroll the AppKit transcript has been asked for. Carries the moment
+    /// it was asked, so the same destination twice is two requests.
+    @State private var scrollRequest: TranscriptScroll?
+    #endif
+
     /// The runs to build now — what scrolling last decided, or the tail of the
     /// conversation before anything has scrolled.
     private var window: RunWindow {
@@ -121,6 +127,77 @@ struct MessageList: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        appKitBody
+        #else
+        swiftUIBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// The transcript laid out by hand — see `TranscriptView` for why.
+    ///
+    /// Following lives here rather than in the coordinator, so the rules worked
+    /// out over several branches survive the change of host: a run of upward
+    /// moves is the reader's doing, arriving back at the end resumes.
+    private var appKitBody: some View {
+        TranscriptView(
+            runs: conversationViewModel.runs,
+            heights: conversationViewModel.runHeights,
+            revision: conversationViewModel.file.modified,
+            isFollowing: scroll.isFollowing,
+            scrollRequest: scrollRequest,
+            content: { run in
+                AnyView(
+                    RunView(run)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .environment(state)
+                        .environment(conversationViewModel)
+                )
+            },
+            footer: {
+                AnyView(
+                    statusFooter
+                        .environment(state)
+                        .environment(conversationViewModel)
+                )
+            },
+            onUserScroll: {
+                // The coordinator only reports scrolling it didn't cause, so
+                // this is always the reader.
+                scroll.isFollowing = false
+            }
+        )
+        .onChange(of: conversationViewModel.currentFindRunID) { _, runID in
+            guard let runID else { return }
+            scroll.isFollowing = false
+            scrollRequest = TranscriptScroll(destination: .run(runID), requestedAt: .now)
+        }
+        .onChange(of: conversationViewModel.messages.count) { _, _ in
+            // Sending is an explicit act: go to the newest message and follow
+            // again. Only for messages the reader sent.
+            guard conversationViewModel.messages.last?.role == .user else { return }
+            scroll.isFollowing = true
+            scrollRequest = TranscriptScroll(destination: .bottom, requestedAt: .now)
+        }
+        .task(id: conversationViewModel.file.id) {
+            #if DEBUG
+            ChatDebug.log("⏱ open | \(conversationViewModel.runs.count) runs | appkit")
+            #endif
+            guard conversationViewModel.currentFindMessageID == nil else { return }
+            scroll.isFollowing = true
+            scrollRequest = TranscriptScroll(destination: .bottom, requestedAt: .now)
+        }
+        .onOpenURL { url in
+            if let suggestion = url.queryParameters["suggestion"] {
+                handleSubmit(suggestion.replacingOccurrences(of: "+", with: " "))
+            }
+            scrollRequest = TranscriptScroll(destination: .bottom, requestedAt: .now)
+        }
+    }
+    #endif
+
+    private var swiftUIBody: some View {
         ScrollViewReader { proxy in
             MessageListScrollView {
 
@@ -190,52 +267,8 @@ struct MessageList: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 0) {
-                    // Inline error when the last generation attempt failed
-                    if let error = conversationViewModel.error {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                            Text(error)
-                        }
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
-                    }
-
-                    // What the assistant is doing, where its answer will appear
-                    switch conversationViewModel.phase {
-                    case .waiting:
-                        GeneratingIndicator("Generating" + liveRateSuffix)
-                    case .thinking:
-                        // Also the way to close the reasoning above it. Its own
-                        // Hide control scrolls off the top as the block grows,
-                        // so this is the one part of it that stays in reach.
-                        Button {
-                            conversationViewModel.isStreamingThinkingExpanded.toggle()
-                        } label: {
-                            GeneratingIndicator("Thinking" + liveRateSuffix)
-                        }
-                        .buttonStyle(.plain)
-                        .help(conversationViewModel.isStreamingThinkingExpanded
-                              ? "Hide the reasoning above"
-                              : "Show the reasoning above")
-                    case .responding, .suggesting, .idle:
-                        EmptyView()
-                    }
-
-                    // Suggestions, or a note that they're on their way, in the
-                    // place they'll appear
-                    if conversationViewModel.phase == .suggesting {
-                        GeneratingIndicator("Generating suggestions", alignment: .trailing)
-                    } else if !conversationViewModel.suggestions.isEmpty {
-                        SuggestionList(suggestions: conversationViewModel.suggestions) { suggestion in
-                            SuggestionView(suggestion: suggestion) { handleSubmit($0) }
-                        }
-                    }
-                }
-                .id("bottom")
+                statusFooter
+                    .id("bottom")
             }
             // The find query reaches renderers per message, from MessageView —
             // set here it changed for every message on every keystroke, and
@@ -476,6 +509,60 @@ struct MessageList: View {
                     handleSubmit(suggestion.replacingOccurrences(of: "+", with: " "))
                 }
                 proxy.scrollTo("bottom", anchor: .bottom)
+            }
+        }
+    }
+
+    /// What sits after the last run: any error, what the model is doing, and
+    /// the suggestions when they arrive.
+    ///
+    /// Its own view so both hosts can show it — SwiftUI puts it in the list as
+    /// the "bottom" row, AppKit measures and positions it after the runs.
+    @ViewBuilder
+    private var statusFooter: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Inline error when the last generation attempt failed
+            if let error = conversationViewModel.error {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text(error)
+                }
+                .font(.footnote)
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+            }
+
+            // What the assistant is doing, where its answer will appear
+            switch conversationViewModel.phase {
+            case .waiting:
+                GeneratingIndicator("Generating" + liveRateSuffix)
+            case .thinking:
+                // Also the way to close the reasoning above it. Its own Hide
+                // control scrolls off the top as the block grows, so this is
+                // the one part of it that stays in reach.
+                Button {
+                    conversationViewModel.isStreamingThinkingExpanded.toggle()
+                } label: {
+                    GeneratingIndicator("Thinking" + liveRateSuffix)
+                }
+                .buttonStyle(.plain)
+                .help(conversationViewModel.isStreamingThinkingExpanded
+                      ? "Hide the reasoning above"
+                      : "Show the reasoning above")
+            case .responding, .suggesting, .idle:
+                EmptyView()
+            }
+
+            // Suggestions, or a note that they're on their way, in the place
+            // they'll appear
+            if conversationViewModel.phase == .suggesting {
+                GeneratingIndicator("Generating suggestions", alignment: .trailing)
+            } else if !conversationViewModel.suggestions.isEmpty {
+                SuggestionList(suggestions: conversationViewModel.suggestions) { suggestion in
+                    SuggestionView(suggestion: suggestion) { handleSubmit($0) }
+                }
             }
         }
     }
