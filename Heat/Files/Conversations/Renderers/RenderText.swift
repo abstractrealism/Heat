@@ -235,6 +235,11 @@ private struct ChatHeadingStyle: StructuredText.HeadingStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: chatFontSize, weight: weight(configuration.headingLevel)))
+            // Carried over from the style this replaces. Replacing a style
+            // replaces all of it, and dropping this ran every heading straight
+            // into the paragraph beneath it — the air above a heading is most
+            // of what makes it read as one.
+            .textual.blockSpacing(.fontScaled(top: 1.6, bottom: 0.8))
     }
 
     private func weight(_ level: Int) -> Font.Weight {
@@ -252,6 +257,9 @@ private struct ChatCodeBlockStyle: StructuredText.CodeBlockStyle {
         // A nested view rather than state on the style: the one style value
         // serves every block, so state here would be shared between them.
         ChatCodeBlock(configuration: configuration)
+            // As with the heading style: carried over from the default, which
+            // this replaces entirely.
+            .textual.blockSpacing(.fontScaled(top: 0.88, bottom: 0))
     }
 }
 

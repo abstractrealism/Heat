@@ -223,6 +223,15 @@ final class TranscriptCoordinator: NSObject {
 
     private static let rowSpacing: CGFloat = 12
 
+    /// The gap between a message and the edge of the pane.
+    ///
+    /// A `List` supplies this itself and a hand-laid document does not, so
+    /// without it every message sat flush against the sides — and code blocks,
+    /// which deliberately bleed 12 points wider than the text, spilled past the
+    /// pane entirely. That bleed is why this is 12: it puts a code block level
+    /// with the edge while the prose stands in from it.
+    private static let horizontalInset: CGFloat = 12
+
     /// Builds and positions the rows the viewport can see, and sizes the
     /// document to the whole conversation.
     ///
@@ -237,7 +246,8 @@ final class TranscriptCoordinator: NSObject {
         guard let scrollView, let document, let heights, let content else { return }
         guard !isLayingOut else { return }
 
-        let width = scrollView.contentSize.width
+        let paneWidth = scrollView.contentSize.width
+        let width = paneWidth - Self.horizontalInset * 2
         guard width > 0 else { return }
 
         isLayingOut = true
@@ -301,7 +311,12 @@ final class TranscriptCoordinator: NSObject {
         for index in wantedIndices {
             let run = runs[index]
             guard let view = hosted[run.id] else { continue }
-            let frame = NSRect(x: 0, y: believed[index], width: width, height: heights.height(for: run))
+            let frame = NSRect(
+                x: Self.horizontalInset,
+                y: believed[index],
+                width: width,
+                height: heights.height(for: run)
+            )
             if view.frame != frame {
                 view.frame = frame
             }
@@ -328,8 +343,10 @@ final class TranscriptCoordinator: NSObject {
         let footerHeight = layoutFooter(width: width, top: contentHeight)
         let totalHeight = contentHeight + footerHeight
 
-        if abs(document.frame.height - totalHeight) > 0.5 || abs(document.frame.width - width) > 0.5 {
-            document.frame = NSRect(x: 0, y: 0, width: width, height: totalHeight)
+        // The document is the full width of the pane; the rows stand in from
+        // its edges.
+        if abs(document.frame.height - totalHeight) > 0.5 || abs(document.frame.width - paneWidth) > 0.5 {
+            document.frame = NSRect(x: 0, y: 0, width: paneWidth, height: totalHeight)
         }
     }
 
@@ -345,7 +362,7 @@ final class TranscriptCoordinator: NSObject {
             document.addSubview(view)
         }
         let height = Self.height(of: view, at: width)
-        view.frame = NSRect(x: 0, y: top + Self.rowSpacing, width: width, height: height)
+        view.frame = NSRect(x: Self.horizontalInset, y: top + Self.rowSpacing, width: width, height: height)
         return height + Self.rowSpacing
     }
 
