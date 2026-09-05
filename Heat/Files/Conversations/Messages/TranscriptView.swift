@@ -139,7 +139,9 @@ final class TranscriptCoordinator: NSObject {
     private var lastLog = Date.distantPast
 
     private var lastConversationID: String?
-    private var measureTask: Task<Void, Never>?
+
+    /// Whether this conversation has been put at its end yet. See `update`.
+    private var hasOpenedAtEnd = false
 
     /// A screen's worth beyond the viewport in each direction, so an ordinary
     /// scroll finds its rows already built.
@@ -208,17 +210,19 @@ final class TranscriptCoordinator: NSObject {
         }
 
         if openedNewConversation {
+            hasOpenedAtEnd = false
+        }
+
+        // Not simply "on the first update for this conversation": that update
+        // arrives before the scroll view has a width and often before the runs
+        // have been read from disk, so opening at the end there did nothing and
+        // marked the job done. It waits until there is something to open.
+        if !hasOpenedAtEnd, !runs.isEmpty, let scrollView, scrollView.contentSize.width > 0 {
             openAtTheEnd()
+            hasOpenedAtEnd = true
         }
 
         layoutRows()
-
-        if openedNewConversation {
-            measureTask?.cancel()
-            measureTask = Task { [weak self] in
-                await self?.measureUnbuiltRuns()
-            }
-        }
 
         if let scrollRequest, scrollRequest != lastScrollRequest {
             lastScrollRequest = scrollRequest
@@ -445,6 +449,7 @@ final class TranscriptCoordinator: NSObject {
 
         let starts = offsets()
         let rowTop = starts[index]
+        let rowBottom = rowTop + previous
         let viewportTop = scrollView.contentView.bounds.minY
 
         layoutRows()
@@ -460,10 +465,17 @@ final class TranscriptCoordinator: NSObject {
             return
         }
 
-        // Otherwise only when the change is above the reader. A row below them
-        // growing makes the document taller without moving anything they can
-        // see.
-        guard rowTop < viewportTop else { return }
+        // Otherwise only when the row lies *entirely* above the reader.
+        //
+        // A row below them growing makes the document taller without moving
+        // anything they can see. A row they are inside is the interesting case
+        // and was being got wrong: its text lays out downwards, so it grows
+        // below the part being read, which hasn't moved — but shifting by the
+        // whole delta assumed all of it had. One such row grew by 1,988 points
+        // while being scrolled into, and carried the reader that far back down
+        // for a change they could not see. Guessing "nothing moved" for a row
+        // under the reader's eye is wrong less often, and wrong by less.
+        guard rowBottom <= viewportTop else { return }
 
         isAdjustingScroll = true
         let origin = NSPoint(x: 0, y: max(0, viewportTop + delta))
@@ -504,55 +516,6 @@ final class TranscriptCoordinator: NSObject {
         )
         scrollView.reflectScrolledClipView(scrollView.contentView)
         isAdjustingScroll = false
-    }
-
-    /// Learns the height of every run that hasn't been built, a few at a time,
-    /// once the newest ones are on screen.
-    ///
-    /// Without this, scrolling up fights the reader. An unbuilt run is worth
-    /// whatever the estimate guesses, and the estimate knows nothing about code
-    /// blocks — one was holding a place of 74 points for a run that turned out
-    /// to be 2,576. When it is finally built the content above the reader grows
-    /// by the difference, the scroll origin correctly moves down to keep the
-    /// view still, and somebody scrolling up by a hundred points is carried
-    /// eight hundred back down. The compensation isn't wrong; the estimate it
-    /// corrects is, and the answer is to have measured before they arrive.
-    ///
-    /// Each run is measured in a hosting view added to the document just long
-    /// enough to be laid out and then taken away again, so nothing is kept for
-    /// runs that are still nowhere near the viewport.
-    private func measureUnbuiltRuns() async {
-        while true {
-            try? await Task.sleep(for: .milliseconds(60))
-            if Task.isCancelled { return }
-
-            guard let scrollView, let document, let heights else { return }
-            let width = scrollView.contentSize.width - Self.horizontalInset * 2
-            guard width > 0 else { return }
-
-            // Newest first: that's the direction a reader travels from here.
-            guard let run = runs.reversed().first(where: { heights.measuredHeight(for: $0.id) == nil })
-            else { break }
-
-            let probe = RunHostingView(rootView: rootView(for: run, width: width))
-            probe.frame = NSRect(x: 0, y: -100_000, width: width, height: 0)
-            document.addSubview(probe)
-            let height = Self.height(of: probe, at: width)
-            probe.removeFromSuperview()
-
-            guard height > 0 else { break }
-            heights.record(exact: height, at: width, for: run.id)
-
-            // The content above the reader just changed size. They're at the
-            // newest message while this runs, so putting them back there is
-            // both the right answer and the cheap one.
-            layoutRows()
-            if isFollowing { scrollToBottom() }
-        }
-
-        #if DEBUG
-        ChatDebug.log("▦ measured every run")
-        #endif
     }
 
     // MARK: - Scrolling
