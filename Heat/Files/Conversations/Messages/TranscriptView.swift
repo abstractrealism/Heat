@@ -217,11 +217,8 @@ final class TranscriptCoordinator: NSObject {
         // arrives before the scroll view has a width and often before the runs
         // have been read from disk, so opening at the end there did nothing and
         // marked the job done. It waits until there is something to open.
-        if !hasOpenedAtEnd, !runs.isEmpty, let scrollView, scrollView.contentSize.width > 0 {
-            openAtTheEnd()
-            hasOpenedAtEnd = true
-        }
-
+        // Opening at the end is `layoutRows`'s business now: it is the only
+        // place that knows the scroll view has a width to work with.
         layoutRows()
 
         if let scrollRequest, scrollRequest != lastScrollRequest {
@@ -280,6 +277,16 @@ final class TranscriptCoordinator: NSObject {
         defer { isLayingOut = false }
 
         heights.noteViewport(width: width)
+
+        // Here rather than only in `update`, because the first update arrives
+        // before the scroll view has been given a size — so the first layout
+        // that can actually do anything comes from a frame-change notification,
+        // with the scroll still at the top. That is what built a transcript's
+        // opening runs before scrolling away from them.
+        if !hasOpenedAtEnd, !runs.isEmpty {
+            hasOpenedAtEnd = true
+            openAtTheEnd()
+        }
 
         let visible = scrollView.contentView.bounds
         let padding = visible.height * overscan
@@ -477,8 +484,18 @@ final class TranscriptCoordinator: NSObject {
         // under the reader's eye is wrong less often, and wrong by less.
         guard rowBottom <= viewportTop else { return }
 
+        // Read the position again rather than reusing the one captured above.
+        //
+        // Building a row costs tens of milliseconds, and a reader mid-scroll
+        // keeps moving throughout — so setting the origin back to where they
+        // were before that work threw away everything they scrolled during it.
+        // That is not a jump, it is their gesture being rewound, and it is why
+        // scrolling up through a thread became impossible: every row built on
+        // the way up undid the flick that reached it.
+        let currentTop = scrollView.contentView.bounds.minY
+
         isAdjustingScroll = true
-        let origin = NSPoint(x: 0, y: max(0, viewportTop + delta))
+        let origin = NSPoint(x: 0, y: max(0, currentTop + delta))
         scrollView.contentView.setBoundsOrigin(origin)
         scrollView.reflectScrolledClipView(scrollView.contentView)
         isAdjustingScroll = false
