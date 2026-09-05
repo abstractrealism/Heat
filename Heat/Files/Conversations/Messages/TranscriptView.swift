@@ -402,8 +402,20 @@ final class TranscriptCoordinator: NSObject {
 
         layoutRows()
 
-        // Only when the change is above the reader. A row below them growing
-        // makes the document taller without moving anything they can see.
+        // Following means the reader is at the newest message, so put them
+        // back there. Rows settle taller a moment after a thread opens — a code
+        // block finishing its highlighting, a picture arriving — and the
+        // opening scroll was to the end of a document that has since grown,
+        // which is why a thread sometimes opened a little short of the bottom
+        // with the suggestions cut off.
+        if isFollowing {
+            scrollToBottom()
+            return
+        }
+
+        // Otherwise only when the change is above the reader. A row below them
+        // growing makes the document taller without moving anything they can
+        // see.
         guard rowTop < viewportTop else { return }
 
         isAdjustingScroll = true
