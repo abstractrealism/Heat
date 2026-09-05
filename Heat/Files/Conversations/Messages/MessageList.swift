@@ -144,6 +144,7 @@ struct MessageList: View {
         TranscriptView(
             runs: conversationViewModel.runs,
             heights: conversationViewModel.runHeights,
+            conversationID: conversationViewModel.file.id,
             revision: conversationViewModel.file.modified,
             isFollowing: scroll.isFollowing,
             scrollRequest: scrollRequest,

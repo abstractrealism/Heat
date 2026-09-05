@@ -27,6 +27,10 @@ struct TranscriptView: NSViewRepresentable {
     let runs: [Run]
     let heights: RunHeightCache
 
+    /// Which conversation these runs belong to, so the coordinator can tell a
+    /// new transcript from another message arriving in this one.
+    let conversationID: String
+
     /// Rebuilt whenever this changes, so a streaming answer redraws.
     let revision: Date
 
@@ -67,6 +71,7 @@ struct TranscriptView: NSViewRepresentable {
         context.coordinator.update(
             runs: runs,
             heights: heights,
+            conversationID: conversationID,
             revision: revision,
             isFollowing: isFollowing,
             scrollRequest: scrollRequest,
@@ -133,6 +138,9 @@ final class TranscriptCoordinator: NSObject {
     /// TEMPORARY — throttle for the row-geometry logging.
     private var lastLog = Date.distantPast
 
+    private var lastConversationID: String?
+    private var measureTask: Task<Void, Never>?
+
     /// A screen's worth beyond the viewport in each direction, so an ordinary
     /// scroll finds its rows already built.
     private let overscan: CGFloat = 1.5
@@ -160,6 +168,7 @@ final class TranscriptCoordinator: NSObject {
     func update(
         runs: [Run],
         heights: RunHeightCache,
+        conversationID: String,
         revision: Date,
         isFollowing: Bool,
         scrollRequest: TranscriptScroll?,
@@ -175,8 +184,10 @@ final class TranscriptCoordinator: NSObject {
 
         let runsChanged = self.runs.map(\.id) != runs.map(\.id)
         let revisionChanged = lastRevision != revision
+        let openedNewConversation = lastConversationID != conversationID
         self.runs = runs
         lastRevision = revision
+        lastConversationID = conversationID
 
         if runsChanged {
             // A run that has gone takes its view with it.
@@ -196,7 +207,18 @@ final class TranscriptCoordinator: NSObject {
             refreshFooter()
         }
 
+        if openedNewConversation {
+            openAtTheEnd()
+        }
+
         layoutRows()
+
+        if openedNewConversation {
+            measureTask?.cancel()
+            measureTask = Task { [weak self] in
+                await self?.measureUnbuiltRuns()
+            }
+        }
 
         if let scrollRequest, scrollRequest != lastScrollRequest {
             lastScrollRequest = scrollRequest
@@ -448,6 +470,89 @@ final class TranscriptCoordinator: NSObject {
         scrollView.contentView.setBoundsOrigin(origin)
         scrollView.reflectScrolledClipView(scrollView.contentView)
         isAdjustingScroll = false
+    }
+
+    /// Puts the view at the end of the conversation before a single row is
+    /// built.
+    ///
+    /// Rows are built from wherever the scroll happens to be, and a fresh
+    /// scroll view is at the top — so opening a transcript built the *first*
+    /// runs, then scrolled to the newest message and built those as well.
+    /// Every one of the first lot was work nobody was going to look at, and it
+    /// is the whole of the difference between a six hundred millisecond open
+    /// and a second.
+    ///
+    /// The document is sized from the heights already held — measurements from
+    /// a previous visit, estimates otherwise — and the origin put at its end,
+    /// so the first layout builds the tail.
+    private func openAtTheEnd() {
+        guard let scrollView, let document, let heights else { return }
+        let paneWidth = scrollView.contentSize.width
+        guard paneWidth > 0 else { return }
+
+        heights.noteViewport(width: paneWidth - Self.horizontalInset * 2)
+
+        var total: CGFloat = 0
+        for run in runs {
+            total += heights.height(for: run) + Self.rowSpacing
+        }
+
+        document.frame = NSRect(x: 0, y: 0, width: paneWidth, height: total)
+        isAdjustingScroll = true
+        scrollView.contentView.setBoundsOrigin(
+            NSPoint(x: 0, y: max(0, total - scrollView.contentSize.height))
+        )
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        isAdjustingScroll = false
+    }
+
+    /// Learns the height of every run that hasn't been built, a few at a time,
+    /// once the newest ones are on screen.
+    ///
+    /// Without this, scrolling up fights the reader. An unbuilt run is worth
+    /// whatever the estimate guesses, and the estimate knows nothing about code
+    /// blocks — one was holding a place of 74 points for a run that turned out
+    /// to be 2,576. When it is finally built the content above the reader grows
+    /// by the difference, the scroll origin correctly moves down to keep the
+    /// view still, and somebody scrolling up by a hundred points is carried
+    /// eight hundred back down. The compensation isn't wrong; the estimate it
+    /// corrects is, and the answer is to have measured before they arrive.
+    ///
+    /// Each run is measured in a hosting view added to the document just long
+    /// enough to be laid out and then taken away again, so nothing is kept for
+    /// runs that are still nowhere near the viewport.
+    private func measureUnbuiltRuns() async {
+        while true {
+            try? await Task.sleep(for: .milliseconds(60))
+            if Task.isCancelled { return }
+
+            guard let scrollView, let document, let heights else { return }
+            let width = scrollView.contentSize.width - Self.horizontalInset * 2
+            guard width > 0 else { return }
+
+            // Newest first: that's the direction a reader travels from here.
+            guard let run = runs.reversed().first(where: { heights.measuredHeight(for: $0.id) == nil })
+            else { break }
+
+            let probe = RunHostingView(rootView: rootView(for: run, width: width))
+            probe.frame = NSRect(x: 0, y: -100_000, width: width, height: 0)
+            document.addSubview(probe)
+            let height = Self.height(of: probe, at: width)
+            probe.removeFromSuperview()
+
+            guard height > 0 else { break }
+            heights.record(exact: height, at: width, for: run.id)
+
+            // The content above the reader just changed size. They're at the
+            // newest message while this runs, so putting them back there is
+            // both the right answer and the cheap one.
+            layoutRows()
+            if isFollowing { scrollToBottom() }
+        }
+
+        #if DEBUG
+        ChatDebug.log("▦ measured every run")
+        #endif
     }
 
     // MARK: - Scrolling
