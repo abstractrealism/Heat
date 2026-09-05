@@ -83,6 +83,20 @@ final class RunHeightCache {
         }
     }
 
+    /// Records exactly what was measured, replacing whatever was there.
+    ///
+    /// The other `record` keeps the tallest reading, which the SwiftUI list
+    /// needed: it had no way to move the scroll origin when a row shrank, so a
+    /// row was never allowed to. A hand-laid transcript moves the origin
+    /// itself, so it wants the truth instead — keeping the tallest there shows
+    /// as a gap under a message that has since been measured shorter, and the
+    /// estimate it replaces shows as the next message overlapping it.
+    func record(exact height: CGFloat, at width: CGFloat, for runID: String) {
+        guard height > 0, width > 0, paneWidth > 0 else { return }
+        guard abs(width - paneWidth) <= Self.widthTolerance else { return }
+        measured[runID] = (width, (height * 2).rounded() / 2)
+    }
+
     /// What a run measured, if that measurement still applies at this width.
     ///
     /// Checked per entry rather than by clearing the lot: a stale entry simply

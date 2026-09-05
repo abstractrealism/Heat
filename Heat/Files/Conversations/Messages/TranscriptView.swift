@@ -126,6 +126,10 @@ final class TranscriptCoordinator: NSObject {
     /// scrolling isn't mistaken for the reader's.
     private var isAdjustingScroll = false
 
+    /// Set while laying out, since measuring a row can make it report a new
+    /// height, which asks for another layout from inside this one.
+    private var isLayingOut = false
+
     /// A screen's worth beyond the viewport in each direction, so an ordinary
     /// scroll finds its rows already built.
     private let overscan: CGFloat = 1.5
@@ -218,35 +222,45 @@ final class TranscriptCoordinator: NSObject {
 
     /// Builds and positions the rows the viewport can see, and sizes the
     /// document to the whole conversation.
+    ///
+    /// Two passes, because a row's height is only known once it exists. The
+    /// first decides which runs are near enough to be worth building, using
+    /// whatever heights are held; each of those is then built and measured, so
+    /// its height stops being a guess; and the second lays everything out from
+    /// the corrected figures. Positioning from the first pass is what put
+    /// messages on top of one another and left gaps under others — the numbers
+    /// used to place a row were not the numbers it turned out to need.
     private func layoutRows() {
         guard let scrollView, let document, let heights, let content else { return }
+        guard !isLayingOut else { return }
 
         let width = scrollView.contentSize.width
         guard width > 0 else { return }
 
-        let starts = offsets()
-        let contentHeight = (starts.last ?? 0)
-            + (runs.last.map { heights.height(for: $0) } ?? 0)
+        isLayingOut = true
+        defer { isLayingOut = false }
 
-        // The footer is measured first: it is part of the document's height,
-        // and following scrolls to the end of it rather than the last run.
-        let footerHeight = layoutFooter(width: width, top: contentHeight)
-        let totalHeight = contentHeight + footerHeight
-
-        if abs(document.frame.height - totalHeight) > 0.5 || abs(document.frame.width - width) > 0.5 {
-            document.frame = NSRect(x: 0, y: 0, width: width, height: totalHeight)
-        }
+        heights.noteViewport(width: width)
 
         let visible = scrollView.contentView.bounds
         let padding = visible.height * overscan
         let lower = visible.minY - padding
         let upper = visible.maxY + padding
 
-        var wanted = Set<String>()
+        // Pass one: what is near enough to build.
+        var believed = offsets()
+        var wantedIndices: [Int] = []
         for (index, run) in runs.enumerated() {
-            let top = starts[index]
+            let top = believed[index]
             let height = heights.height(for: run)
             guard top + height >= lower, top <= upper else { continue }
+            wantedIndices.append(index)
+        }
+
+        // Build each of them and take its real height.
+        var wanted = Set<String>()
+        for index in wantedIndices {
+            let run = runs[index]
             wanted.insert(run.id)
 
             let view: RunHostingView
@@ -261,10 +275,7 @@ final class TranscriptCoordinator: NSObject {
                 hosted[run.id] = view
                 document.addSubview(view)
             }
-            let frame = NSRect(x: 0, y: top, width: width, height: height)
-            if view.frame != frame {
-                view.frame = frame
-            }
+            heights.record(exact: Self.height(of: view, at: width), at: width, for: run.id)
         }
 
         // Rows well outside the viewport give their memory back. Unlike the
@@ -273,6 +284,26 @@ final class TranscriptCoordinator: NSObject {
         for (id, view) in hosted where !wanted.contains(id) {
             view.removeFromSuperview()
             hosted.removeValue(forKey: id)
+        }
+
+        // Pass two: place everything against the corrected heights.
+        believed = offsets()
+        for index in wantedIndices {
+            let run = runs[index]
+            guard let view = hosted[run.id] else { continue }
+            let frame = NSRect(x: 0, y: believed[index], width: width, height: heights.height(for: run))
+            if view.frame != frame {
+                view.frame = frame
+            }
+        }
+
+        let contentHeight = (believed.last ?? 0)
+            + (runs.last.map { heights.height(for: $0) } ?? 0)
+        let footerHeight = layoutFooter(width: width, top: contentHeight)
+        let totalHeight = contentHeight + footerHeight
+
+        if abs(document.frame.height - totalHeight) > 0.5 || abs(document.frame.width - width) > 0.5 {
+            document.frame = NSRect(x: 0, y: 0, width: width, height: totalHeight)
         }
     }
 
@@ -322,10 +353,11 @@ final class TranscriptCoordinator: NSObject {
     /// snapped the view to the bottom.
     private func rowHeightChanged(id: String, to newHeight: CGFloat) {
         guard let scrollView, let heights else { return }
+        guard !isLayingOut else { return }
         guard let index = runs.firstIndex(where: { $0.id == id }) else { return }
 
         let previous = heights.height(for: runs[index])
-        heights.record(newHeight, at: scrollView.contentSize.width, for: id)
+        heights.record(exact: newHeight, at: scrollView.contentSize.width, for: id)
         let corrected = heights.height(for: runs[index])
         let delta = corrected - previous
         guard abs(delta) > 0.5 else { return }
