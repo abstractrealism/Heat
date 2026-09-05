@@ -130,6 +130,9 @@ final class TranscriptCoordinator: NSObject {
     /// height, which asks for another layout from inside this one.
     private var isLayingOut = false
 
+    /// TEMPORARY — throttle for the row-geometry logging.
+    private var lastLog = Date.distantPast
+
     /// A screen's worth beyond the viewport in each direction, so an ordinary
     /// scroll finds its rows already built.
     private let overscan: CGFloat = 1.5
@@ -187,8 +190,8 @@ final class TranscriptCoordinator: NSObject {
         if revisionChanged {
             // The newest run is the one a streaming answer is written into, so
             // it is the one whose view has to be refreshed in place.
-            if let newest = runs.last, let view = hosted[newest.id], let content = self.content {
-                view.rootView = content(newest)
+            if let newest = runs.last, let view = hosted[newest.id] {
+                view.rootView = rootView(for: newest, width: view.builtAtWidth)
             }
             refreshFooter()
         }
@@ -266,9 +269,16 @@ final class TranscriptCoordinator: NSObject {
             let view: RunHostingView
             if let existing = hosted[run.id] {
                 view = existing
+                // The content carries its own width, so a resized pane means
+                // every built row has to be rebuilt at the new one.
+                if abs(view.builtAtWidth - width) > 0.5 {
+                    view.rootView = rootView(for: run, width: width)
+                    view.builtAtWidth = width
+                }
             } else {
-                view = RunHostingView(rootView: content(run))
+                view = RunHostingView(rootView: rootView(for: run, width: width))
                 view.runID = run.id
+                view.builtAtWidth = width
                 view.onHeightChange = { [weak self] id, newHeight in
                     self?.rowHeightChanged(id: id, to: newHeight)
                 }
@@ -296,6 +306,22 @@ final class TranscriptCoordinator: NSObject {
                 view.frame = frame
             }
         }
+
+        #if DEBUG
+        // TEMPORARY — each built row's placed height against what it wants
+        // right now. They should agree; where a row wants more than it was
+        // given, that difference is what overlaps the message below it.
+        if Date().timeIntervalSince(lastLog) >= 1.0, let first = wantedIndices.first {
+            lastLog = .now
+            let lines = wantedIndices.prefix(4).map { index -> String in
+                let run = runs[index]
+                let placed = heights.height(for: run)
+                let wants = hosted[run.id].map { Self.height(of: $0, at: width) } ?? 0
+                return String(format: "%d: top %.0f placed %.0f wants %.0f", index, believed[index], placed, wants)
+            }
+            ChatDebug.log("▦ rows from \(first) | " + lines.joined(separator: " | "))
+        }
+        #endif
 
         let contentHeight = (believed.last ?? 0)
             + (runs.last.map { heights.height(for: $0) } ?? 0)
@@ -325,16 +351,24 @@ final class TranscriptCoordinator: NSObject {
 
     /// What a hosted view wants to be, at a given width.
     ///
-    /// The width is set on the frame first and the subtree laid out, because
-    /// `fittingSize` answers for whatever width the view currently has — asked
-    /// without that, a paragraph reports its height as though it were free to
-    /// run as wide as it liked.
+    /// Setting the frame width is not enough on its own: `fittingSize` asks
+    /// SwiftUI for its *ideal* size, and a paragraph's ideal is to run as wide
+    /// as it likes and stand one line tall. That under-reports, and a row
+    /// placed at an under-reported height is a row the next message rides up
+    /// over. The width is fixed on the content itself — see
+    /// `rootView(for:width:)` — so there is nothing left to be ideal about.
     static func height(of view: NSView, at width: CGFloat) -> CGFloat {
         if abs(view.frame.width - width) > 0.5 {
             view.setFrameSize(NSSize(width: width, height: view.frame.height))
         }
         view.layoutSubtreeIfNeeded()
         return view.fittingSize.height
+    }
+
+    /// A run's content, pinned to the width it will be laid out at.
+    private func rootView(for run: Run, width: CGFloat) -> AnyView {
+        guard let content else { return AnyView(EmptyView()) }
+        return AnyView(content(run).frame(width: width))
     }
 
     private func refreshFooter() {
@@ -436,6 +470,11 @@ final class TranscriptCoordinator: NSObject {
 /// the same pass, rather than being noticed a frame later as a jump.
 final class RunHostingView: NSHostingView<AnyView> {
     var runID: String = ""
+
+    /// The width its content was built against, since the content carries an
+    /// explicit width rather than taking it from the frame.
+    var builtAtWidth: CGFloat = 0
+
     var onHeightChange: ((String, CGFloat) -> Void)?
 
     private var lastReported: CGFloat = 0
