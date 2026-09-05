@@ -275,16 +275,22 @@ struct MessageList: View {
                     runs: conversationViewModel.runs,
                     heights: conversationViewModel.runHeights
                 )
-                // Narrowing again is safe now that rows are pinned: a run that
-                // stops being drawn reserves the very height it was being held
-                // at, so the total doesn't move. The rule that windows could
-                // only grow existed because that wasn't true, and it cost the
-                // memory of every run scrolled past.
-                if computed != renderWindow {
+                // Grown into, never shrunk back — and the reason is not the one
+                // this rule was first written for.
+                //
+                // The window is computed from the offset, and what the window
+                // renders changes the offset, so allowing it to narrow closes a
+                // loop: the log caught it alternating between 7…13 at offset
+                // 6038 and 5…11 at offset 4828, seven times in two seconds,
+                // re-parsing rows on every cycle. A window that cannot shrink
+                // cannot cycle. What it costs is reclaiming the memory of a run
+                // scrolled past.
+                let grown = window.union(computed)
+                if grown != renderWindow {
                     #if DEBUG
-                    ChatDebug.log("⏱ window \(computed.lowerBound)…\(computed.upperBound) of \(conversationViewModel.runs.count) | offset \(Int(new.offset))")
+                    ChatDebug.log("⏱ window \(grown.lowerBound)…\(grown.upperBound) of \(conversationViewModel.runs.count) | offset \(Int(new.offset))")
                     #endif
-                    renderWindow = computed
+                    renderWindow = grown
                 }
 
                 // Only when the content stayed the same size. Text that is
