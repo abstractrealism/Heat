@@ -143,6 +143,12 @@ final class TranscriptCoordinator: NSObject {
     /// Whether this conversation has been put at its end yet. See `update`.
     private var hasOpenedAtEnd = false
 
+    /// Whether the reader's hand is on the scroll right now.
+    ///
+    /// A scroll under way is AppKit's, and moving the origin from underneath it
+    /// argues with the momentum it is carrying. See `rowHeightChanged`.
+    private var isLiveScrolling = false
+
     /// A screen's worth beyond the viewport in each direction, so an ordinary
     /// scroll finds its rows already built.
     private let overscan: CGFloat = 1.5
@@ -165,6 +171,27 @@ final class TranscriptCoordinator: NSObject {
             object: scrollView
         )
         scrollView.postsFrameChangedNotifications = true
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(liveScrollStarted),
+            name: NSScrollView.willStartLiveScrollNotification,
+            object: scrollView
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(liveScrollEnded),
+            name: NSScrollView.didEndLiveScrollNotification,
+            object: scrollView
+        )
+    }
+
+    @objc private func liveScrollStarted(_ notification: Notification) {
+        isLiveScrolling = true
+    }
+
+    @objc private func liveScrollEnded(_ notification: Notification) {
+        isLiveScrolling = false
     }
 
     func update(
@@ -482,7 +509,29 @@ final class TranscriptCoordinator: NSObject {
         // while being scrolled into, and carried the reader that far back down
         // for a change they could not see. Guessing "nothing moved" for a row
         // under the reader's eye is wrong less often, and wrong by less.
-        guard rowBottom <= viewportTop else { return }
+        guard rowBottom <= viewportTop else {
+            #if DEBUG
+            ChatDebug.log(String(
+                format: "↕ skip %d | delta %.0f | row %.0f…%.0f | viewport %.0f | inside the reader's view",
+                index, Double(delta), Double(rowTop), Double(rowBottom), Double(viewportTop)))
+            #endif
+            return
+        }
+
+        // Not while the reader's hand is on it.
+        //
+        // A scroll under way belongs to AppKit, which is carrying momentum of
+        // its own, and setting the origin from underneath that argues with it —
+        // no arithmetic here is right enough to win. Letting the content shift
+        // during a gesture is the lesser fault: a small slip while moving,
+        // against a scroll that cannot make progress at all.
+        guard !isLiveScrolling else {
+            #if DEBUG
+            ChatDebug.log(String(
+                format: "↕ skip %d | delta %.0f | live scroll", index, Double(delta)))
+            #endif
+            return
+        }
 
         // Read the position again rather than reusing the one captured above.
         //
@@ -493,6 +542,13 @@ final class TranscriptCoordinator: NSObject {
         // scrolling up through a thread became impossible: every row built on
         // the way up undid the flick that reached it.
         let currentTop = scrollView.contentView.bounds.minY
+
+        #if DEBUG
+        ChatDebug.log(String(
+            format: "↕ shift %d | delta %.0f | %.0f → %.0f | row %.0f…%.0f | viewport was %.0f",
+            index, Double(delta), Double(currentTop), Double(currentTop + delta),
+            Double(rowTop), Double(rowBottom), Double(viewportTop)))
+        #endif
 
         isAdjustingScroll = true
         let origin = NSPoint(x: 0, y: max(0, currentTop + delta))
