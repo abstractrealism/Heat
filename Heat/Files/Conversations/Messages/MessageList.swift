@@ -146,7 +146,6 @@ struct MessageList: View {
             heights: conversationViewModel.runHeights,
             conversationID: conversationViewModel.file.id,
             revision: conversationViewModel.file.modified,
-            isFollowing: scroll.isFollowing,
             scrollRequest: scrollRequest,
             content: { run in
                 AnyView(

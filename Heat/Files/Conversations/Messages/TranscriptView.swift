@@ -34,9 +34,6 @@ struct TranscriptView: NSViewRepresentable {
     /// Rebuilt whenever this changes, so a streaming answer redraws.
     let revision: Date
 
-    /// Whether new content should pull the view along with it.
-    let isFollowing: Bool
-
     /// Bumped to ask for a scroll; the coordinator acts on a change, so the
     /// same request twice in a row is two scrolls.
     let scrollRequest: TranscriptScroll?
@@ -73,7 +70,6 @@ struct TranscriptView: NSViewRepresentable {
             heights: heights,
             conversationID: conversationID,
             revision: revision,
-            isFollowing: isFollowing,
             scrollRequest: scrollRequest,
             content: content,
             footer: footer,
@@ -125,7 +121,24 @@ final class TranscriptCoordinator: NSObject {
 
     private var lastRevision: Date?
     private var lastScrollRequest: TranscriptScroll?
+
+    /// Whether new content should pull the view along with it.
+    ///
+    /// Worked out here rather than handed in, and that distinction was a bug
+    /// worth a day. `MessageList` holds this in a deliberately non-observable
+    /// box, so that tracking the scroll doesn't re-render the conversation —
+    /// which is right, and which means writing to it never reaches SwiftUI.
+    /// Passed through a view's value semantics it therefore never updated:
+    /// the reader scrolled away, nothing re-rendered, and this stayed true
+    /// for the life of the conversation. Every row that settled taller
+    /// afterwards then read it and scrolled the reader back to the end.
+    ///
+    /// The scroll view already says everything needed to know the answer, so
+    /// it is asked directly.
     private var isFollowing = true
+
+    /// How close to the end still counts as being at it.
+    private let followThreshold: CGFloat = 16
 
     /// Set while the coordinator is moving the scroll origin itself, so its own
     /// scrolling isn't mistaken for the reader's.
@@ -199,7 +212,6 @@ final class TranscriptCoordinator: NSObject {
         heights: RunHeightCache,
         conversationID: String,
         revision: Date,
-        isFollowing: Bool,
         scrollRequest: TranscriptScroll?,
         content: @escaping (Run) -> AnyView,
         footer: @escaping () -> AnyView,
@@ -209,7 +221,6 @@ final class TranscriptCoordinator: NSObject {
         self.content = content
         self.footerBuilder = footer
         self.onUserScroll = onUserScroll
-        self.isFollowing = isFollowing
 
         let runsChanged = self.runs.map(\.id) != runs.map(\.id)
         let revisionChanged = lastRevision != revision
@@ -604,6 +615,8 @@ final class TranscriptCoordinator: NSObject {
 
     private func scrollToBottom() {
         guard let scrollView, let document else { return }
+        // Going to the end is what following means, so it starts again here.
+        isFollowing = true
         let maxY = max(0, document.frame.height - scrollView.contentSize.height)
         isAdjustingScroll = true
         scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: maxY))
@@ -614,6 +627,8 @@ final class TranscriptCoordinator: NSObject {
 
     private func scrollToRun(_ id: String) {
         guard let scrollView, let index = runs.firstIndex(where: { $0.id == id }) else { return }
+        // Going to a match is going away from the end.
+        isFollowing = false
         let starts = offsets()
         let height = heights?.height(for: runs[index]) ?? 0
 
@@ -630,6 +645,14 @@ final class TranscriptCoordinator: NSObject {
 
     @objc private func boundsChanged(_ notification: Notification) {
         guard !isAdjustingScroll else { return }
+
+        // The reader moved, so ask where that leaves them: at the end means
+        // keep following, anywhere else means stop.
+        if let scrollView, let document {
+            let end = max(0, document.frame.height - scrollView.contentSize.height)
+            isFollowing = end - scrollView.contentView.bounds.minY <= followThreshold
+        }
+
         onUserScroll?()
         layoutRows()
     }
