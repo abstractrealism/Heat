@@ -129,23 +129,11 @@ struct HeatMarkupParser: MarkupParser {
     /// and ten times a second while streaming.
     @MainActor private static let markdown = AttributedStringMarkdownParser.markdown()
 
-    /// TEMPORARY — cumulative attribution for the slow-open question: the Σ
-    /// after an open says what share of it was parsing.
-    @MainActor private static var parseCount = 0
-    @MainActor private static var parseTotal: Duration = .zero
-
     func attributedString(for input: String) throws -> AttributedString {
-        let start = ContinuousClock.now
         var text = try Self.markdown.attributedString(for: input)
         markSuggestionLinks(in: &text, source: input)
         if let findQuery, !findQuery.isEmpty {
             highlight(findQuery, in: &text)
-        }
-        let elapsed = ContinuousClock.now - start
-        Self.parseCount += 1
-        Self.parseTotal += elapsed
-        if elapsed >= .milliseconds(2) || Self.parseCount % 25 == 0 {
-            ChatDebug.log("⏱ textual parse \(elapsed) | \(input.count) chars | Σ \(Self.parseCount) parses, \(Self.parseTotal)")
         }
         return text
     }

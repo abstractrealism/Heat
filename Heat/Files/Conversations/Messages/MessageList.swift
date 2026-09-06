@@ -51,10 +51,6 @@ struct MessageList: View {
         /// amid growth, while a reader's gesture delivers a run of upward
         /// events. So one upward move is layout until a second follows it.
         var upwardMoves = 0
-
-        /// TEMPORARY — instrumentation for the Textual streaming glitch. See
-        /// the geometry handler.
-        var lastLog = Date.distantPast
     }
 
     @State private var scroll = ScrollIntent()
@@ -137,9 +133,10 @@ struct MessageList: View {
     #if os(macOS)
     /// The transcript laid out by hand — see `TranscriptView` for why.
     ///
-    /// Following lives here rather than in the coordinator, so the rules worked
-    /// out over several branches survive the change of host: a run of upward
-    /// moves is the reader's doing, arriving back at the end resumes.
+    /// Following is the coordinator's own business, not this view's. It was
+    /// handed in at first, from the same box the SwiftUI path uses — and that
+    /// box is deliberately not observable, so writing to it never re-renders
+    /// and the value never arrived. See `TranscriptCoordinator.isFollowing`.
     private var appKitBody: some View {
         TranscriptView(
             runs: conversationViewModel.runs,
@@ -181,9 +178,6 @@ struct MessageList: View {
             scrollRequest = TranscriptScroll(destination: .bottom, requestedAt: .now)
         }
         .task(id: conversationViewModel.file.id) {
-            #if DEBUG
-            ChatDebug.log("⏱ open | \(conversationViewModel.runs.count) runs | appkit")
-            #endif
             guard conversationViewModel.currentFindMessageID == nil else { return }
             scroll.isFollowing = true
             scrollRequest = TranscriptScroll(destination: .bottom, requestedAt: .now)
@@ -320,9 +314,6 @@ struct MessageList: View {
                 // scrolled past.
                 let grown = window.union(computed)
                 if grown != renderWindow {
-                    #if DEBUG
-                    ChatDebug.log("⏱ window \(grown.lowerBound)…\(grown.upperBound) of \(conversationViewModel.runs.count) | offset \(Int(new.offset))")
-                    #endif
                     renderWindow = grown
                 }
 
@@ -348,31 +339,6 @@ struct MessageList: View {
                 } else {
                     scroll.upwardMoves = 0
                 }
-
-                #if DEBUG
-                // TEMPORARY — Textual streaming diagnosis. The throttled line
-                // shows the resting figures and the dance; the transition
-                // lines show every time following is switched off and exactly
-                // which numbers did it.
-                if Date().timeIntervalSince(scroll.lastLog) >= 0.25 {
-                    scroll.lastLog = .now
-                    ChatDebug.log(String(
-                        format: "geometry | offset %.1f | height %.1f | distance %.1f | width %.1f | %@",
-                        Double(new.offset), Double(new.contentHeight),
-                        Double(new.distanceFromEnd), Double(new.viewportWidth),
-                        scroll.isFollowing ? "following" : "off"))
-                }
-                if scroll.isFollowing, scroll.upwardMoves >= 2 {
-                    ChatDebug.log(String(
-                        format: "follow OFF | offset %.1f → %.1f, %d consecutive upward moves | distance %.1f",
-                        Double(old.offset), Double(new.offset),
-                        scroll.upwardMoves, Double(new.distanceFromEnd)))
-                }
-                if !scroll.isFollowing, scroll.upwardMoves < 2, new.distanceFromEnd <= endThreshold {
-                    ChatDebug.log(String(
-                        format: "follow resumes | distance %.1f", Double(new.distanceFromEnd)))
-                }
-                #endif
 
                 if scroll.upwardMoves >= 2 {
                     // A run of upward moves is the reader's doing; leave the
@@ -468,13 +434,6 @@ struct MessageList: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
             .task(id: conversationViewModel.file.id) {
-                #if DEBUG
-                // TEMPORARY — the opening bracket for slow-open attribution:
-                // everything between this line and the geometry settling is
-                // the open.
-                ChatDebug.log("⏱ open | \(conversationViewModel.runs.count) runs | window \(window.lowerBound)…\(window.upperBound)")
-                #endif
-
                 // A different conversation opens at its own tail, rather than
                 // wherever the last one had been scrolled to — and geometry
                 // doesn't get a say until the opening scroll has landed.
@@ -629,10 +588,6 @@ struct MessageList: View {
             // `isFollowing` means here — so the bottom is where they were.
             proxy.scrollTo("bottom", anchor: .bottom)
         }
-
-        #if DEBUG
-        ChatDebug.log("⏱ measured all \(total) runs")
-        #endif
     }
 
     /// The running rate, once there's been long enough to mean anything. The

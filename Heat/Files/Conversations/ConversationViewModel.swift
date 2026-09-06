@@ -490,7 +490,6 @@ final class ConversationViewModel {
             self.conversation = conversation
             self.file = file
             hasLoadedFromDisk = true
-            ChatDebug.log("⏱ load \(ContinuousClock.now - started) | \(conversation.messages.count) messages")
 
             // A find can be set up before the conversation is here: opening a
             // search result asks the store for a view model, which arrives
