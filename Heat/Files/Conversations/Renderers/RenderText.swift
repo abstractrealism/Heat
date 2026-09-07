@@ -121,11 +121,26 @@ private let chatFontSize: CGFloat = 14
 private let chatFontSize: CGFloat = 16
 #endif
 
+/// What a message should mark for find: the words, and which of its own
+/// occurrences is the one the reader is being taken to.
+///
+/// The ordinal is what lets one match be told from the rest. Before matches
+/// could be marked in the text at all, the current one was shown by tinting its
+/// whole message — which said "somewhere in here" because nothing could say
+/// where.
+struct FindHighlight: Equatable, Hashable {
+    var query: String
+
+    /// The occurrence being looked at, counted within this message from zero,
+    /// or nil when the current match is in some other message.
+    var current: Int?
+}
+
 extension EnvironmentValues {
     /// What find is looking for, or nil when no find is active. Carried in the
     /// environment rather than read off a view model because RenderText also
     /// draws in places that have none.
-    @Entry var findHighlightQuery: String? = nil
+    @Entry var findHighlightQuery: FindHighlight? = nil
 }
 
 /// Textual's stock markdown parser plus the two passes MarkdownUI had no seam
@@ -133,7 +148,7 @@ extension EnvironmentValues {
 /// matches inside the text. Both work because the pipeline is markdown →
 /// AttributedString → layout, and this sits in the middle of it.
 struct HeatMarkupParser: MarkupParser {
-    var findQuery: String?
+    var findQuery: FindHighlight?
 
     /// One parser for every message, not one per parse — building one sets up
     /// its pattern processor, and this is called for every message on open
@@ -143,7 +158,7 @@ struct HeatMarkupParser: MarkupParser {
     func attributedString(for input: String) throws -> AttributedString {
         var text = try Self.markdown.attributedString(for: input)
         markSuggestionLinks(in: &text, source: input)
-        if let findQuery, !findQuery.isEmpty {
+        if let findQuery, !findQuery.query.isEmpty {
             highlight(findQuery, in: &text)
         }
         return text
@@ -171,8 +186,11 @@ struct HeatMarkupParser: MarkupParser {
         }
     }
 
-    /// Yellow rather than accent so the marks read against the accent-tinted
-    /// row the matched message already gets.
+    /// Marks every occurrence, and the one being looked at more strongly.
+    ///
+    /// Two shades of the same colour rather than two colours: they are the same
+    /// kind of thing, one of which is where the reader is. A different hue for
+    /// the current match would read as a different kind of match.
     ///
     /// The text is materialized once and searched as a plain string, then the
     /// offsets are turned into indices in a single forward walk.
@@ -183,7 +201,8 @@ struct HeatMarkupParser: MarkupParser {
     /// **4.5ms** here, because searching an `AttributedString` materializes
     /// its text, so m matches over n characters cost O(n·m). That is the whole
     /// of the find-typing lag; nothing else in a parse comes close to it.
-    private func highlight(_ query: String, in text: inout AttributedString) {
+    private func highlight(_ highlight: FindHighlight, in text: inout AttributedString) {
+        let query = highlight.query
         guard !query.isEmpty else { return }
         let plain = String(text.characters)
 
@@ -222,10 +241,23 @@ struct HeatMarkupParser: MarkupParser {
             indexOffset = span.offset + span.length
         }
 
-        for range in ranges {
-            text[range].backgroundColor = Color.yellow.opacity(0.45)
+        for (ordinal, range) in ranges.enumerated() {
+            let isCurrent = ordinal == highlight.current
+            text[range].backgroundColor = isCurrent ? Self.currentMatch : Self.otherMatch
+            if isCurrent {
+                // Dark text on the strong fill, whatever the appearance: the
+                // colour is fixed, so the ink over it has to be too.
+                text[range].foregroundColor = .black
+            }
         }
     }
+
+    /// The match being looked at, and the rest.
+    ///
+    /// Opaque for the current one so it reads as *the* place, and faint for the
+    /// others so they read as somewhere else to go without competing with it.
+    private static let currentMatch = Color(red: 1.0, green: 0.79, blue: 0.20)
+    private static let otherMatch = Color.yellow.opacity(0.28)
 }
 
 /// Headings at body size, distinguished by weight — a chat message is not a

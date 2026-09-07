@@ -46,7 +46,7 @@ struct FindBar: View {
                     .font(.footnote)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .frame(minWidth: 96, alignment: .trailing)
+                    .frame(minWidth: 56, alignment: .trailing)
             }
 
             // Only the stepping is disabled with nothing to step through.
@@ -110,18 +110,18 @@ struct FindBar: View {
         }
     }
 
-    /// Counted in messages, because messages are what the arrows move between.
+    /// Counted in matches, because matches are what the arrows move between.
     ///
-    /// It counted every occurrence before, which made the number a promise the
-    /// buttons couldn't keep: five matches inside one message read as "1 of 5"
-    /// and then refused to go anywhere, there being one message to go to. The
-    /// unit is named so the number can't be read as anything else.
+    /// It counted messages for a while, and that was honest at the time: a
+    /// match couldn't be marked where it sat, so the arrows could only move
+    /// between messages and a count of occurrences would have been a promise
+    /// the buttons couldn't keep — five matches in one message read as "1 of
+    /// 5" and then refused to go anywhere. Marking them individually removed
+    /// the reason, so the number went back to meaning what anyone would
+    /// assume, and needs no unit to say so.
     private var position: String {
         let total = conversationViewModel.findMatches.count
-        switch total {
-        case 0: return "none"
-        case 1: return "1 message"
-        default: return "\(conversationViewModel.findIndex + 1) of \(total) messages"
-        }
+        guard total > 0 else { return "none" }
+        return "\(conversationViewModel.findIndex + 1) of \(total)"
     }
 }

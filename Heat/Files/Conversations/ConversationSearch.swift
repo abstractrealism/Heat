@@ -73,20 +73,30 @@ enum ConversationSearch {
         return count
     }
 
-    /// Which messages hold the query, in the order they appear.
+    /// One occurrence of the query, in the order they appear.
+    ///
+    /// An occurrence rather than a message. It used to be a message and a
+    /// count, because a match couldn't be marked in the text — so the arrows
+    /// moved between messages and the count had to say "messages" or promise
+    /// something it couldn't keep. Now that a match can be marked where it
+    /// sits, the count is the number of matches and the arrows go to each one.
     struct Match: Equatable, Identifiable {
         let messageID: String
-        let count: Int
 
-        var id: String { messageID }
+        /// Which occurrence within its own message this is, counting from
+        /// zero. What the renderer needs to know to mark this one differently
+        /// from its neighbours.
+        let ordinal: Int
+
+        var id: String { "\(messageID)#\(ordinal)" }
     }
 
     static func matches(for query: String, in messages: [Message]) -> [Match] {
         guard !query.isEmpty else { return [] }
-        return messages.compactMap { message in
-            let count = matchCount(of: query, in: searchableText(of: message))
-            guard count > 0 else { return nil }
-            return Match(messageID: message.id, count: count)
+        return messages.flatMap { message in
+            (0..<matchCount(of: query, in: searchableText(of: message))).map {
+                Match(messageID: message.id, ordinal: $0)
+            }
         }
     }
 

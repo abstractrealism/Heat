@@ -773,12 +773,17 @@ final class ConversationViewModel {
         return runs.first { run in run.messages.contains { $0.id == messageID } }?.id
     }
 
-    /// Every message holding the query, so the ones that aren't current can be
-    /// marked more faintly — knowing there are others, and roughly where, is
-    /// most of what a find bar is for.
-    var findMatchIDs: Set<String> {
-        guard isFinding else { return [] }
-        return Set(findMatches.map(\.messageID))
+    /// Which occurrence inside the given message the find bar is pointing at,
+    /// or nil if the current match is in some other message.
+    ///
+    /// Counted within the message rather than across the conversation, because
+    /// that's the number the message itself can act on: it marks its own
+    /// occurrences and needs to know which of them is the one being looked at.
+    func currentFindOrdinal(in messageID: String) -> Int? {
+        guard isFinding, findMatches.indices.contains(findIndex) else { return nil }
+        let match = findMatches[findIndex]
+        guard match.messageID == messageID else { return nil }
+        return match.ordinal
     }
 
     func beginFind() {
