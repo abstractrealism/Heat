@@ -1,6 +1,7 @@
 import SwiftUI
 import OSLog
 import SharedKit
+import Textual
 import GenKit
 import HeatKit
 
@@ -512,6 +513,15 @@ final class ConversationViewModel {
     /// `@ObservationIgnored` because it is written to during layout — anything
     /// observing it would schedule a render pass from inside one.
     @ObservationIgnored let runHeights = RunHeightCache()
+
+    /// One selection across the whole conversation.
+    ///
+    /// Every message is its own `StructuredText`, and on macOS every run is
+    /// its own hosting view with an environment of its own — so without a
+    /// scope to share, each of them kept a live selection independently, and
+    /// selecting in one message left the last selection standing in another.
+    /// Held here so it lasts as long as the conversation does.
+    @ObservationIgnored let selectionScope = TextSelectionScope()
 
     /// How often a streaming answer is published to the view. Fast enough to
     /// read as continuous, slow enough that re-rendering a long answer doesn't

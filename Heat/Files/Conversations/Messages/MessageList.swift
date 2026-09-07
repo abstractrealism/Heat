@@ -1,5 +1,6 @@
 import SwiftUI
 import SharedKit
+import Textual
 import GenKit
 import HeatKit
 
@@ -148,6 +149,11 @@ struct MessageList: View {
                 AnyView(
                     RunView(run)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        // Each run is its own hosting view with an environment
+                        // of its own, so the conversation's selection scope has
+                        // to be handed to every one of them. Applied here at the
+                        // root, it reaches every message inside.
+                        .textual.textSelectionScope(conversationViewModel.selectionScope)
                         .environment(state)
                         .environment(conversationViewModel)
                 )
@@ -192,6 +198,9 @@ struct MessageList: View {
     #endif
 
     private var swiftUIBody: some View {
+        // One environment for the whole list here, so the scope only needs
+        // applying once — unlike the AppKit path, where every run is hosted
+        // separately.
         ScrollViewReader { proxy in
             MessageListScrollView {
 
@@ -470,6 +479,7 @@ struct MessageList: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
+        .textual.textSelectionScope(conversationViewModel.selectionScope)
     }
 
     /// What sits after the last run: any error, what the model is doing, and
