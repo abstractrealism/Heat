@@ -522,17 +522,6 @@ final class TranscriptCoordinator: NSObject {
         // the way up undid the flick that reached it.
         let currentTop = scrollView.contentView.bounds.minY
 
-        #if DEBUG
-        // The only line left, and it earns its place: this is the one path in
-        // here that has never been seen to run. Everything the compensation
-        // does is for a row settling taller *above* a reader who is sitting
-        // still, and testing has been scrolling to the top, where every row is
-        // below. Until this prints, the code is unproven rather than working.
-        ChatDebug.log(String(
-            format: "↕ held still | row %d grew %.0f | %.0f → %.0f",
-            index, Double(delta), Double(currentTop), Double(currentTop + delta)))
-        #endif
-
         isAdjustingScroll = true
         let origin = NSPoint(x: 0, y: max(0, currentTop + delta))
         scrollView.contentView.setBoundsOrigin(origin)
