@@ -773,6 +773,48 @@ final class ConversationViewModel {
         return runs.first { run in run.messages.contains { $0.id == messageID } }?.id
     }
 
+    /// The match being looked at, identified so that stepping between two in
+    /// the same message counts as a change.
+    ///
+    /// The run id can't stand in for this: two matches in one run share it, so
+    /// watching the run meant stepping between them moved the mark and left
+    /// the view where it was.
+    var currentFindMatchID: String? {
+        guard isFinding, findMatches.indices.contains(findIndex) else { return nil }
+        return findMatches[findIndex].id
+    }
+
+    /// Roughly how far down its run the current match sits, from 0 at the top
+    /// to 1 at the bottom.
+    ///
+    /// Measured in characters, which is a guess — a code block or a picture
+    /// occupies height out of all proportion to the text around it. It is the
+    /// only clue available from outside the text engine, though, and a guess
+    /// is enough here: the view scrolls so the match is *somewhere on screen*,
+    /// which a whole viewport of tolerance forgives a lot of.
+    ///
+    /// Without it, stepping between two matches in one long message moved the
+    /// mark and not the view, which reads as a button that doesn't work.
+    var currentFindFractionInRun: Double? {
+        guard isFinding, findMatches.indices.contains(findIndex) else { return nil }
+        let match = findMatches[findIndex]
+        guard let run = runs.first(where: { run in
+            run.messages.contains { $0.id == match.messageID }
+        }) else { return nil }
+
+        var precedingLength = 0
+        var offsetInRun: Int?
+        for message in run.messages {
+            if message.id == match.messageID {
+                offsetInRun = precedingLength + match.characterOffset
+            }
+            precedingLength += ConversationSearch.searchableText(of: message).count
+        }
+
+        guard let offsetInRun, precedingLength > 0 else { return nil }
+        return min(max(Double(offsetInRun) / Double(precedingLength), 0), 1)
+    }
+
     /// Which occurrence inside the given message the find bar is pointing at,
     /// or nil if the current match is in some other message.
     ///

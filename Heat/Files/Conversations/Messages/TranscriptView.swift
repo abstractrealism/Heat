@@ -86,7 +86,10 @@ struct TranscriptView: NSViewRepresentable {
 struct TranscriptScroll: Equatable {
     enum Destination: Equatable {
         case bottom
-        case run(String)
+
+        /// A run, and roughly how far down it to aim — 0 for its top, 1 for
+        /// its bottom, nil to centre the run itself.
+        case run(String, fraction: Double?)
     }
     var destination: Destination
     var requestedAt: Date
@@ -580,8 +583,8 @@ final class TranscriptCoordinator: NSObject {
         switch request.destination {
         case .bottom:
             scrollToBottom()
-        case .run(let id):
-            scrollToRun(id)
+        case .run(let id, let fraction):
+            scrollToRun(id, fraction: fraction)
         }
     }
 
@@ -597,16 +600,27 @@ final class TranscriptCoordinator: NSObject {
         layoutRows()
     }
 
-    private func scrollToRun(_ id: String) {
+    private func scrollToRun(_ id: String, fraction: Double?) {
         guard let scrollView, let index = runs.firstIndex(where: { $0.id == id }) else { return }
         // Going to a match is going away from the end.
         isFollowing = false
         let starts = offsets()
         let height = heights?.height(for: runs[index]) ?? 0
+        let viewport = scrollView.contentSize.height
 
-        // Centred, as the SwiftUI version scrolled matches into view.
-        let target = starts[index] - (scrollView.contentSize.height - height) / 2
-        let maxY = max(0, (document?.frame.height ?? 0) - scrollView.contentSize.height)
+        let target: CGFloat
+        if let fraction, height > viewport {
+            // The run is taller than the view, so which part of it matters.
+            // Aiming the given fraction of the way down at the middle of the
+            // screen puts the match on it wherever in the run it falls, and
+            // the clamping below keeps the ends of the run from overshooting.
+            target = starts[index] + height * fraction - viewport / 2
+        } else {
+            // A run that fits is centred whole, as before — there is nowhere
+            // within it that could be off screen.
+            target = starts[index] - (viewport - height) / 2
+        }
+        let maxY = max(0, (document?.frame.height ?? 0) - viewport)
 
         isAdjustingScroll = true
         scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: min(max(0, target), maxY)))

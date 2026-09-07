@@ -165,10 +165,16 @@ struct MessageList: View {
                 scroll.isFollowing = false
             }
         )
-        .onChange(of: conversationViewModel.currentFindRunID) { _, runID in
-            guard let runID else { return }
+        // Watches the match rather than the run it lives in: two matches in one
+        // run share a run id, so watching that left the view still while the
+        // mark moved — which reads as a button that doesn't work.
+        .onChange(of: conversationViewModel.currentFindMatchID) { _, matchID in
+            guard matchID != nil, let runID = conversationViewModel.currentFindRunID else { return }
             scroll.isFollowing = false
-            scrollRequest = TranscriptScroll(destination: .run(runID), requestedAt: .now)
+            scrollRequest = TranscriptScroll(
+                destination: .run(runID, fraction: conversationViewModel.currentFindFractionInRun),
+                requestedAt: .now
+            )
         }
         .onChange(of: conversationViewModel.messages.count) { _, _ in
             // Sending is an explicit act: go to the newest message and follow

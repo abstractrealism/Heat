@@ -60,17 +60,28 @@ enum ConversationSearch {
     }
 
     static func matchCount(of query: String, in text: String) -> Int {
-        guard !query.isEmpty else { return 0 }
-        var count = 0
+        matchOffsets(of: query, in: text).count
+    }
+
+    /// How far into the text each match begins, in characters.
+    ///
+    /// The offsets are what let a match be scrolled to rather than merely
+    /// counted: how far down its message a match sits is the only clue
+    /// available to anything outside the text engine.
+    static func matchOffsets(of query: String, in text: String) -> [Int] {
+        guard !query.isEmpty else { return [] }
+        var offsets: [Int] = []
         var searchStart = text.startIndex
+        var consumed = 0
         while let found = text.range(of: query, options: options, range: searchStart..<text.endIndex) {
-            count += 1
+            offsets.append(consumed + text.distance(from: searchStart, to: found.lowerBound))
+            consumed += text.distance(from: searchStart, to: found.upperBound)
             // Advances past the match rather than by one character, so
             // "aa" finds two in "aaaa" and not three.
             searchStart = found.upperBound
             if searchStart >= text.endIndex { break }
         }
-        return count
+        return offsets
     }
 
     /// One occurrence of the query, in the order they appear.
@@ -88,14 +99,26 @@ enum ConversationSearch {
         /// from its neighbours.
         let ordinal: Int
 
+        /// How far into the message's text it begins, in characters, and how
+        /// long that text is. Together they say roughly how far down the
+        /// message it sits, which is what the view scrolls by.
+        let characterOffset: Int
+        let messageLength: Int
+
         var id: String { "\(messageID)#\(ordinal)" }
     }
 
     static func matches(for query: String, in messages: [Message]) -> [Match] {
         guard !query.isEmpty else { return [] }
-        return messages.flatMap { message in
-            (0..<matchCount(of: query, in: searchableText(of: message))).map {
-                Match(messageID: message.id, ordinal: $0)
+        return messages.flatMap { message -> [Match] in
+            let text = searchableText(of: message)
+            return matchOffsets(of: query, in: text).enumerated().map { ordinal, offset in
+                Match(
+                    messageID: message.id,
+                    ordinal: ordinal,
+                    characterOffset: offset,
+                    messageLength: text.count
+                )
             }
         }
     }
