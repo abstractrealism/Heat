@@ -143,6 +143,9 @@ struct MessageList: View {
             heights: conversationViewModel.runHeights,
             conversationID: conversationViewModel.file.id,
             revision: conversationViewModel.file.modified,
+            // Find changes what matching messages draw without touching the
+            // conversation, so the transcript has to be told separately.
+            findQuery: conversationViewModel.isFinding ? conversationViewModel.findQuery : nil,
             scrollRequest: scrollRequest,
             content: { run in
                 AnyView(
