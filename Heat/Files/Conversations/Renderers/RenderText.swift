@@ -28,11 +28,22 @@ struct RenderText: View {
             ForEach(contents.indices, id: \.self) { index in
                 switch contents[index] {
                 case let .text(text):
-                    StructuredText(text, parser: HeatMarkupParser(findQuery: findQuery))
-                        // Recreated when the query changes. StructuredText
-                        // re-parses only when its *markup* changes, so a new
-                        // query over unchanged text would keep stale marks.
-                        .id(findQuery)
+                    // The query is the parse key, not an `.id()`.
+                    //
+                    // It used to be an id, to force the view to be rebuilt —
+                    // StructuredText memoized on the markup alone, so a new
+                    // query over unchanged text handed back the old, unmarked
+                    // parse. Rebuilding worked and cost far too much: a
+                    // destroyed and recreated hosting view reports transient
+                    // heights on its way back, which were recorded as fact and
+                    // left every message drawn over the one below it. The memo
+                    // now watches the parser's configuration too, so the view
+                    // stays alive and only the parse is redone.
+                    StructuredText(
+                        text,
+                        parser: HeatMarkupParser(findQuery: findQuery),
+                        parseKey: findQuery
+                    )
                         .font(.system(size: chatFontSize))
                         .textual.textSelection(.enabled)
                         .textual.headingStyle(ChatHeadingStyle())

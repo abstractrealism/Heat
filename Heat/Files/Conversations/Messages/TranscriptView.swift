@@ -34,15 +34,6 @@ struct TranscriptView: NSViewRepresentable {
     /// Rebuilt whenever this changes, so a streaming answer redraws.
     let revision: Date
 
-    /// What find is looking for, if anything.
-    ///
-    /// Carried purely so the coordinator knows the rows have changed. Find
-    /// alters what every matching message draws — marks inside the text, and a
-    /// tint behind it — without touching the conversation on disk, so
-    /// `revision` says nothing about it and the heights held for those rows go
-    /// stale the moment somebody types.
-    let findQuery: String?
-
     /// Bumped to ask for a scroll; the coordinator acts on a change, so the
     /// same request twice in a row is two scrolls.
     let scrollRequest: TranscriptScroll?
@@ -79,7 +70,6 @@ struct TranscriptView: NSViewRepresentable {
             heights: heights,
             conversationID: conversationID,
             revision: revision,
-            findQuery: findQuery,
             scrollRequest: scrollRequest,
             content: content,
             footer: footer,
@@ -130,7 +120,6 @@ final class TranscriptCoordinator: NSObject {
     private var footerView: NSHostingView<AnyView>?
 
     private var lastRevision: Date?
-    private var lastFindQuery: String?
     private var lastScrollRequest: TranscriptScroll?
 
     /// Whether new content should pull the view along with it.
@@ -220,7 +209,6 @@ final class TranscriptCoordinator: NSObject {
         heights: RunHeightCache,
         conversationID: String,
         revision: Date,
-        findQuery: String?,
         scrollRequest: TranscriptScroll?,
         content: @escaping (Run) -> AnyView,
         footer: @escaping () -> AnyView,
@@ -233,11 +221,9 @@ final class TranscriptCoordinator: NSObject {
 
         let runsChanged = self.runs.map(\.id) != runs.map(\.id)
         let revisionChanged = lastRevision != revision
-        let findChanged = lastFindQuery != findQuery
         let openedNewConversation = lastConversationID != conversationID
         self.runs = runs
         lastRevision = revision
-        lastFindQuery = findQuery
         lastConversationID = conversationID
 
         if runsChanged {
@@ -269,10 +255,6 @@ final class TranscriptCoordinator: NSObject {
         // Opening at the end is `layoutRows`'s business now: it is the only
         // place that knows the scroll view has a width to work with.
         layoutRows()
-
-        if findChanged {
-            remeasureAllRows()
-        }
 
         if let scrollRequest, scrollRequest != lastScrollRequest {
             lastScrollRequest = scrollRequest
@@ -464,33 +446,6 @@ final class TranscriptCoordinator: NSObject {
     private func rootView(for run: Run, width: CGFloat) -> AnyView {
         guard let content else { return AnyView(EmptyView()) }
         return AnyView(content(run).frame(width: width))
-    }
-
-    /// Takes every built row's height again, after its content has changed for
-    /// a reason the coordinator can't see.
-    ///
-    /// Find is that reason: it puts marks inside matching messages and a tint
-    /// behind them, so those rows draw differently and stand differently
-    /// without the conversation on disk changing at all. The heights held for
-    /// them are stale from the moment somebody types, and a row drawn taller
-    /// than the frame it was given runs straight over the message below it.
-    ///
-    /// Deferred by a turn of the runloop, because SwiftUI has not yet applied
-    /// the change when this is called — measuring now would read exactly the
-    /// stale heights being replaced.
-    private func remeasureAllRows() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            // Two turns: one for SwiftUI to rebuild the rows, one for their
-            // text to settle at the size it wants.
-            await Task.yield()
-            try? await Task.sleep(for: .milliseconds(16))
-            for view in self.hosted.values {
-                view.forgetReportedHeight()
-                view.invalidateIntrinsicContentSize()
-            }
-            self.layoutRows()
-        }
     }
 
     private func refreshFooter() {
@@ -696,12 +651,6 @@ final class RunHostingView: NSHostingView<AnyView> {
     var onHeightChange: ((String, CGFloat) -> Void)?
 
     private var lastReported: CGFloat = 0
-
-    /// Forgets what was last reported, so the next measurement counts as new
-    /// even if it lands on the same number.
-    func forgetReportedHeight() {
-        lastReported = 0
-    }
 
     required init(rootView: AnyView) {
         super.init(rootView: rootView)
