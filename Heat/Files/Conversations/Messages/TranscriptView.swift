@@ -607,6 +607,33 @@ final class TranscriptCoordinator: NSObject {
         let starts = offsets()
         let height = heights?.height(for: runs[index]) ?? 0
         let viewport = scrollView.contentSize.height
+        let currentTop = scrollView.contentView.bounds.minY
+
+        // Already on screen? Then don't move.
+        //
+        // Stepping to a match a line below the last one should not throw the
+        // page about; a find that jumps when it needn't costs the reader the
+        // place they were reading, which is the thing they were looking at the
+        // page to keep.
+        //
+        // Two ways of knowing, one sound and one not. A run shorter than the
+        // screen and wholly inside it is certain: there is nowhere in it that
+        // could be out of sight. A taller run has to go by where the match is
+        // guessed to be, so the margin is generous — being wrong here means
+        // leaving the reader hunting for a match that isn't on screen, which is
+        // exactly the complaint this began as.
+        let runTop = starts[index]
+        let runBottom = runTop + height
+        if height <= viewport, runTop >= currentTop, runBottom <= currentTop + viewport {
+            return
+        }
+        if let fraction, height > viewport {
+            let matchY = runTop + height * fraction
+            let margin = viewport * 0.25
+            if matchY >= currentTop + margin, matchY <= currentTop + viewport - margin {
+                return
+            }
+        }
 
         let target: CGFloat
         if let fraction, height > viewport {
