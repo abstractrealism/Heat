@@ -39,35 +39,32 @@ struct MessageView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: frameAlignment)
-        // Where find has got to. The current match is marked plainly and the
-        // rest faintly — knowing there are others, and roughly where they sit,
-        // is most of what a find bar is for.
-        .background(findHighlight, in: .rect(cornerRadius: 6))
-        .animation(.easeOut(duration: 0.15), value: conversationViewModel.currentFindMessageID)
+        // The matches themselves are marked, in the text, by the renderer.
+        //
+        // A tint behind the whole message stood in for that while the text
+        // couldn't be marked at all: it said "somewhere in here" because
+        // nothing could say where. Now that each match is marked where it
+        // sits, tinting the message as well only draws the eye away from the
+        // word it is meant to land on.
         .environment(\.findHighlightQuery, inTextQuery)
     }
 
-    /// Only messages that match hand the query down to their renderers.
+    /// What this message should mark, if anything: the query, and which of its
+    /// own occurrences is the one being looked at.
     ///
-    /// The query used to ride the environment of the whole list, so every
-    /// keystroke changed it for every message — and `.id(findQuery)` then
-    /// rebuilt, re-parsed and re-laid-out every StructuredText in the thread
-    /// per character typed, which is why the characters couldn't even echo.
-    /// Scoped here, a keystroke touches only the messages it matches.
-    private var inTextQuery: String? {
-        guard conversationViewModel.findMatchIDs.contains(message.id) else { return nil }
+    /// Only messages that match hand anything down. The query used to ride the
+    /// environment of the whole list, so every keystroke changed it for every
+    /// message and re-parsed the entire thread — scoped here, a keystroke
+    /// touches only the messages it matches.
+    private var inTextQuery: FindHighlight? {
         let query = conversationViewModel.findQuery
-        return query.isEmpty ? nil : query
-    }
-
-    private var findHighlight: Color {
-        if conversationViewModel.currentFindMessageID == message.id {
-            return .accentColor.opacity(0.28)
-        }
-        if conversationViewModel.findMatchIDs.contains(message.id) {
-            return .accentColor.opacity(0.10)
-        }
-        return .clear
+        guard !query.isEmpty, conversationViewModel.isFinding else { return nil }
+        guard conversationViewModel.findMatches.contains(where: { $0.messageID == message.id })
+        else { return nil }
+        return FindHighlight(
+            query: query,
+            current: conversationViewModel.currentFindOrdinal(in: message.id)
+        )
     }
 
     /// User messages align to the trailing edge; everything else stays leading.

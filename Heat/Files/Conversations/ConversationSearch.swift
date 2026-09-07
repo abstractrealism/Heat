@@ -60,33 +60,66 @@ enum ConversationSearch {
     }
 
     static func matchCount(of query: String, in text: String) -> Int {
-        guard !query.isEmpty else { return 0 }
-        var count = 0
+        matchOffsets(of: query, in: text).count
+    }
+
+    /// How far into the text each match begins, in characters.
+    ///
+    /// The offsets are what let a match be scrolled to rather than merely
+    /// counted: how far down its message a match sits is the only clue
+    /// available to anything outside the text engine.
+    static func matchOffsets(of query: String, in text: String) -> [Int] {
+        guard !query.isEmpty else { return [] }
+        var offsets: [Int] = []
         var searchStart = text.startIndex
+        var consumed = 0
         while let found = text.range(of: query, options: options, range: searchStart..<text.endIndex) {
-            count += 1
+            offsets.append(consumed + text.distance(from: searchStart, to: found.lowerBound))
+            consumed += text.distance(from: searchStart, to: found.upperBound)
             // Advances past the match rather than by one character, so
             // "aa" finds two in "aaaa" and not three.
             searchStart = found.upperBound
             if searchStart >= text.endIndex { break }
         }
-        return count
+        return offsets
     }
 
-    /// Which messages hold the query, in the order they appear.
+    /// One occurrence of the query, in the order they appear.
+    ///
+    /// An occurrence rather than a message. It used to be a message and a
+    /// count, because a match couldn't be marked in the text — so the arrows
+    /// moved between messages and the count had to say "messages" or promise
+    /// something it couldn't keep. Now that a match can be marked where it
+    /// sits, the count is the number of matches and the arrows go to each one.
     struct Match: Equatable, Identifiable {
         let messageID: String
-        let count: Int
 
-        var id: String { messageID }
+        /// Which occurrence within its own message this is, counting from
+        /// zero. What the renderer needs to know to mark this one differently
+        /// from its neighbours.
+        let ordinal: Int
+
+        /// How far into the message's text it begins, in characters, and how
+        /// long that text is. Together they say roughly how far down the
+        /// message it sits, which is what the view scrolls by.
+        let characterOffset: Int
+        let messageLength: Int
+
+        var id: String { "\(messageID)#\(ordinal)" }
     }
 
     static func matches(for query: String, in messages: [Message]) -> [Match] {
         guard !query.isEmpty else { return [] }
-        return messages.compactMap { message in
-            let count = matchCount(of: query, in: searchableText(of: message))
-            guard count > 0 else { return nil }
-            return Match(messageID: message.id, count: count)
+        return messages.flatMap { message -> [Match] in
+            let text = searchableText(of: message)
+            return matchOffsets(of: query, in: text).enumerated().map { ordinal, offset in
+                Match(
+                    messageID: message.id,
+                    ordinal: ordinal,
+                    characterOffset: offset,
+                    messageLength: text.count
+                )
+            }
         }
     }
 
