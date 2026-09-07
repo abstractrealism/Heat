@@ -129,23 +129,11 @@ struct HeatMarkupParser: MarkupParser {
     /// and ten times a second while streaming.
     @MainActor private static let markdown = AttributedStringMarkdownParser.markdown()
 
-    /// TEMPORARY — cumulative attribution for the slow-open question: the Σ
-    /// after an open says what share of it was parsing.
-    @MainActor private static var parseCount = 0
-    @MainActor private static var parseTotal: Duration = .zero
-
     func attributedString(for input: String) throws -> AttributedString {
-        let start = ContinuousClock.now
         var text = try Self.markdown.attributedString(for: input)
         markSuggestionLinks(in: &text, source: input)
         if let findQuery, !findQuery.isEmpty {
             highlight(findQuery, in: &text)
-        }
-        let elapsed = ContinuousClock.now - start
-        Self.parseCount += 1
-        Self.parseTotal += elapsed
-        if elapsed >= .milliseconds(2) || Self.parseCount % 25 == 0 {
-            ChatDebug.log("⏱ textual parse \(elapsed) | \(input.count) chars | Σ \(Self.parseCount) parses, \(Self.parseTotal)")
         }
         return text
     }
@@ -235,6 +223,11 @@ private struct ChatHeadingStyle: StructuredText.HeadingStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: chatFontSize, weight: weight(configuration.headingLevel)))
+            // Carried over from the style this replaces. Replacing a style
+            // replaces all of it, and dropping this ran every heading straight
+            // into the paragraph beneath it — the air above a heading is most
+            // of what makes it read as one.
+            .textual.blockSpacing(.fontScaled(top: 1.6, bottom: 0.8))
     }
 
     private func weight(_ level: Int) -> Font.Weight {
@@ -252,6 +245,9 @@ private struct ChatCodeBlockStyle: StructuredText.CodeBlockStyle {
         // A nested view rather than state on the style: the one style value
         // serves every block, so state here would be shared between them.
         ChatCodeBlock(configuration: configuration)
+            // As with the heading style: carried over from the default, which
+            // this replaces entirely.
+            .textual.blockSpacing(.fontScaled(top: 0.88, bottom: 0))
     }
 }
 

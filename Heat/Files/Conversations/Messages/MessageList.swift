@@ -1,5 +1,6 @@
 import SwiftUI
 import SharedKit
+import GenKit
 import HeatKit
 
 struct MessageList: View {
@@ -50,13 +51,46 @@ struct MessageList: View {
         /// amid growth, while a reader's gesture delivers a run of upward
         /// events. So one upward move is layout until a second follows it.
         var upwardMoves = 0
-
-        /// TEMPORARY — instrumentation for the Textual streaming glitch. See
-        /// the geometry handler.
-        var lastLog = Date.distantPast
     }
 
     @State private var scroll = ScrollIntent()
+
+    /// Which runs are rendered for real. Everything else reserves its height.
+    ///
+    /// This *is* `@State`, unlike the scroll bookkeeping, because what's drawn
+    /// depends on it. That's also why it must change as rarely as possible: it
+    /// is recomputed on every scroll event but only assigned when the span
+    /// actually differs, so a scroll within the overscan redraws nothing.
+    ///
+    /// Nil until the view has been scrolled, when `RunWindow.tail` stands in.
+    /// It cannot simply start wide and narrow later: the geometry handler
+    /// can't run until the list has been laid out once, and that lay-out is
+    /// the entire cost being avoided.
+    @State private var renderWindow: RunWindow?
+
+    /// The conversation whose opening scroll has finished.
+    ///
+    /// Until it has, scroll geometry does not get to choose the window. A
+    /// transcript is laid out from the top and only then scrolled to its
+    /// newest message, so the geometry during that stretch describes the top
+    /// of the conversation — and acting on it built six runs nobody was going
+    /// to look at, before building the one they were.
+    @State private var openedFileID: String?
+
+    #if os(macOS)
+    /// The scroll the AppKit transcript has been asked for. Carries the moment
+    /// it was asked, so the same destination twice is two requests.
+    @State private var scrollRequest: TranscriptScroll?
+    #endif
+
+    /// The runs to build now — what scrolling last decided, or the tail of the
+    /// conversation before anything has scrolled.
+    private var window: RunWindow {
+        renderWindow ?? RunWindow.tail(
+            runs: conversationViewModel.runs,
+            heights: conversationViewModel.runHeights
+        )
+    }
 
     /// Sub-pixel drift and re-layout can nudge the offset; a real scroll
     /// gesture moves considerably further than this.
@@ -79,9 +113,85 @@ struct MessageList: View {
         /// Carried so an offset change can be told apart from a layout change.
         /// See the scroll geometry handler.
         var contentHeight: CGFloat
+
+        /// The viewport, for working out which runs fall inside it.
+        var viewportHeight: CGFloat
+
+        /// Width invalidates measured heights, since how tall a message is
+        /// depends on how wide it may run.
+        var viewportWidth: CGFloat
     }
 
     var body: some View {
+        #if os(macOS)
+        appKitBody
+        #else
+        swiftUIBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// The transcript laid out by hand — see `TranscriptView` for why.
+    ///
+    /// Following is the coordinator's own business, not this view's. It was
+    /// handed in at first, from the same box the SwiftUI path uses — and that
+    /// box is deliberately not observable, so writing to it never re-renders
+    /// and the value never arrived. See `TranscriptCoordinator.isFollowing`.
+    private var appKitBody: some View {
+        TranscriptView(
+            runs: conversationViewModel.runs,
+            heights: conversationViewModel.runHeights,
+            conversationID: conversationViewModel.file.id,
+            revision: conversationViewModel.file.modified,
+            scrollRequest: scrollRequest,
+            content: { run in
+                AnyView(
+                    RunView(run)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .environment(state)
+                        .environment(conversationViewModel)
+                )
+            },
+            footer: {
+                AnyView(
+                    statusFooter
+                        .environment(state)
+                        .environment(conversationViewModel)
+                )
+            },
+            onUserScroll: {
+                // The coordinator only reports scrolling it didn't cause, so
+                // this is always the reader.
+                scroll.isFollowing = false
+            }
+        )
+        .onChange(of: conversationViewModel.currentFindRunID) { _, runID in
+            guard let runID else { return }
+            scroll.isFollowing = false
+            scrollRequest = TranscriptScroll(destination: .run(runID), requestedAt: .now)
+        }
+        .onChange(of: conversationViewModel.messages.count) { _, _ in
+            // Sending is an explicit act: go to the newest message and follow
+            // again. Only for messages the reader sent.
+            guard conversationViewModel.messages.last?.role == .user else { return }
+            scroll.isFollowing = true
+            scrollRequest = TranscriptScroll(destination: .bottom, requestedAt: .now)
+        }
+        .task(id: conversationViewModel.file.id) {
+            guard conversationViewModel.currentFindMessageID == nil else { return }
+            scroll.isFollowing = true
+            scrollRequest = TranscriptScroll(destination: .bottom, requestedAt: .now)
+        }
+        .onOpenURL { url in
+            if let suggestion = url.queryParameters["suggestion"] {
+                handleSubmit(suggestion.replacingOccurrences(of: "+", with: " "))
+            }
+            scrollRequest = TranscriptScroll(destination: .bottom, requestedAt: .now)
+        }
+    }
+    #endif
+
+    private var swiftUIBody: some View {
         ScrollViewReader { proxy in
             MessageListScrollView {
 
@@ -94,10 +204,55 @@ struct MessageList: View {
                 // The spacing is unchanged: the 12 points the enclosing stack
                 // used to provide are the 6 above and 6 below that
                 // MessageListScrollView already gives every row.
-                ForEach(conversationViewModel.runs) { run in
-                    RunView(run)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .id(run.id)
+                ForEach(Array(conversationViewModel.runs.enumerated()), id: \.element.id) { index, run in
+                    // The newest run is always built, wherever the view is
+                    // scrolled: it's where a streaming answer is written, and
+                    // reserving space for it would leave the answer invisible
+                    // as it arrived.
+                    if window.contains(index) || index == conversationViewModel.runs.count - 1 {
+                        RunView(run)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            // Floored at what it last measured, so the row can
+                            // never report less than it already has.
+                            //
+                            // The content height was seen collapsing from
+                            // 19,840 to 8,466 and back while scrolling, with
+                            // every run rendered and no placeholders involved —
+                            // the list under-reports rows it hasn't settled.
+                            // An offset that was valid against the taller
+                            // figure is past the end of the shorter one, and
+                            // clamping it to the end is the view being yanked
+                            // to the bottom.
+                            //
+                            // Measured *inside* the pin, so what's recorded is
+                            // what the content wants rather than what it has
+                            // been given — otherwise the pin would freeze the
+                            // first measurement and never learn it was wrong.
+                            .reportingHeight(of: run.id, into: conversationViewModel.runHeights)
+                            // Pinned to the tallest this run has measured, so
+                            // rebuilding it cannot change the content's height.
+                            //
+                            // The list recycles rows as it scrolls — its own
+                            // virtualization, under ours — and a rebuilt row
+                            // reports a different height while its content
+                            // settles, which is why the height dips line up
+                            // exactly with the parse lines in the log. Pinning
+                            // takes that out of the total: the content size
+                            // becomes the sum of numbers we chose, so it cannot
+                            // collapse, and an offset can never be left past
+                            // the end.
+                            .frame(height: pinnedHeight(for: run, at: index), alignment: .top)
+                            .id(run.id)
+                    } else {
+                        // Off screen: reserve what it measured and draw
+                        // nothing. The row still exists and still carries its
+                        // id, so the list's total height stays honest and find
+                        // can still scroll to it — it renders for real by the
+                        // time the scroll lands.
+                        Color.clear
+                            .frame(height: conversationViewModel.runHeights.height(for: run))
+                            .id(run.id)
+                    }
 
                     // Drawn after the run it falls in, so everything above it
                     // is what the model no longer reads.
@@ -106,52 +261,8 @@ struct MessageList: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 0) {
-                    // Inline error when the last generation attempt failed
-                    if let error = conversationViewModel.error {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                            Text(error)
-                        }
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
-                    }
-
-                    // What the assistant is doing, where its answer will appear
-                    switch conversationViewModel.phase {
-                    case .waiting:
-                        GeneratingIndicator("Generating" + liveRateSuffix)
-                    case .thinking:
-                        // Also the way to close the reasoning above it. Its own
-                        // Hide control scrolls off the top as the block grows,
-                        // so this is the one part of it that stays in reach.
-                        Button {
-                            conversationViewModel.isStreamingThinkingExpanded.toggle()
-                        } label: {
-                            GeneratingIndicator("Thinking" + liveRateSuffix)
-                        }
-                        .buttonStyle(.plain)
-                        .help(conversationViewModel.isStreamingThinkingExpanded
-                              ? "Hide the reasoning above"
-                              : "Show the reasoning above")
-                    case .responding, .suggesting, .idle:
-                        EmptyView()
-                    }
-
-                    // Suggestions, or a note that they're on their way, in the
-                    // place they'll appear
-                    if conversationViewModel.phase == .suggesting {
-                        GeneratingIndicator("Generating suggestions", alignment: .trailing)
-                    } else if !conversationViewModel.suggestions.isEmpty {
-                        SuggestionList(suggestions: conversationViewModel.suggestions) { suggestion in
-                            SuggestionView(suggestion: suggestion) { handleSubmit($0) }
-                        }
-                    }
-                }
-                .id("bottom")
+                statusFooter
+                    .id("bottom")
             }
             // The find query reaches renderers per message, from MessageView —
             // set here it changed for every message on every keystroke, and
@@ -167,10 +278,44 @@ struct MessageList: View {
                     // measures as 82 points *past* it.
                     distanceFromEnd: geometry.contentSize.height + geometry.contentInsets.bottom
                         - (geometry.contentOffset.y + geometry.containerSize.height),
-                    contentHeight: geometry.contentSize.height
+                    contentHeight: geometry.contentSize.height,
+                    viewportHeight: geometry.containerSize.height,
+                    viewportWidth: geometry.containerSize.width
                 )
             } action: { old, new in
                 scroll.distanceFromEnd = new.distanceFromEnd
+
+                // Which runs are worth rendering, recomputed here because the
+                // answer depends only on the offset and the heights already
+                // recorded — no measuring involved. Assigned only when the
+                // span really changes, so scrolling inside the overscan costs
+                // nothing.
+                conversationViewModel.runHeights.noteViewport(width: new.viewportWidth)
+
+                // Only once this conversation has finished opening: see
+                // `openedFileID`. The tail window stands until then.
+                guard openedFileID == conversationViewModel.file.id else { return }
+
+                let computed = RunWindow.around(
+                    offset: new.offset,
+                    viewportHeight: new.viewportHeight,
+                    runs: conversationViewModel.runs,
+                    heights: conversationViewModel.runHeights
+                )
+                // Grown into, never shrunk back — and the reason is not the one
+                // this rule was first written for.
+                //
+                // The window is computed from the offset, and what the window
+                // renders changes the offset, so allowing it to narrow closes a
+                // loop: the log caught it alternating between 7…13 at offset
+                // 6038 and 5…11 at offset 4828, seven times in two seconds,
+                // re-parsing rows on every cycle. A window that cannot shrink
+                // cannot cycle. What it costs is reclaiming the memory of a run
+                // scrolled past.
+                let grown = window.union(computed)
+                if grown != renderWindow {
+                    renderWindow = grown
+                }
 
                 // Only when the content stayed the same size. Text that is
                 // still being laid out settles at slightly different heights
@@ -194,31 +339,6 @@ struct MessageList: View {
                 } else {
                     scroll.upwardMoves = 0
                 }
-
-                #if DEBUG
-                // TEMPORARY — Textual streaming diagnosis. The throttled line
-                // shows the resting figures and the dance; the transition
-                // lines show every time following is switched off and exactly
-                // which numbers did it.
-                if Date().timeIntervalSince(scroll.lastLog) >= 0.25 {
-                    scroll.lastLog = .now
-                    ChatDebug.log(String(
-                        format: "geometry | offset %.1f | height %.1f | distance %.1f | %@",
-                        Double(new.offset), Double(new.contentHeight),
-                        Double(new.distanceFromEnd),
-                        scroll.isFollowing ? "following" : "off"))
-                }
-                if scroll.isFollowing, scroll.upwardMoves >= 2 {
-                    ChatDebug.log(String(
-                        format: "follow OFF | offset %.1f → %.1f, %d consecutive upward moves | distance %.1f",
-                        Double(old.offset), Double(new.offset),
-                        scroll.upwardMoves, Double(new.distanceFromEnd)))
-                }
-                if !scroll.isFollowing, scroll.upwardMoves < 2, new.distanceFromEnd <= endThreshold {
-                    ChatDebug.log(String(
-                        format: "follow resumes | distance %.1f", Double(new.distanceFromEnd)))
-                }
-                #endif
 
                 if scroll.upwardMoves >= 2 {
                     // A run of upward moves is the reader's doing; leave the
@@ -314,12 +434,14 @@ struct MessageList: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
             .task(id: conversationViewModel.file.id) {
-                #if DEBUG
-                // TEMPORARY — the opening bracket for slow-open attribution:
-                // everything between this line and the geometry settling is
-                // the open.
-                ChatDebug.log("⏱ open | \(conversationViewModel.runs.count) runs")
-                #endif
+                // A different conversation opens at its own tail, rather than
+                // wherever the last one had been scrolled to — and geometry
+                // doesn't get a say until the opening scroll has landed.
+                let openingFileID = conversationViewModel.file.id
+                renderWindow = nil
+                openedFileID = nil
+                defer { openedFileID = openingFileID }
+
                 // Unless a find is already pointing somewhere. Arriving from a
                 // search result is arriving *at* a match, and opening at the
                 // newest message would scroll straight past it — including the
@@ -338,6 +460,8 @@ struct MessageList: View {
                 guard scroll.isFollowing else { return }
                 guard conversationViewModel.currentFindMessageID == nil else { return }
                 proxy.scrollTo("bottom", anchor: .bottom)
+
+                await measureRemainingRuns(proxy: proxy)
             }
             .onOpenURL { url in
                 if let suggestion = url.queryParameters["suggestion"] {
@@ -345,6 +469,124 @@ struct MessageList: View {
                 }
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
+        }
+    }
+
+    /// What sits after the last run: any error, what the model is doing, and
+    /// the suggestions when they arrive.
+    ///
+    /// Its own view so both hosts can show it — SwiftUI puts it in the list as
+    /// the "bottom" row, AppKit measures and positions it after the runs.
+    @ViewBuilder
+    private var statusFooter: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Inline error when the last generation attempt failed
+            if let error = conversationViewModel.error {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text(error)
+                }
+                .font(.footnote)
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+            }
+
+            // What the assistant is doing, where its answer will appear
+            switch conversationViewModel.phase {
+            case .waiting:
+                GeneratingIndicator("Generating" + liveRateSuffix)
+            case .thinking:
+                // Also the way to close the reasoning above it. Its own Hide
+                // control scrolls off the top as the block grows, so this is
+                // the one part of it that stays in reach.
+                Button {
+                    conversationViewModel.isStreamingThinkingExpanded.toggle()
+                } label: {
+                    GeneratingIndicator("Thinking" + liveRateSuffix)
+                }
+                .buttonStyle(.plain)
+                .help(conversationViewModel.isStreamingThinkingExpanded
+                      ? "Hide the reasoning above"
+                      : "Show the reasoning above")
+            case .responding, .suggesting, .idle:
+                EmptyView()
+            }
+
+            // Suggestions, or a note that they're on their way, in the place
+            // they'll appear
+            if conversationViewModel.phase == .suggesting {
+                GeneratingIndicator("Generating suggestions", alignment: .trailing)
+            } else if !conversationViewModel.suggestions.isEmpty {
+                SuggestionList(suggestions: conversationViewModel.suggestions) { suggestion in
+                    SuggestionView(suggestion: suggestion) { handleSubmit($0) }
+                }
+            }
+        }
+    }
+
+    /// The height a run is held at, being the tallest it has measured.
+    ///
+    /// Nothing while a turn is generating: the newest run is where the answer
+    /// is being written, so its height is supposed to change, and holding it
+    /// at what it measured a moment ago would fight every token.
+    ///
+    /// Only *while generating*, though. Exempting the newest run at all times
+    /// left the largest row in the conversation free to move, and it was the
+    /// whole of the remaining wobble — the content sat perfectly still for
+    /// stretches and then dipped by two thousand points, which is the size of
+    /// that one message.
+    private func pinnedHeight(for run: Run, at index: Int) -> CGFloat? {
+        let isNewest = index == conversationViewModel.runs.count - 1
+        if isNewest, conversationViewModel.isGenerating { return nil }
+        return conversationViewModel.runHeights.measuredHeight(for: run.id)
+    }
+
+    /// Builds the rest of the conversation a few runs at a time, once the
+    /// newest ones are on screen.
+    ///
+    /// Scrolling up used to jump, and this is why: a run reserved at an
+    /// *estimated* height and then built at its real one changes the height of
+    /// everything above the reader, and the scroll offset is measured from the
+    /// top — so the content under the cursor slides out from under it. The
+    /// estimates run low, so each run scrolled into grows and shoves the reader
+    /// further up. It settled only at the top of the thread, because by then
+    /// everything had been measured.
+    ///
+    /// Better estimates would only make the jump smaller. What removes it is
+    /// having measured everything before the reader arrives — the same trick a
+    /// browser plays when a fast scroll shows blank space that fills in a
+    /// moment later. The work is the same as it ever was; it just happens after
+    /// the first paint rather than before it, which is the difference between
+    /// a slow open and none at all.
+    ///
+    /// Batched with a breath between, so the main thread stays answerable
+    /// rather than blocking for a second while somebody reads.
+    private func measureRemainingRuns(proxy: ScrollViewProxy) async {
+        let total = conversationViewModel.runs.count
+        var lower = window.lowerBound
+
+        while lower > 0 {
+            try? await Task.sleep(for: .milliseconds(80))
+            if Task.isCancelled { return }
+
+            // A turn in flight owns the view: growing the content above the
+            // newest message while it's being written is exactly the fight
+            // that made the whole message bob.
+            guard !conversationViewModel.isGenerating else { return }
+
+            // The reader has scrolled somewhere of their own accord; leave the
+            // window to the scroll geometry from here.
+            guard scroll.isFollowing else { return }
+
+            lower = max(0, lower - 2)
+            renderWindow = RunWindow(lowerBound: lower, upperBound: total - 1)
+
+            // The content just grew above the reader, so put them back where
+            // they were. They're at the newest message — that's what
+            // `isFollowing` means here — so the bottom is where they were.
+            proxy.scrollTo("bottom", anchor: .bottom)
         }
     }
 

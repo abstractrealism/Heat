@@ -490,7 +490,6 @@ final class ConversationViewModel {
             self.conversation = conversation
             self.file = file
             hasLoadedFromDisk = true
-            ChatDebug.log("⏱ load \(ContinuousClock.now - started) | \(conversation.messages.count) messages")
 
             // A find can be set up before the conversation is here: opening a
             // search result asks the store for a view model, which arrives
@@ -503,6 +502,16 @@ final class ConversationViewModel {
             state.log(error: error)
         }
     }
+
+    /// What each run measured last time it was drawn, so a run off screen can
+    /// reserve its space without being laid out. See `RunHeightCache`.
+    ///
+    /// Held here rather than in the view for the same reason the find state is:
+    /// the view is torn down when you switch threads, and throwing the
+    /// measurements away would make coming back cost a cold open. Marked
+    /// `@ObservationIgnored` because it is written to during layout — anything
+    /// observing it would schedule a render pass from inside one.
+    @ObservationIgnored let runHeights = RunHeightCache()
 
     /// How often a streaming answer is published to the view. Fast enough to
     /// read as continuous, slow enough that re-rendering a long answer doesn't
