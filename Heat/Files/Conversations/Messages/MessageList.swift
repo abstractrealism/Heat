@@ -165,6 +165,7 @@ struct MessageList: View {
                         .environment(conversationViewModel)
                 )
             },
+            footerRevision: footerRevision,
             onUserScroll: {
                 // The coordinator only reports scrolling it didn't cause, so
                 // this is always the reader.
@@ -487,6 +488,31 @@ struct MessageList: View {
         }
         .textual.textSelectionScope(conversationViewModel.selectionScope)
     }
+
+    #if os(macOS)
+    /// Everything `statusFooter` decides what to draw from, gathered where
+    /// SwiftUI is watching.
+    ///
+    /// The footer is handed to the transcript as a closure, and the reads
+    /// inside it happen when AppKit calls it rather than during any `body` —
+    /// so nothing here observes them and nothing re-renders when they change.
+    /// Reading them *here* is what makes this view re-render; comparing them
+    /// in the coordinator is what makes it rebuild the footer.
+    ///
+    /// The live token rate is deliberately left out. It moves several times a
+    /// second while a turn streams, and it is a cosmetic suffix on a line of
+    /// text — not worth rebuilding and re-measuring the footer for.
+    private var footerRevision: String {
+        let error = conversationViewModel.error ?? ""
+        let suggestions = conversationViewModel.suggestions.joined(separator: "\u{1F}")
+        return [
+            String(describing: conversationViewModel.phase),
+            error,
+            suggestions,
+            String(conversationViewModel.isStreamingThinkingExpanded),
+        ].joined(separator: "\u{1E}")
+    }
+    #endif
 
     /// What sits after the last run: any error, what the model is doing, and
     /// the suggestions when they arrive.
