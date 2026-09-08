@@ -13,7 +13,25 @@ public final class API {
     private var session: URLSession = {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForRequest = 60       // keep it conservative
-        cfg.waitsForConnectivity = true          // keeps behaviour similar
+
+        // A refused connection has to be reported, not waited out.
+        //
+        // This was `true`, under a comment saying it kept behaviour similar —
+        // it did the opposite. `URLSession.shared` waits for nothing, and
+        // waiting means a task that cannot connect does not fail: it sits
+        // until connectivity changes, bounded only by
+        // `timeoutIntervalForResource`, which defaults to a week. So stopping
+        // the Ollama server didn't produce an error anywhere. Nothing was
+        // thrown, so nothing was caught, and the conversation showed
+        // "Generating…" indefinitely for a request that had been refused in
+        // 30 milliseconds. Measured: identical code throws
+        // `NSURLErrorCannotConnectToHost` in 0.07s with a default session and
+        // was still waiting after 20s with this one.
+        //
+        // Waiting is for work that can afford to happen later. Someone
+        // watching for an answer is owed the news instead.
+        cfg.waitsForConnectivity = false
+
         return URLSession(configuration: cfg)
     }()
 

@@ -1119,6 +1119,15 @@ final class ConversationViewModel {
             // indicator doesn't spin forever.
             conversation.state = .none
             self.error = errorMessage(for: error)
+
+            // The prompt is saved as soon as it's sent, so the conversation on
+            // disk says `.processing`. Clearing that only in memory leaves a
+            // thread that reads as generating for good: reopening it, or
+            // restarting the app, brings the indicator back with no turn
+            // behind it. Best-effort — a failed save must not replace the
+            // failure being reported.
+            try? await API.shared.fileUpdate(file.id, object: conversation)
+
             throw Error.generationError("\(error)")
         }
     }
