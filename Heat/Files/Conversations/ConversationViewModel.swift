@@ -1136,6 +1136,36 @@ final class ConversationViewModel {
                 return "Missing configuration. Try restarting the app or resetting data in the menu."
             }
         }
+
+        // Whether the service could be reached at all. A local server that
+        // isn't running refuses the connection immediately and cleanly, but
+        // the error says so as a wall of NSError user info with "Could not
+        // connect to the server" somewhere in the middle of it — which in a
+        // conversation reads as noise rather than as the one thing it needs
+        // to say, which is that nothing is listening.
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            // Resolved the same way the request itself resolves it, so the
+            // name is the service that was actually asked.
+            let service = try? API.shared.resolvedChatService(
+                serviceID: conversation.serviceID,
+                modelID: conversation.modelID
+            ).0
+            let name = service?.name ?? "The model service"
+            let host = service.map { " at \($0.host)" } ?? ""
+
+            switch nsError.code {
+            case NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost,
+                 NSURLErrorDNSLookupFailed, NSURLErrorNotConnectedToInternet,
+                 NSURLErrorNetworkConnectionLost:
+                return "\(name) didn't answer\(host). Check that it's running."
+            case NSURLErrorTimedOut:
+                return "\(name) took too long to answer\(host). It may be loading a model, or it may have stopped responding."
+            default:
+                return "\(name) couldn't be reached\(host): \(nsError.localizedDescription)"
+            }
+        }
+
         return "\(error)"
     }
 

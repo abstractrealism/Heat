@@ -46,6 +46,18 @@ struct TranscriptView: NSViewRepresentable {
     /// and any error.
     let footer: () -> AnyView
 
+    /// What the footer is currently saying, so a change to it can be noticed.
+    ///
+    /// The footer is built by a closure the coordinator calls, and a closure
+    /// called from AppKit layout code is outside SwiftUI's observation: the
+    /// state it reads is read there, not during anyone's `body`, so nothing
+    /// re-renders when that state changes. The result is a snapshot, and it
+    /// used to be rebuilt only when `revision` moved — that is, when the
+    /// conversation was written to disk. A turn that *fails* writes nothing,
+    /// so the footer kept drawing the last thing it had been given, which was
+    /// "Generating…", while the error sat in the view model unread.
+    let footerRevision: String
+
     /// Told when the reader scrolls, so following can stand down.
     let onUserScroll: () -> Void
 
@@ -73,6 +85,7 @@ struct TranscriptView: NSViewRepresentable {
             scrollRequest: scrollRequest,
             content: content,
             footer: footer,
+            footerRevision: footerRevision,
             onUserScroll: onUserScroll
         )
     }
@@ -123,6 +136,7 @@ final class TranscriptCoordinator: NSObject {
     private var footerView: NSHostingView<AnyView>?
 
     private var lastRevision: Date?
+    private var lastFooterRevision: String?
     private var lastScrollRequest: TranscriptScroll?
 
     /// Whether new content should pull the view along with it.
@@ -215,12 +229,16 @@ final class TranscriptCoordinator: NSObject {
         scrollRequest: TranscriptScroll?,
         content: @escaping (Run) -> AnyView,
         footer: @escaping () -> AnyView,
+        footerRevision: String,
         onUserScroll: @escaping () -> Void
     ) {
         self.heights = heights
         self.content = content
         self.footerBuilder = footer
         self.onUserScroll = onUserScroll
+
+        let footerChanged = lastFooterRevision != footerRevision
+        lastFooterRevision = footerRevision
 
         let runsChanged = self.runs.map(\.id) != runs.map(\.id)
         let revisionChanged = lastRevision != revision
@@ -244,7 +262,26 @@ final class TranscriptCoordinator: NSObject {
             if let newest = runs.last, let view = hosted[newest.id] {
                 view.rootView = rootView(for: newest, width: view.builtAtWidth)
             }
+        }
+
+        if revisionChanged || footerChanged {
             refreshFooter()
+        }
+
+        // A hosting view reports the size of what it has laid out, and it has
+        // not laid the replacement out yet — so the pass below measures the
+        // footer that was just thrown away. That was harmless while the footer
+        // only ever grew by a line of status text, and isn't when an error
+        // appears where there was nothing, which leaves it clipped. Ask again
+        // once SwiftUI has caught up.
+        //
+        // Only when the footer actually changed. `revisionChanged` fires on
+        // every publish of a streaming answer, and a second layout pass per
+        // token is exactly the cost this view exists to avoid.
+        if footerChanged {
+            DispatchQueue.main.async { [weak self] in
+                self?.layoutRows()
+            }
         }
 
         if openedNewConversation {
