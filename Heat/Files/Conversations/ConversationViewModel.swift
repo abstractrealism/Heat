@@ -1234,6 +1234,15 @@ final class ConversationViewModel {
     }
 
     func generateTitle() async throws {
+        // The copy held here was taken when the conversation was opened, so a
+        // rename since then is on disk and not in it. That mattered twice over:
+        // the guard below read the old name and named an already-named
+        // conversation, and the save at the end of the turn wrote the whole
+        // stale record back — which is why renaming a thread lasted exactly
+        // until its next message.
+        if let stored = try? API.shared.file(file.id) {
+            file = stored
+        }
         guard file.name == nil else { return }
 
         // Two attempts at most. What this recovers from is a reply carrying no

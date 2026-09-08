@@ -206,7 +206,7 @@ struct FileList: View {
         .contextMenu(forSelectionType: String.self) { fileIDs in
             Group {
                 Button("Show in Finder") { handleShowFinder(fileIDs) }
-                Button("Edit") { handleEdit(fileIDs) }
+                Button("Rename") { handleRename(fileIDs) }
 
                 let groupable = groupableCount(fileIDs)
                 if groupable > 0 {
@@ -401,7 +401,9 @@ struct FileList: View {
         #endif
     }
 
-    func handleEdit(_ fileIDs: Set<String>) {
+    /// Named for what it does rather than what it opens: the form behind it
+    /// has only ever had a name field in it.
+    func handleRename(_ fileIDs: Set<String>) {
         if let fileID = fileIDs.first {
             state.selectedFileID = fileID
             isEditingFile = true
