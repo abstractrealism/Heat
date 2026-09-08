@@ -484,9 +484,6 @@ final class ConversationViewModel {
         guard !isGenerating else { return }
         if hasLoadedFromDisk, file.modified == self.file.modified { return }
         do {
-            // TEMPORARY — brackets the decode-and-assign for the slow-open
-            // attribution; the assign is what invalidates every observer.
-            let started = ContinuousClock.now
             let conversation = try state.file(Conversation.self, fileID: file.id)
             self.conversation = conversation
             self.file = file
