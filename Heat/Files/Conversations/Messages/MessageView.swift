@@ -1,6 +1,7 @@
 import SwiftUI
 import AVKit
 import QuickLook
+import Textual
 import GenKit
 import HeatKit
 
@@ -47,6 +48,32 @@ struct MessageView: View {
         // sits, tinting the message as well only draws the eye away from the
         // word it is meant to land on.
         .environment(\.findHighlightQuery, inTextQuery)
+        // Joins the context menu the text already offers. Scoped to the
+        // message rather than the run so that the item acts on the one under
+        // the pointer: a run is a whole exchange, and "this message" has to
+        // mean the one you asked about.
+        .textual.textContextMenuItems(copyMessageItems)
+    }
+
+    /// Copying a message whole, without selecting it first.
+    ///
+    /// What gets copied is the text as it was written — the markdown source
+    /// with reasoning stripped, which is the same text a find searches. Only
+    /// offered where there is any: a tool message's content is the machinery
+    /// of an answer rather than the answer.
+    private var copyMessageItems: [TextContextMenuItem] {
+        let text = ConversationSearch.searchableText(of: message)
+        guard !text.isEmpty else { return [] }
+        return [
+            .init(title: "Copy Message") {
+                #if os(macOS)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                #else
+                UIPasteboard.general.string = text
+                #endif
+            }
+        ]
     }
 
     /// What this message should mark, if anything: the query, and which of its
