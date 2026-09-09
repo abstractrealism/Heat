@@ -2,6 +2,18 @@ import SwiftUI
 import SharedKit
 import HeatKit
 
+extension EnvironmentValues {
+    /// Room to leave at the head of the transcript for whatever is laid over
+    /// the top of it.
+    ///
+    /// Only the find bar, so far. It deliberately doesn't take a row of its
+    /// own — see the overlay below — which leaves it sitting on top of the
+    /// first message, and the first message is a prompt someone is likely to
+    /// be looking for. Space at the start is enough: the rest of the thread
+    /// scrolls under it as usual.
+    @Entry var transcriptTopInset: CGFloat = 0
+}
+
 struct ConversationView: View {
     @Environment(AppState.self) var state
 
@@ -19,6 +31,15 @@ struct ConversationView: View {
 
     private var fileID: String { file.id }
 
+    /// How much room the find bar takes at the top, measured rather than
+    /// assumed — it's a row of controls sized by its own content and its own
+    /// padding, and a number copied from that padding would be a number to
+    /// keep in step by hand.
+    @State private var findBarHeight: CGFloat = 0
+
+    /// A little clear air between the bar and the message under it.
+    private let findBarGap: CGFloat = 8
+
     var body: some View {
         MessageList()
             // Over the thread rather than above it: a bar that takes its own
@@ -27,9 +48,18 @@ struct ConversationView: View {
             .overlay(alignment: .topTrailing) {
                 if conversationViewModel.isFinding {
                     FindBar()
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            proxy.size.height
+                        } action: { height in
+                            findBarHeight = height
+                        }
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
+            .environment(
+                \.transcriptTopInset,
+                conversationViewModel.isFinding ? findBarHeight + findBarGap : 0
+            )
             .animation(.easeOut(duration: 0.15), value: conversationViewModel.isFinding)
             .navigationTitle(conversationViewModel.title)
             .safeAreaInset(edge: .bottom, alignment: .center) {
