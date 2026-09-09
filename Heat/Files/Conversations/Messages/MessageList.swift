@@ -8,6 +8,10 @@ struct MessageList: View {
     @Environment(AppState.self) var state
     @Environment(ConversationViewModel.self) var conversationViewModel
 
+    /// Room to leave at the head of the transcript for the find bar, which is
+    /// drawn over it rather than above it.
+    @Environment(\.transcriptTopInset) private var transcriptTopInset
+
     /// Scroll bookkeeping: whether to keep following the newest message, and
     /// how far from the end the view is. Read only inside handlers — nothing
     /// drawn depends on either value.
@@ -166,6 +170,7 @@ struct MessageList: View {
                 )
             },
             footerRevision: footerRevision,
+            topInset: transcriptTopInset,
             onUserScroll: {
                 // The coordinator only reports scrolling it didn't cause, so
                 // this is always the reader.

@@ -58,6 +58,15 @@ struct TranscriptView: NSViewRepresentable {
     /// "Generating…", while the error sat in the view model unread.
     let footerRevision: String
 
+    /// Room at the head of the document, for anything laid over the top of the
+    /// transcript. See `EnvironmentValues.transcriptTopInset`.
+    ///
+    /// Space rather than a scroll view inset on purpose: an inset leaves the
+    /// content where it is and merely allows scrolling further up, so the
+    /// message the bar covers stays covered until the reader scrolls. Starting
+    /// the first row lower moves it out from under the bar, which is the point.
+    let topInset: CGFloat
+
     /// Told when the reader scrolls, so following can stand down.
     let onUserScroll: () -> Void
 
@@ -86,6 +95,7 @@ struct TranscriptView: NSViewRepresentable {
             content: content,
             footer: footer,
             footerRevision: footerRevision,
+            topInset: topInset,
             onUserScroll: onUserScroll
         )
     }
@@ -137,6 +147,9 @@ final class TranscriptCoordinator: NSObject {
 
     private var lastRevision: Date?
     private var lastFooterRevision: String?
+
+    /// Room held at the head of the document. See `TranscriptView.topInset`.
+    private var topInset: CGFloat = 0
     private var lastScrollRequest: TranscriptScroll?
 
     /// Whether new content should pull the view along with it.
@@ -230,6 +243,7 @@ final class TranscriptCoordinator: NSObject {
         content: @escaping (Run) -> AnyView,
         footer: @escaping () -> AnyView,
         footerRevision: String,
+        topInset: CGFloat,
         onUserScroll: @escaping () -> Void
     ) {
         self.heights = heights
@@ -239,6 +253,12 @@ final class TranscriptCoordinator: NSObject {
 
         let footerChanged = lastFooterRevision != footerRevision
         lastFooterRevision = footerRevision
+
+        // Every row moves by the difference, so this is a re-place rather than
+        // a rebuild: the hosting views keep their content and their measured
+        // heights, and only their frames change.
+        let insetChanged = abs(self.topInset - topInset) > 0.5
+        self.topInset = topInset
 
         let runsChanged = self.runs.map(\.id) != runs.map(\.id)
         let revisionChanged = lastRevision != revision
@@ -299,7 +319,11 @@ final class TranscriptCoordinator: NSObject {
         if let scrollRequest, scrollRequest != lastScrollRequest {
             lastScrollRequest = scrollRequest
             apply(scrollRequest)
-        } else if isFollowing, revisionChanged {
+        } else if isFollowing, revisionChanged || insetChanged {
+            // The inset moves the end along with everything else, so a reader
+            // who was at the end is suddenly a bar's height short of it — and
+            // the next scroll event would read that as having deliberately
+            // scrolled away and stop following.
             scrollToBottom()
         }
     }
@@ -311,7 +335,7 @@ final class TranscriptCoordinator: NSObject {
         guard let heights else { return [] }
         var result: [CGFloat] = []
         result.reserveCapacity(runs.count)
-        var position: CGFloat = 0
+        var position: CGFloat = topInset
         for run in runs {
             result.append(position)
             position += heights.height(for: run) + Self.rowSpacing
@@ -341,7 +365,9 @@ final class TranscriptCoordinator: NSObject {
     /// messages on top of one another and left gaps under others — the numbers
     /// used to place a row were not the numbers it turned out to need.
     private func layoutRows() {
-        guard let scrollView, let document, let heights, let content else { return }
+        // `content` is checked rather than bound: what reads it is
+        // `rootView(for:width:)`, which reaches for it itself.
+        guard let scrollView, let document, let heights, content != nil else { return }
         guard !isLayingOut else { return }
 
         let paneWidth = scrollView.contentSize.width
@@ -430,7 +456,9 @@ final class TranscriptCoordinator: NSObject {
             }
         }
 
-        let contentHeight = (believed.last ?? 0)
+        // `topInset` where there are no runs at all: the offsets carry it, and
+        // with none of them the footer would otherwise sit under the bar.
+        let contentHeight = (believed.last ?? topInset)
             + (runs.last.map { heights.height(for: $0) } ?? 0)
         let footerHeight = layoutFooter(width: width, top: contentHeight)
         let totalHeight = contentHeight + footerHeight
