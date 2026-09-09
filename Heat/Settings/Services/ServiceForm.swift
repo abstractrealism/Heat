@@ -11,6 +11,21 @@ struct ServiceForm: View {
 
     @State var service: Service
 
+    /// How the last attempt to load this service's models went.
+    ///
+    /// Shown rather than only logged. A failure went to Heat's own log store,
+    /// which has no viewer anywhere in the app, so pressing Load Models with a
+    /// wrong address or a bad key was indistinguishable from pressing a button
+    /// that wasn't wired to anything.
+    private enum ModelLoad: Equatable {
+        case idle
+        case loading
+        case loaded(Int)
+        case failed(String)
+    }
+
+    @State private var modelLoad: ModelLoad = .idle
+
     /// Held as a value rather than written at the call site.
     ///
     /// A string literal passed to `help` is read as a localization key and run
@@ -78,7 +93,25 @@ struct ServiceForm: View {
                 Button("Load Models") {
                     handleLoadModels()
                 }
-                .disabled(service.token.isEmpty && service.host.isEmpty)
+                .disabled(modelLoad == .loading || (service.token.isEmpty && service.host.isEmpty))
+            } footer: {
+                switch modelLoad {
+                case .idle:
+                    EmptyView()
+                case .loading:
+                    Text("Asking \(service.name)…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                case .loaded(let count):
+                    Text(count == 1 ? "Found 1 model." : "Found \(count) models.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                case .failed(let message):
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                }
             }
 
             contextLengthSection
@@ -217,16 +250,43 @@ struct ServiceForm: View {
         // timed out — which is the delay when opening a service you haven't
         // configured.
         guard !service.host.isEmpty || !service.token.isEmpty else { return }
+        modelLoad = .loading
         do {
             let client = service.modelService(session: nil)
             let models = try await client.models()
             guard !Task.isCancelled else { return }
             service.models = models
             manager.update(service: service)
+            modelLoad = .loaded(models.count)
         } catch {
             guard !Task.isCancelled else { return }
             state.log(error: error)
+            modelLoad = .failed(failureMessage(for: error))
         }
+    }
+
+    /// What to say when a service won't answer.
+    ///
+    /// The address is the likeliest thing to be wrong, and wrong in a
+    /// particular way: an API's documentation shows the endpoint you'd curl,
+    /// which is the base address plus a path, and pasting that in leaves every
+    /// request reaching for a path underneath it. So the address Heat ships is
+    /// offered whenever it differs from what's in the field.
+    private func failureMessage(for error: Swift.Error) -> String {
+        // A URL error's `description` is a wall of user info; its
+        // localizedDescription is the one sentence worth reading. The reverse
+        // is true of the services' own error enums, which describe themselves.
+        let nsError = error as NSError
+        let detail = nsError.domain == NSURLErrorDomain
+            ? nsError.localizedDescription
+            : "\(error)"
+
+        var message = "Couldn't load models. \(detail)"
+        if let shipped = Defaults.services.first(where: { $0.kind == service.kind })?.host,
+           !shipped.isEmpty, shipped != service.host {
+            message += "\n\nHeat's address for \(service.name) is \(shipped)"
+        }
+        return message
     }
 
     func handleSave() {

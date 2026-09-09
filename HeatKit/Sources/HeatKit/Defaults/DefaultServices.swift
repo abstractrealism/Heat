@@ -7,7 +7,8 @@ extension Defaults {
     public static let anthropic =
         Service(
             kind: .anthropic,
-            name: "Anthropic"
+            name: "Anthropic",
+            host: "https://api.anthropic.com/v1"
         )
 
     public static let deepseek =
@@ -20,13 +21,15 @@ extension Defaults {
     public static let elevenlabs =
         Service(
             kind: .elevenLabs,
-            name: "ElevenLabs"
+            name: "ElevenLabs",
+            host: "https://api.elevenlabs.io/v1"
         )
 
     public static let fal =
         Service(
             kind: .fal,
-            name: "Fal"
+            name: "Fal",
+            host: "https://fal.run/fal-ai"
         )
 
     public static let grok =
@@ -46,7 +49,8 @@ extension Defaults {
     public static let mistral =
         Service(
             kind: .mistral,
-            name: "Mistral"
+            name: "Mistral",
+            host: "https://api.mistral.ai/v1"
         )
 
     public static let ollama =
@@ -59,6 +63,7 @@ extension Defaults {
     public static let openAI =
         Service(
             kind: .openAI,
-            name: "OpenAI"
+            name: "OpenAI",
+            host: "https://api.openai.com/v1"
         )
 }
