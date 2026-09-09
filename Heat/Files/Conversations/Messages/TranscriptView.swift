@@ -148,8 +148,18 @@ final class TranscriptCoordinator: NSObject {
     private var lastRevision: Date?
     private var lastFooterRevision: String?
 
-    /// Room held at the head of the document. See `TranscriptView.topInset`.
+    /// Room held at the head of the document for whatever is laid over the
+    /// transcript. See `TranscriptView.topInset`.
     private var topInset: CGFloat = 0
+
+    /// Where the first row starts.
+    ///
+    /// The same margin the rows keep from the sides, so the transcript stands
+    /// in from every edge of the pane rather than three of them — the first
+    /// message sat flush against the top — plus whatever is laid over it.
+    private var documentTopInset: CGFloat {
+        Self.horizontalInset + topInset
+    }
     private var lastScrollRequest: TranscriptScroll?
 
     /// Whether new content should pull the view along with it.
@@ -335,7 +345,7 @@ final class TranscriptCoordinator: NSObject {
         guard let heights else { return [] }
         var result: [CGFloat] = []
         result.reserveCapacity(runs.count)
-        var position: CGFloat = topInset
+        var position: CGFloat = documentTopInset
         for run in runs {
             result.append(position)
             position += heights.height(for: run) + Self.rowSpacing
@@ -456,9 +466,9 @@ final class TranscriptCoordinator: NSObject {
             }
         }
 
-        // `topInset` where there are no runs at all: the offsets carry it, and
-        // with none of them the footer would otherwise sit under the bar.
-        let contentHeight = (believed.last ?? topInset)
+        // The inset where there are no runs at all: the offsets carry it, and
+        // with none of them the footer would otherwise sit against the top.
+        let contentHeight = (believed.last ?? documentTopInset)
             + (runs.last.map { heights.height(for: $0) } ?? 0)
         let footerHeight = layoutFooter(width: width, top: contentHeight)
         let totalHeight = contentHeight + footerHeight
