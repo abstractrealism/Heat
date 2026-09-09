@@ -145,6 +145,11 @@ final class TranscriptCoordinator: NSObject {
     /// is the one thing somebody waiting is looking at.
     private var footerView: NSHostingView<AnyView>?
 
+    /// The width the footer's content was pinned to, and whether what it says
+    /// has changed since. See `layoutFooter`.
+    private var footerBuiltAtWidth: CGFloat = 0
+    private var footerNeedsRebuild = false
+
     private var lastRevision: Date?
     private var lastFooterRevision: String?
 
@@ -487,10 +492,23 @@ final class TranscriptCoordinator: NSObject {
         if let existing = footerView {
             view = existing
         } else {
-            view = NSHostingView(rootView: footerBuilder())
+            view = NSHostingView(rootView: AnyView(EmptyView()))
             footerView = view
             document.addSubview(view)
+            footerNeedsRebuild = true
         }
+
+        // Built at an explicit width, for the same reason the rows are: asked
+        // how big it would like to be, SwiftUI answers with its *ideal* size,
+        // and a paragraph's ideal is one line as wide as it likes. Nothing in
+        // here was ever long enough to show it until an error arrived, which
+        // ran off the side of the pane in a single line.
+        if footerNeedsRebuild || abs(footerBuiltAtWidth - width) > 0.5 {
+            view.rootView = AnyView(footerBuilder().frame(width: width))
+            footerBuiltAtWidth = width
+            footerNeedsRebuild = false
+        }
+
         let height = Self.height(of: view, at: width)
         view.frame = NSRect(x: Self.horizontalInset, y: top + Self.rowSpacing, width: width, height: height)
         return height + Self.rowSpacing
@@ -526,9 +544,10 @@ final class TranscriptCoordinator: NSObject {
         return AnyView(content(run).frame(width: width))
     }
 
+    /// Marks the footer for rebuilding rather than rebuilding it here: only
+    /// the layout knows the width it has to be built at.
     private func refreshFooter() {
-        guard let footerBuilder else { return }
-        footerView?.rootView = footerBuilder()
+        footerNeedsRebuild = true
     }
 
     /// A row turned out to be a different height than was assumed for it.
