@@ -12,21 +12,29 @@ struct ServiceDefaults: View {
             Picker("Chats", selection: $manager.serviceChatDefault) {
                 servicePickerView(\.supportsChats)
             }
+            .help("Which service answers your messages when a conversation hasn't been given one of its own.")
             Picker("Images", selection: $manager.serviceImageDefault) {
                 servicePickerView(\.supportsImages)
             }
-            Picker("Embeddings", selection: $manager.serviceEmbeddingDefault) {
-                servicePickerView(\.supportsEmbeddings)
-            }
-            Picker("Transcriptions", selection: $manager.serviceTranscriptionDefault) {
-                servicePickerView(\.supportsTranscriptions)
-            }
-            Picker("Speech", selection: $manager.serviceSpeechDefault) {
-                servicePickerView(\.supportsSpeech)
-            }
+            .help("Which service generates a picture when the assistant is asked for one.")
             Picker("Summarization", selection: $manager.serviceSummarizationDefault) {
                 servicePickerView(\.supportsSummarization)
             }
+            .help("Which service handles Heat's own short jobs: naming a conversation, drafting suggestions, condensing a page it has read. Falls back to the Chats service when unset.")
+
+            // See the note in ServiceForm: nothing reads these three yet.
+            Picker("Embeddings (Not Implemented)", selection: $manager.serviceEmbeddingDefault) {
+                servicePickerView(\.supportsEmbeddings)
+            }
+            .help("Heat doesn't use this yet — the setting is remembered for when it does.")
+            Picker("Transcriptions (Not Implemented)", selection: $manager.serviceTranscriptionDefault) {
+                servicePickerView(\.supportsTranscriptions)
+            }
+            .help("Heat doesn't use this yet — the setting is remembered for when it does.")
+            Picker("Speech (Not Implemented)", selection: $manager.serviceSpeechDefault) {
+                servicePickerView(\.supportsSpeech)
+            }
+            .help("Heat doesn't use this yet — the setting is remembered for when it does.")
         }
 
         Section {
