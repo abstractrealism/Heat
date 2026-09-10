@@ -375,7 +375,7 @@ struct MessageFieldControls: View {
         .help(thinkingHelp)
     }
 
-    /// Struck through where the model is known to refuse it.
+    /// Struck through where asking for it won't be honoured.
     ///
     /// Left in the menu rather than removed: choosing it still does the
     /// nearest thing the model allows, and a list that changes length between
@@ -384,7 +384,7 @@ struct MessageFieldControls: View {
     /// since the request degrades on its own if the guess was wrong.
     private func menuLabel(for effort: ThinkingEffort) -> AttributedString {
         var label = AttributedString(effort.label)
-        if effort == .off, conversationViewModel.modelRefusesToStopThinking {
+        if effort == .off, conversationViewModel.thinkingCannotBeTurnedOff {
             label.strikethroughStyle = .single
         }
         return label
@@ -413,13 +413,13 @@ struct MessageFieldControls: View {
         case .off:
             // Said here as well as struck through in the menu, since a menu
             // item's styling doesn't always survive the trip to AppKit.
-            if conversationViewModel.modelRefusesToStopThinking {
-                return "\(name) reasons on every request and won't be told not to, so this asks it for the least it will do."
+            if conversationViewModel.thinkingCannotBeTurnedOff {
+                return "\(name) reasons whatever it's asked, so this asks it for the least it will do instead."
             }
             return "Reasoning is off for this conversation. The model answers directly."
         case .brief:
-            if conversationViewModel.modelAlwaysReasons {
-                return "\(name) can't be told to stop reasoning, so there's no Off — this asks it for as little as it will do."
+            if conversationViewModel.isStandingInForOff {
+                return "\(name) reasons whatever it's asked, so Off isn't available — this is as little as it will do."
             }
             return "The model reasons briefly here, asked in the prompt to keep it short. How well that lands varies by model."
         case .full:
@@ -428,8 +428,8 @@ struct MessageFieldControls: View {
             // Services with a real effort control, where the level is a
             // request parameter rather than something asked for in the prompt.
             let effort = conversationViewModel.effectiveThinkingEffort
-            if conversationViewModel.modelAlwaysReasons, effort == conversationViewModel.availableThinkingEfforts.first {
-                return "\(name) can't be told to stop reasoning, so there's no Off — this asks it for as little as it will do."
+            if conversationViewModel.isStandingInForOff {
+                return "\(name) reasons whatever it's asked, so Off isn't available — this is as little as it will do."
             }
             return "\(effort.detail). This is sent with the request, so the model is trained to honour it rather than being asked in the prompt."
         }
