@@ -28,5 +28,10 @@ let package = Package(
                 .product(name: "Fuzi", package: "Fuzi"),
             ]
         ),
+        .testTarget(
+            name: "HeatKitTests",
+            dependencies: ["HeatKit"],
+            resources: [.copy("Fixtures")]
+        ),
     ]
 )
