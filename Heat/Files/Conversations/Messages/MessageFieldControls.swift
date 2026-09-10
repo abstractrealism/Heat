@@ -248,9 +248,12 @@ struct MessageFieldControls: View {
 
     // MARK: - Model
 
-    /// Services worth listing: switched on in Settings, and with models loaded.
+    /// Services worth listing: switched on in Settings, with models loaded,
+    /// and with at least one of them set to be offered — a service whose
+    /// models have all been turned off would otherwise be a heading with
+    /// nothing underneath it.
     private var services: [Service] {
-        state.config.selectableServices
+        state.config.selectableServices.filter { !state.config.enabledModels(in: $0).isEmpty }
     }
 
     /// Choosing a model, as something that can be ticked.
@@ -278,7 +281,10 @@ struct MessageFieldControls: View {
             }
             ForEach(services) { service in
                 Section(service.name) {
-                    ForEach(service.models) { model in
+                    // Only what this service is set to offer. See
+                    // `Config.isModelEnabled` — OpenAI alone lists around 130,
+                    // most of them not for conversation at all.
+                    ForEach(state.config.enabledModels(in: service)) { model in
                         // A Toggle rather than a Button carrying a checkmark
                         // image, for the reason the tools menu found: AppKit
                         // takes a menu item's label apart and draws its own,

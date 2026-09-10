@@ -232,3 +232,69 @@ extension Config {
         services.filter { isEnabled($0) && !$0.models.isEmpty }
     }
 }
+
+// MARK: - Model Availability
+
+extension Config {
+
+    /// Which models someone has decided about, either way.
+    ///
+    /// Stored as decisions rather than as a list of what's on, so a model that
+    /// appears later — a provider adding one, or a local install — is judged
+    /// by the same rule as the rest instead of being invisible until found and
+    /// switched on by hand.
+    private var modelChoices: [String: Bool] {
+        get {
+            guard case .object(let entries)? = metadata["modelEnabledByService"] else { return [:] }
+            return entries.compactMapValues(\.boolValue)
+        }
+        set {
+            metadata["modelEnabledByService"] = newValue.isEmpty
+                ? nil
+                : .object(newValue.mapValues { .bool($0) })
+        }
+    }
+
+    /// Keyed by both halves, as context lengths are: two services can offer
+    /// the same model name and not mean the same installation.
+    private func modelKey(serviceID: String, modelID: String) -> String {
+        "\(serviceID)\u{1F}\(modelID)"
+    }
+
+    /// Whether to offer this model when picking one for a conversation.
+    ///
+    /// An explicit decision wins. Failing that the service guesses from the
+    /// name — see `Service.isLikelyChatModel(modelID:)` — because OpenAI keeps
+    /// every model it has ever served and most of them aren't for
+    /// conversation, so "everything until told otherwise" starts anybody new
+    /// with a list of 130 they'd have to prune by hand.
+    public func isModelEnabled(_ model: Model, in service: Service) -> Bool {
+        if let decided = modelChoices[modelKey(serviceID: service.id, modelID: model.id)] {
+            return decided
+        }
+        return service.isLikelyChatModel(modelID: model.id)
+    }
+
+    /// Whether a decision has been recorded, as opposed to the guess standing.
+    public func isModelChoiceExplicit(_ model: Model, in service: Service) -> Bool {
+        modelChoices[modelKey(serviceID: service.id, modelID: model.id)] != nil
+    }
+
+    /// Passing nil forgets the decision and returns the model to the guess.
+    public mutating func setModelEnabled(_ enabled: Bool?, for model: Model, in service: Service) {
+        var choices = modelChoices
+        choices[modelKey(serviceID: service.id, modelID: model.id)] = enabled
+        modelChoices = choices
+    }
+
+    /// Forgets every decision for one service.
+    public mutating func clearModelChoices(in service: Service) {
+        let prefix = "\(service.id)\u{1F}"
+        modelChoices = modelChoices.filter { !$0.key.hasPrefix(prefix) }
+    }
+
+    /// The models to offer for a conversation.
+    public func enabledModels(in service: Service) -> [Model] {
+        service.models.filter { isModelEnabled($0, in: service) }
+    }
+}

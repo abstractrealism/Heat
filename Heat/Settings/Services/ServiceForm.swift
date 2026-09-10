@@ -114,6 +114,7 @@ struct ServiceForm: View {
                 }
             }
 
+            modelAvailabilitySection
             contextLengthSection
             maxTokensSection
         }
@@ -124,6 +125,106 @@ struct ServiceForm: View {
         .onDisappear {
             handleSave()
         }
+    }
+
+    // MARK: - Which models to offer
+
+    /// What's been typed to narrow the list. A service can offer 130 models,
+    /// which is more than anyone scrolls through to find the one they meant.
+    @State private var modelFilter = ""
+
+    private var filteredModels: [Model] {
+        let query = modelFilter.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else { return service.models }
+        return service.models.filter {
+            $0.id.lowercased().contains(query) || ($0.name?.lowercased().contains(query) ?? false)
+        }
+    }
+
+    @ViewBuilder
+    private var modelAvailabilitySection: some View {
+        Section {
+            if service.models.isEmpty {
+                Text("Load Models first, then choose which of them to offer.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 8) {
+                    Button("Enable All") { setAllModels(true) }
+                    Button("Disable All") { setAllModels(false) }
+                    Button("Use Suggested") { clearModelChoices() }
+                        .help("Forgets every choice here and goes back to Heat's guess: models that look like they're for conversation are offered, and video, image, audio, embedding and pre-chat models aren't.")
+                    Spacer(minLength: 0)
+                    Text("\(enabledCount) of \(service.models.count)")
+                        .font(.footnote)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+
+                if service.models.count > 8 {
+                    TextField("Filter", text: $modelFilter)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                }
+
+                ForEach(filteredModels) { model in
+                    Toggle(isOn: modelBinding(for: model)) {
+                        HStack(spacing: 6) {
+                            Text(model.name ?? model.id)
+                            if !state.config.isModelChoiceExplicit(model, in: service) {
+                                // Says the row is following the guess rather
+                                // than a decision, so "Use Suggested" has
+                                // something visible to have done.
+                                Text("suggested")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                }
+
+                if filteredModels.isEmpty {
+                    Text("No model matches “\(modelFilter)”.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("Models to Offer")
+        } footer: {
+            Text("Which of this service's models appear in the picker beside the message field. The defaults above are unaffected, so a model can answer for this service without being offered per conversation.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var enabledCount: Int {
+        service.models.filter { state.config.isModelEnabled($0, in: service) }.count
+    }
+
+    private func modelBinding(for model: Model) -> Binding<Bool> {
+        Binding(
+            get: { state.config.isModelEnabled(model, in: service) },
+            set: { isOn in
+                var config = state.config
+                config.setModelEnabled(isOn, for: model, in: service)
+                Task { try? await API.shared.configUpdate(config) }
+            }
+        )
+    }
+
+    private func setAllModels(_ enabled: Bool) {
+        var config = state.config
+        for model in service.models {
+            config.setModelEnabled(enabled, for: model, in: service)
+        }
+        Task { try? await API.shared.configUpdate(config) }
+    }
+
+    private func clearModelChoices() {
+        var config = state.config
+        config.clearModelChoices(in: service)
+        Task { try? await API.shared.configUpdate(config) }
     }
 
     // MARK: - Context length
