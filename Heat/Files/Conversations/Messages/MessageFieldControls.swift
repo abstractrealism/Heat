@@ -253,6 +253,21 @@ struct MessageFieldControls: View {
         state.config.selectableServices
     }
 
+    /// Choosing a model, as something that can be ticked.
+    ///
+    /// Only turning one on means anything. Unticking the current model would
+    /// leave the conversation with none, and there is already a way to say
+    /// "whatever Settings says" — the Use Default item below the list.
+    private func binding(for model: Model, in service: Service) -> Binding<Bool> {
+        Binding(
+            get: { isSelected(service: service, model: model) },
+            set: { isOn in
+                guard isOn else { return }
+                conversationViewModel.selectModel(serviceID: service.id, modelID: model.id)
+            }
+        )
+    }
+
     @ViewBuilder
     private var modelPicker: some View {
         Menu {
@@ -264,18 +279,17 @@ struct MessageFieldControls: View {
             ForEach(services) { service in
                 Section(service.name) {
                     ForEach(service.models) { model in
-                        Button {
-                            conversationViewModel.selectModel(serviceID: service.id, modelID: model.id)
-                        } label: {
-                            // A checkmark rather than a highlighted row: this is
-                            // a menu of every model across every service, and
-                            // the same name can appear under two of them.
-                            if isSelected(service: service, model: model) {
-                                Label(model.name ?? model.id, systemImage: "checkmark")
-                            } else {
-                                Text(model.name ?? model.id)
-                            }
-                        }
+                        // A Toggle rather than a Button carrying a checkmark
+                        // image, for the reason the tools menu found: AppKit
+                        // takes a menu item's label apart and draws its own,
+                        // so the image was discarded and the selected model
+                        // looked no different from the rest. A Toggle asks for
+                        // the platform's own checkmark instead of drawing one.
+                        //
+                        // A checkmark rather than a highlighted row because
+                        // this lists every model across every service, and the
+                        // same name can appear under two of them.
+                        Toggle(model.name ?? model.id, isOn: binding(for: model, in: service))
                     }
                 }
             }
