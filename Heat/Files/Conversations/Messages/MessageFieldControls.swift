@@ -349,7 +349,7 @@ struct MessageFieldControls: View {
                 set: { conversationViewModel.setThinkingEffort($0) }
             )) {
                 ForEach(conversationViewModel.availableThinkingEfforts) { option in
-                    Text(option.label).tag(option)
+                    Text(menuLabel(for: option)).tag(option)
                 }
             }
             .pickerStyle(.inline)
@@ -375,6 +375,21 @@ struct MessageFieldControls: View {
         .help(thinkingHelp)
     }
 
+    /// Struck through where the model is known to refuse it.
+    ///
+    /// Left in the menu rather than removed: choosing it still does the
+    /// nearest thing the model allows, and a list that changes length between
+    /// models is harder to use than one where an item is visibly unavailable.
+    /// Only a known refusal is marked — an unrecognised model says nothing,
+    /// since the request degrades on its own if the guess was wrong.
+    private func menuLabel(for effort: ThinkingEffort) -> AttributedString {
+        var label = AttributedString(effort.label)
+        if effort == .off, conversationViewModel.modelRefusesToStopThinking {
+            label.strikethroughStyle = .single
+        }
+        return label
+    }
+
     /// "Thinking" on its own while the effort is whatever it always was, so
     /// the row doesn't grow a qualifier nobody asked for; named only once it
     /// says something.
@@ -396,6 +411,11 @@ struct MessageFieldControls: View {
         let name = conversationViewModel.selectedModelName
         switch conversationViewModel.effectiveThinkingEffort {
         case .off:
+            // Said here as well as struck through in the menu, since a menu
+            // item's styling doesn't always survive the trip to AppKit.
+            if conversationViewModel.modelRefusesToStopThinking {
+                return "\(name) reasons on every request and won't be told not to, so this asks it for the least it will do."
+            }
             return "Reasoning is off for this conversation. The model answers directly."
         case .brief:
             if conversationViewModel.modelAlwaysReasons {

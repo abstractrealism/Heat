@@ -329,10 +329,24 @@ final class ConversationViewModel {
     /// control has to offer: an effort level is a thing a particular API
     /// takes, and they don't agree on what the levels are.
     var selectedServiceKind: Service.Kind? {
+        resolvedChatService?.0.kind
+    }
+
+    private var resolvedChatService: (Service, Model)? {
         try? API.shared.resolvedChatService(
             serviceID: conversation.serviceID,
             modelID: conversation.modelID
-        ).0.kind
+        )
+    }
+
+    /// Whether the service will refuse to be told not to reason.
+    ///
+    /// Only a known refusal counts. An unrecognised model reads as nil, and
+    /// nil stays quiet: the request degrades to the least reasoning if the
+    /// guess is wrong, so there's nothing to warn anybody about in advance.
+    var modelRefusesToStopThinking: Bool {
+        guard let (service, model) = resolvedChatService else { return false }
+        return service.canDisableThinking(modelID: model.id) == false
     }
 
     /// What the model will actually do — which is what the control should say
@@ -348,8 +362,11 @@ final class ConversationViewModel {
         // levels are its own — so what was asked for is translated rather than
         // sent somewhere it means nothing.
         let chosen = selectedServiceKind.map { thinkingEffort.offered(by: $0) } ?? thinkingEffort
-        guard modelAlwaysReasons, chosen == .off else { return chosen }
-        return availableThinkingEfforts.first ?? .brief
+        guard chosen == .off, modelAlwaysReasons || modelRefusesToStopThinking else { return chosen }
+        // The least it will do, which is what the request will ask for. `off`
+        // is skipped explicitly: it's the first level a service offers, and
+        // answering with it here would say nothing had changed.
+        return availableThinkingEfforts.first { $0 != .off } ?? .brief
     }
 
     /// Switches a tool on or off for this conversation alone.
