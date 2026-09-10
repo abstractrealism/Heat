@@ -115,6 +115,7 @@ struct ServiceForm: View {
             }
 
             contextLengthSection
+            maxTokensSection
         }
         .navigationTitle(service.name)
         .task(id: service.id) {
@@ -212,6 +213,71 @@ struct ServiceForm: View {
     private func updateContextLength(_ length: Int?, for model: Model) {
         var config = state.config
         config.setContextLength(length, serviceID: service.id, modelID: model.id)
+        Task { try? await API.shared.configUpdate(config) }
+    }
+
+    // MARK: - Maximum reply length
+
+    /// Powers of two again, for the same reason: 256 to 65,536 spans eight
+    /// doublings, and linearly the short end would be a sliver of the track.
+    private static let minReplyExponent = 8.0    // 256
+    private static let maxReplyExponent = 16.0   // 65,536
+
+    @ViewBuilder
+    private var maxTokensSection: some View {
+        Section {
+            let chosen = state.config.maxTokens(serviceID: service.id)
+
+            Slider(
+                value: maxTokensExponentBinding,
+                in: Self.minReplyExponent...Self.maxReplyExponent,
+                step: 1
+            )
+            .help("The most a single reply may generate. Where a model reasons before answering, this covers the reasoning and the reply together — so a figure that was generous for answers alone can be spent thinking, and the answer arrives cut off.")
+
+            LabeledContent("Longest reply") {
+                HStack(spacing: 8) {
+                    Text(maxTokensCaption)
+                        .monospacedDigit()
+                        .foregroundStyle(chosen == nil ? .secondary : .primary)
+                    if chosen != nil {
+                        Button("Use Default") {
+                            updateMaxTokens(nil)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Longest Reply")
+        } footer: {
+            Text("Per service, since it's a limit on how long an answer may run rather than anything about a particular model. Left alone, the provider decides.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var maxTokensCaption: String {
+        guard let chosen = state.config.maxTokens(serviceID: service.id) else {
+            return "Provider default"
+        }
+        return chosen.formatted(.number.grouping(.automatic)) + " tokens"
+    }
+
+    private var maxTokensExponentBinding: Binding<Double> {
+        Binding(
+            get: {
+                let current = state.config.maxTokens(serviceID: service.id) ?? 16384
+                return log2(Double(min(max(current, 256), 65536)))
+            },
+            set: { exponent in
+                updateMaxTokens(Int(pow(2, exponent.rounded())))
+            }
+        )
+    }
+
+    private func updateMaxTokens(_ tokens: Int?) {
+        var config = state.config
+        config.setMaxTokens(tokens, serviceID: service.id)
         Task { try? await API.shared.configUpdate(config) }
     }
 

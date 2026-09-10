@@ -31,7 +31,11 @@ struct ServiceDefaults: View {
 
         Section {
             Picker("Thinking in new conversations", selection: thinkingEffortBinding) {
-                ForEach(ThinkingEffort.allCases) { effort in
+                // The universal three rather than every level: a default
+                // applies to whichever service a new conversation ends up
+                // using, so it can't be stated in one service's own
+                // vocabulary. Services with graded effort map these onto it.
+                ForEach(ThinkingEffort.universal) { effort in
                     Text(effort.label).tag(effort)
                 }
             }

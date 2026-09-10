@@ -321,7 +321,18 @@ final class ConversationViewModel {
     /// Offering Off where it does nothing is worse than not offering it: the
     /// control would read Off while the model reasoned anyway.
     var availableThinkingEfforts: [ThinkingEffort] {
-        modelAlwaysReasons ? [.brief, .full] : ThinkingEffort.allCases
+        let offered = selectedServiceKind.map { ThinkingEffort.offered(by: $0) } ?? ThinkingEffort.universal
+        return modelAlwaysReasons ? offered.filter { $0 != .off } : offered
+    }
+
+    /// The kind of service answering here, which decides what the thinking
+    /// control has to offer: an effort level is a thing a particular API
+    /// takes, and they don't agree on what the levels are.
+    var selectedServiceKind: Service.Kind? {
+        try? API.shared.resolvedChatService(
+            serviceID: conversation.serviceID,
+            modelID: conversation.modelID
+        ).0.kind
     }
 
     /// What the model will actually do — which is what the control should say
@@ -332,9 +343,13 @@ final class ConversationViewModel {
     /// `false` to GPT-OSS is ignored and lands on its *medium* default, so
     /// asking for none currently gets more reasoning than asking for little.
     var effectiveThinkingEffort: ThinkingEffort {
-        let chosen = thinkingEffort
+        // Said in the terms this service uses. A conversation keeps the effort
+        // it was given and can be moved to another provider afterwards, whose
+        // levels are its own — so what was asked for is translated rather than
+        // sent somewhere it means nothing.
+        let chosen = selectedServiceKind.map { thinkingEffort.offered(by: $0) } ?? thinkingEffort
         guard modelAlwaysReasons, chosen == .off else { return chosen }
-        return .brief
+        return availableThinkingEfforts.first ?? .brief
     }
 
     /// Switches a tool on or off for this conversation alone.
@@ -1007,21 +1022,19 @@ final class ConversationViewModel {
                let contextLength = state.config.contextLength(serviceID: serviceID, modelID: model.id) {
                 req.with(option: "num_ctx", value: .int(contextLength))
             }
-            // A level rather than a switch, because some models accept nothing
-            // else: GPT-OSS ignores true/false outright — `think: false` still
-            // produced 980 characters of reasoning against gpt-oss:20b — so
-            // without one there is no way to ask it for less. Models that don't
-            // implement levels take one and discard it, so this costs nothing
-            // where it does nothing.
-            switch effectiveThinkingEffort {
-            case .off:
-                req.with(option: "think", value: .bool(false))
-            case .brief:
-                req.with(option: "think", value: .string("low"))
-            case .full:
-                // Nothing said, so the model reasons as it would unprompted —
-                // which is what Full means.
-                break
+            // The shared vocabulary, sent as it stands. Each service turns it
+            // into whatever its own API takes — a `think` level for a local
+            // model, a thinking mode and an effort for Anthropic — because
+            // they don't agree on what the levels are, and this is not the
+            // place to know that.
+            req.with(option: "effort", value: .string(effectiveThinkingEffort.rawValue))
+
+            // What a single reply may generate. Bounds the reasoning and the
+            // answer together where a model reasons, so it can't be left at a
+            // figure chosen for replies alone.
+            if let serviceID = conversation.serviceID,
+               let maxTokens = state.config.maxTokens(serviceID: serviceID) {
+                req.with(option: "max_tokens", value: .int(maxTokens))
             }
 
             // Generate response stream
@@ -1268,7 +1281,7 @@ final class ConversationViewModel {
         // and then produced no answer at all, which arrives here as an empty
         // suggestion list an hour later. The same prompt with reasoning off
         // answers in under five seconds.
-        req.with(option: "think", value: .bool(false))
+        req.with(option: "effort", value: .string(ThinkingEffort.off.rawValue))
 
         // Indicate we are suggesting
         conversation.state = .suggesting
@@ -1411,7 +1424,7 @@ final class ConversationViewModel {
 
         // As with suggestions: naming a conversation is not worth reasoning
         // about, and on a small model reasoning is what stops it answering.
-        req.with(option: "think", value: .bool(false))
+        req.with(option: "effort", value: .string(ThinkingEffort.off.rawValue))
 
         // The model is logged at the request, not just with the result: this
         // is the leg that changes when Summarization points somewhere other
@@ -1634,7 +1647,7 @@ final class ConversationViewModel {
 
         var req = ChatSessionRequest(service: service, model: model)
         req.with(history: [.init(role: .user, content: content)])
-        req.with(option: "think", value: .bool(false))
+        req.with(option: "effort", value: .string(ThinkingEffort.off.rawValue))
 
         conversation.state = .suggesting
         ChatDebug.log("→ compaction request | model: \(model.id) | folding \(activeMessages.count) messages")
@@ -1786,7 +1799,7 @@ final class ConversationViewModel {
         }
         // For this reply only. The conversation's own setting is untouched, so
         // the next turn reasons as before.
-        req.with(option: "think", value: .bool(false))
+        req.with(option: "effort", value: .string(ThinkingEffort.off.rawValue))
 
         ChatDebug.log("→ answer now | model: \(model.id) | reasoning handed back: \(reasoning.count) chars")
 

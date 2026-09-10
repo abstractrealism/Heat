@@ -380,8 +380,11 @@ struct MessageFieldControls: View {
     /// says something.
     private func thinkingLabel(for effort: ThinkingEffort) -> String {
         switch effort {
-        case .off, .full: "Thinking"
-        case .brief: "Thinking · Brief"
+        // Off says it by not being lit; Full and High are each their
+        // service's "as much as it would do anyway", which is the state the
+        // control was already in.
+        case .off, .full, .high: "Thinking"
+        default: "Thinking · \(effort.label)"
         }
     }
 
@@ -401,6 +404,14 @@ struct MessageFieldControls: View {
             return "The model reasons briefly here, asked in the prompt to keep it short. How well that lands varies by model."
         case .full:
             return "The model reasons as much as it wants to here."
+        case .low, .medium, .high, .xhigh, .max:
+            // Services with a real effort control, where the level is a
+            // request parameter rather than something asked for in the prompt.
+            let effort = conversationViewModel.effectiveThinkingEffort
+            if conversationViewModel.modelAlwaysReasons, effort == conversationViewModel.availableThinkingEfforts.first {
+                return "\(name) can't be told to stop reasoning, so there's no Off — this asks it for as little as it will do."
+            }
+            return "\(effort.detail). This is sent with the request, so the model is trained to honour it rather than being asked in the prompt."
         }
     }
 }
