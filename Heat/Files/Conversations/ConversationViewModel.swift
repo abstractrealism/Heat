@@ -977,7 +977,13 @@ final class ConversationViewModel {
                 context["MEMORIES"] = .string(profile)
             }
 
-            ChatDebug.log("→ chat request | model: \(model.id) | tools: \(conversation.toolIDs.sorted().joined(separator: ", ")) | images: \(images.count) | history: \(conversation.messages.count) messages")
+            // Effort and the reply ceiling ride along because they're the two
+            // settings that differ per service, and the ones a refusal is
+            // most often about.
+            let ceiling = conversation.serviceID
+                .flatMap { state.config.maxTokens(serviceID: $0) }
+                .map(String.init) ?? "provider default"
+            ChatDebug.log("→ chat request | service: \(selectedServiceKind?.rawValue ?? "unknown") | model: \(model.id) | effort: \(effectiveThinkingEffort.rawValue) (asked \(thinkingEffort.rawValue)) | longest reply: \(ceiling) | tools: \(conversation.toolIDs.sorted().joined(separator: ", ")) | images: \(images.count) | history: \(conversation.messages.count) messages")
 
             // Named individually, because an image that fails to reach the
             // model is indistinguishable from one it looked at and didn't
