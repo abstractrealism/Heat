@@ -27,19 +27,23 @@ struct ModelDeprecationsTests {
         return Calendar(identifier: .gregorian).date(from: components)!
     }()
 
-    private static let withdrawn: Set<String> = {
+    /// The saved page. Empty if it can't be found, which `fixtureLoads` then
+    /// reports rather than letting everything else pass on nothing.
+    private static func markdown() -> String {
         guard
             let url = Bundle.module.url(
                 forResource: "openai-deprecations",
                 withExtension: "md",
                 subdirectory: "Fixtures"
             ),
-            let markdown = try? String(contentsOf: url, encoding: .utf8)
+            let text = try? String(contentsOf: url, encoding: .utf8)
         else {
-            return []
+            return ""
         }
-        return ModelDeprecations.withdrawnModelIDs(in: markdown, asOf: asOf)
-    }()
+        return text
+    }
+
+    private static let withdrawn = ModelDeprecations.withdrawnModelIDs(in: markdown(), asOf: asOf)
 
     @Test("The fixture is found and yields something")
     func fixtureLoads() {
@@ -142,6 +146,60 @@ struct ModelDeprecationsTests {
         #expect(ModelDeprecations.withdrawnModelIDs(in: markdown, asOf: Self.asOf).isEmpty)
     }
 
+    // MARK: - Noticing that the page has changed
+
+    /// The whole fixture parses cleanly, so nothing should be flagged. If this
+    /// starts failing, the warning has become noise and will be ignored.
+    @Test("A page that parses well raises no concern")
+    func healthyPageIsQuiet() {
+        #expect(ModelDeprecations.concern(about: Self.withdrawn, in: Self.markdown()) == nil)
+    }
+
+    /// The failure that matters. A restructured page returns no error and no
+    /// models, which reads exactly like a service that has withdrawn nothing
+    /// — so something has to say it out loud.
+    @Test(
+        "A page that no longer parses raises a concern",
+        arguments: [
+            "",
+            "# Deprecations\n\nThis page has moved. See the new location.\n",
+            "<html><body><h1>404 Not Found</h1></body></html>",
+        ]
+    )
+    func changedPageIsFlagged(markdown: String) {
+        let withdrawn = ModelDeprecations.withdrawnModelIDs(in: markdown, asOf: Self.asOf)
+        #expect(ModelDeprecations.concern(about: withdrawn, in: markdown) != nil)
+    }
+
+    /// Tables still there, but nothing recognised inside them — a column
+    /// reshuffle, or names no longer in backticks.
+    @Test("Tables with nothing recognisable in them raise a concern")
+    func unrecognisedTableContents() {
+        let markdown = """
+        | Shutdown date | Model | Replacement |
+        | --- | --- | --- |
+        | 2025-01-01 | gpt-4o-2024-05-13 | gpt-5 |
+        | 2025-01-01 | gpt-4-0613 | gpt-5 |
+        """
+        let withdrawn = ModelDeprecations.withdrawnModelIDs(in: markdown, asOf: Self.asOf)
+        #expect(withdrawn.isEmpty, "names outside backticks shouldn't be read")
+        #expect(ModelDeprecations.concern(about: withdrawn, in: markdown) != nil)
+    }
+
+    /// A handful where there have always been dozens. Worth a look even
+    /// though the parse didn't fail outright.
+    @Test("A suspiciously thin result raises a concern")
+    func thinResultIsFlagged() {
+        let markdown = """
+        | Shutdown date | Model | Replacement |
+        | --- | --- | --- |
+        | 2025-01-01 | `gpt-4-0613` | `gpt-5` |
+        """
+        let withdrawn = ModelDeprecations.withdrawnModelIDs(in: markdown, asOf: Self.asOf)
+        #expect(withdrawn == ["gpt-4-0613"])
+        #expect(ModelDeprecations.concern(about: withdrawn, in: markdown) != nil)
+    }
+
     /// Asked on an earlier day, a row whose shutdown hadn't happened yet must
     /// be left alone — the same fixture, a different answer.
     @Test("The date decides")
@@ -153,19 +211,7 @@ struct ModelDeprecationsTests {
         components.timeZone = TimeZone(identifier: "UTC")
         let earlier = Calendar(identifier: .gregorian).date(from: components)!
 
-        guard
-            let url = Bundle.module.url(
-                forResource: "openai-deprecations",
-                withExtension: "md",
-                subdirectory: "Fixtures"
-            ),
-            let markdown = try? String(contentsOf: url, encoding: .utf8)
-        else {
-            Issue.record("fixture missing")
-            return
-        }
-
-        let then = ModelDeprecations.withdrawnModelIDs(in: markdown, asOf: earlier)
+        let then = ModelDeprecations.withdrawnModelIDs(in: Self.markdown(), asOf: earlier)
         // Shut down 2025-06-06, so still running at the start of that year.
         #expect(!then.contains("gpt-4-32k"))
         #expect(Self.withdrawn.contains("gpt-4-32k"))

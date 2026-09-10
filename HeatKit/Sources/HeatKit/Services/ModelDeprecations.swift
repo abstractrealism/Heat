@@ -71,8 +71,57 @@ public struct ModelDeprecations {
         }
 
         let withdrawn = withdrawnModelIDs(in: markdown, asOf: now)
-        logger.info("read \(withdrawn.count, privacy: .public) withdrawn models from \(url.host() ?? "", privacy: .public)")
+
+        // A restructured page fails quietly: no error, just an empty answer,
+        // which is indistinguishable from a service having withdrawn nothing.
+        // Nobody using the app can act on that, so it goes to the log rather
+        // than the screen — but it has to go somewhere, or the first sign of
+        // it is a model that should have been hidden and wasn't.
+        if let concern = concern(about: withdrawn, in: markdown) {
+            logger.warning("\(url.absoluteString, privacy: .public) may have changed: \(concern, privacy: .public)")
+        } else {
+            logger.info("read \(withdrawn.count, privacy: .public) withdrawn models from \(url.host() ?? "", privacy: .public)")
+        }
+
         return withdrawn
+    }
+
+    /// What looks wrong about a parse, if anything.
+    ///
+    /// Separate and pure so it can be checked, and so the judgement lives
+    /// next to the parsing it is judging.
+    ///
+    /// The thresholds are deliberately loose. The count drifts as shutdown
+    /// dates pass, and being approximately right is enough for something
+    /// whose only job is to say "go and look".
+    public static func concern(about withdrawn: Set<String>, in markdown: String) -> String? {
+        let rows = markdown
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .count { $0.trimmingCharacters(in: .whitespaces).hasPrefix("|") }
+
+        // Nothing to parse at all: moved, rewritten, or answered with
+        // something that isn't the page.
+        if rows == 0 {
+            return markdown.count < 500
+                ? "no tables, and only \(markdown.count) characters — this doesn't look like the page"
+                : "no table rows found in \(markdown.count) characters"
+        }
+
+        // Tables, but nothing recognised in them: the columns or the way
+        // model names are written have most likely changed.
+        if withdrawn.isEmpty {
+            return "\(rows) table rows but no models recognised in them"
+        }
+
+        // Something recognised, but far less than this page has ever held —
+        // it named around 70 when this was written. A floor rather than a
+        // range, since the figure only grows as models are retired.
+        if withdrawn.count < 10 {
+            let models = withdrawn.count == 1 ? "1 model" : "\(withdrawn.count) models"
+            return "only \(models) recognised across \(rows) table rows, which is fewer than expected"
+        }
+
+        return nil
     }
 
     /// The parse, separated so it can be checked against a saved page.
