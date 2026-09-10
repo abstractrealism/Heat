@@ -165,10 +165,18 @@ struct ServiceForm: View {
     /// which is more than anyone scrolls through to find the one they meant.
     @State private var modelFilter = ""
 
+    /// Everything the service offers and will actually serve. A model it has
+    /// refused is left out entirely rather than shown switched off — it isn't
+    /// a choice anybody has, so a switch for it would be one that does
+    /// nothing.
+    private var offerableModels: [Model] {
+        service.models.filter { !state.config.isModelUnavailable($0, in: service) }
+    }
+
     private var filteredModels: [Model] {
         let query = modelFilter.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !query.isEmpty else { return service.models }
-        return service.models.filter {
+        guard !query.isEmpty else { return offerableModels }
+        return offerableModels.filter {
             $0.id.lowercased().contains(query) || ($0.name?.lowercased().contains(query) ?? false)
         }
     }
@@ -187,7 +195,7 @@ struct ServiceForm: View {
                     Button("Use Suggested") { clearModelChoices() }
                         .help("Forgets every choice here and goes back to Heat's guess: models that look like they're for conversation are offered, and video, image, audio, embedding and pre-chat models aren't.")
                     Spacer(minLength: 0)
-                    Text("\(enabledCount) of \(service.models.count)")
+                    Text("\(enabledCount) of \(offerableModels.count)")
                         .font(.footnote)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -226,6 +234,22 @@ struct ServiceForm: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+
+                // Said rather than left as a shorter list than the service
+                // reports, and reversible: the judgement came from one refused
+                // request, and a model can come back or be refused for a
+                // reason since fixed.
+                let refused = state.config.unavailableModelCount(in: service)
+                if refused > 0 {
+                    LabeledContent(
+                        refused == 1
+                            ? "1 model hidden — \(service.name) refused it"
+                            : "\(refused) models hidden — \(service.name) refused them"
+                    ) {
+                        Button("Show Again") { clearUnavailableModels() }
+                    }
+                    .font(.footnote)
+                }
             }
         } header: {
             Text("Models to Offer")
@@ -237,7 +261,13 @@ struct ServiceForm: View {
     }
 
     private var enabledCount: Int {
-        service.models.filter { state.config.isModelEnabled($0, in: service) }.count
+        offerableModels.filter { state.config.isModelEnabled($0, in: service) }.count
+    }
+
+    private func clearUnavailableModels() {
+        var config = state.config
+        config.clearUnavailableModels(in: service)
+        Task { try? await API.shared.configUpdate(config) }
     }
 
     private func modelBinding(for model: Model) -> Binding<Bool> {

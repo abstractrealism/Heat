@@ -295,6 +295,51 @@ extension Config {
 
     /// The models to offer for a conversation.
     public func enabledModels(in service: Service) -> [Model] {
-        service.models.filter { isModelEnabled($0, in: service) }
+        service.models.filter { isModelEnabled($0, in: service) && !isModelUnavailable($0, in: service) }
+    }
+
+    /// Models the service has refused to serve.
+    ///
+    /// Separate from the switches above, and it isn't a preference: a model
+    /// here can't be used at all, so it's hidden rather than switched off.
+    ///
+    /// Learned from the refusal, because nothing else knows. A withdrawn model
+    /// stays in OpenAI's model list — `/v1/models` went on reporting
+    /// `gpt-4o-search-preview` long after requests for it started failing —
+    /// and the published deprecation list names the dated *snapshot* while the
+    /// list offers the undated alias, so neither source can be matched against
+    /// the other without also condemning models that still work. The attempt
+    /// is the only thing that can say.
+    private var unavailableModelKeys: Set<String> {
+        get {
+            guard case .array(let entries)? = metadata["unavailableModels"] else { return [] }
+            return Set(entries.compactMap(\.stringValue))
+        }
+        set {
+            metadata["unavailableModels"] = newValue.isEmpty
+                ? nil
+                : .array(newValue.sorted().map { .string($0) })
+        }
+    }
+
+    public func isModelUnavailable(_ model: Model, in service: Service) -> Bool {
+        unavailableModelKeys.contains(modelKey(serviceID: service.id, modelID: model.id))
+    }
+
+    public mutating func markModelUnavailable(_ model: Model, in service: Service) {
+        unavailableModelKeys.insert(modelKey(serviceID: service.id, modelID: model.id))
+    }
+
+    /// How many of a service's models are hidden this way, so a pane can say
+    /// so rather than quietly showing a shorter list than the service offers.
+    public func unavailableModelCount(in service: Service) -> Int {
+        service.models.filter { isModelUnavailable($0, in: service) }.count
+    }
+
+    /// Forgets the refusals for one service — for a model that comes back, or
+    /// one refused for a reason that has since been fixed.
+    public mutating func clearUnavailableModels(in service: Service) {
+        let prefix = "\(service.id)\u{1F}"
+        unavailableModelKeys = unavailableModelKeys.filter { !$0.hasPrefix(prefix) }
     }
 }
