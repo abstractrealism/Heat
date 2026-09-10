@@ -316,13 +316,34 @@ final class ConversationViewModel {
         return Self.alwaysReasoningModels.contains { id.contains($0) }
     }
 
-    /// The efforts this model can actually be asked for.
+    /// The efforts this service can be asked for.
     ///
-    /// Offering Off where it does nothing is worse than not offering it: the
-    /// control would read Off while the model reasoned anyway.
+    /// Off is included even where it won't be honoured. It used to be dropped,
+    /// on the reasoning that offering it was worse than not — which was true
+    /// while the only alternative was a control that read Off while the model
+    /// reasoned anyway. It can be struck through now, and a struck-through
+    /// option explains itself where a missing one just leaves the menu a
+    /// different length on different models.
     var availableThinkingEfforts: [ThinkingEffort] {
-        let offered = selectedServiceKind.map { ThinkingEffort.offered(by: $0) } ?? ThinkingEffort.universal
-        return modelAlwaysReasons ? offered.filter { $0 != .off } : offered
+        selectedServiceKind.map { ThinkingEffort.offered(by: $0) } ?? ThinkingEffort.universal
+    }
+
+    /// Whether asking for no reasoning will actually be honoured.
+    ///
+    /// Two ways it isn't, and they differ in mechanism rather than in
+    /// consequence: a local model that takes the instruction and ignores it,
+    /// and a service that refuses the request outright. The control treats
+    /// them alike because there's nothing for someone to do differently.
+    var thinkingCannotBeTurnedOff: Bool {
+        modelAlwaysReasons || modelRefusesToStopThinking
+    }
+
+    /// Whether the level in force is the substitute Off turned into, rather
+    /// than something asked for. What the control says about itself differs:
+    /// one is a choice, the other is the nearest thing to a choice that
+    /// couldn't be honoured.
+    var isStandingInForOff: Bool {
+        thinkingCannotBeTurnedOff && thinkingEffort == .off
     }
 
     /// The kind of service answering here, which decides what the thinking
@@ -362,7 +383,7 @@ final class ConversationViewModel {
         // levels are its own — so what was asked for is translated rather than
         // sent somewhere it means nothing.
         let chosen = selectedServiceKind.map { thinkingEffort.offered(by: $0) } ?? thinkingEffort
-        guard chosen == .off, modelAlwaysReasons || modelRefusesToStopThinking else { return chosen }
+        guard chosen == .off, thinkingCannotBeTurnedOff else { return chosen }
         // The least it will do, which is what the request will ask for. `off`
         // is skipped explicitly: it's the first level a service offers, and
         // answering with it here would say nothing had changed.
