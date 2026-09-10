@@ -360,6 +360,17 @@ final class ConversationViewModel {
         )
     }
 
+    /// Whether the chosen model reaches the web on its own.
+    ///
+    /// Heat's own web search is a tool it runs itself — the model asks, Heat
+    /// fetches, Heat hands back the results — so switching it off genuinely
+    /// stops it. A model with search built in ignores all of that, which makes
+    /// the tool switch look as though it governs something it doesn't.
+    var modelSearchesTheWebItself: Bool {
+        guard let (service, model) = resolvedChatService else { return false }
+        return service.hasBuiltInWebSearch(modelID: model.id)
+    }
+
     /// Whether the service will refuse to be told not to reason.
     ///
     /// Only a known refusal counts. An unrecognised model reads as nil, and
