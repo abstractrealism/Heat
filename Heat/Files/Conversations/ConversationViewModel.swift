@@ -1184,6 +1184,7 @@ final class ConversationViewModel {
             // Surface the failure inline and clear any in-progress state so the
             // indicator doesn't spin forever.
             conversation.state = .none
+            noteModelUnavailableIfRefused(error)
             self.error = errorMessage(for: error)
 
             // The prompt is saved as soon as it's sent, so the conversation on
@@ -1196,6 +1197,33 @@ final class ConversationViewModel {
 
             throw Error.generationError("\(error)")
         }
+    }
+
+    /// Stops offering a model the service has said it won't serve.
+    ///
+    /// Only the attempt can tell. A withdrawn model stays in OpenAI's model
+    /// list, and its published deprecation notice names the dated snapshot
+    /// while the list offers the undated alias — so neither can be checked
+    /// against the other without also hiding models that still work. The
+    /// refusal names the model that was actually asked for.
+    ///
+    /// Narrow on purpose: gone, or never there. Everything else — a bad key,
+    /// a server that didn't answer, a rate limit — is about the moment rather
+    /// than the model, and hiding a model over a passing failure would be
+    /// worse than the failure. Reversible from the service's pane either way.
+    private func noteModelUnavailableIfRefused(_ error: Swift.Error) {
+        let message = "\(error)".lowercased()
+        let refused = message.contains("has been deprecated")
+            || message.contains("does not exist")
+            || message.contains("has been removed")
+        guard refused, let (service, model) = resolvedChatService else { return }
+
+        var config = API.shared.config
+        guard !config.isModelUnavailable(model, in: service) else { return }
+        config.markModelUnavailable(model, in: service)
+        Task { try? await API.shared.configUpdate(config) }
+
+        ChatDebug.log("← \(service.name) won't serve \(model.id); no longer offering it")
     }
 
     /// Which configured service a failed request was made to, worked out from
