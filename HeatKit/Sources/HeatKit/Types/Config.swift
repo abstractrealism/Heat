@@ -161,6 +161,39 @@ extension Config {
         lengths[contextKey(serviceID: serviceID, modelID: modelID)] = length
         contextLengths = lengths
     }
+
+    /// The ceiling on what a single reply may generate, per service.
+    ///
+    /// Per service rather than per model, unlike the context length: this is a
+    /// policy about how long an answer is allowed to run, not a fact about what
+    /// a model can hold.
+    ///
+    /// It matters more than it used to. Where a model reasons before answering,
+    /// this bounds the reasoning *and* the reply together — so a figure chosen
+    /// when replies were the only output can be spent thinking, and the answer
+    /// arrives truncated.
+    private var maxTokensByService: [String: Int] {
+        get {
+            guard case .object(let entries)? = metadata["maxTokensByService"] else { return [:] }
+            return entries.compactMapValues(\.intValue)
+        }
+        set {
+            metadata["maxTokensByService"] = newValue.isEmpty
+                ? nil
+                : .object(newValue.mapValues { .int($0) })
+        }
+    }
+
+    public func maxTokens(serviceID: String) -> Int? {
+        maxTokensByService[serviceID]
+    }
+
+    /// Passing nil returns the service to whatever the provider decides.
+    public mutating func setMaxTokens(_ tokens: Int?, serviceID: String) {
+        var all = maxTokensByService
+        all[serviceID] = tokens
+        maxTokensByService = all
+    }
 }
 
 // MARK: - Service Availability
