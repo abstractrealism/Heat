@@ -150,6 +150,14 @@ struct MessageFieldControls: View {
                     }
                 }
             }
+            // Said here rather than in the model picker: this is the menu
+            // whose switches it makes a liar of. Heat's search is a tool it
+            // runs itself, so turning it off stops it — and a model that
+            // searches on its own carries on regardless.
+            if conversationViewModel.modelSearchesTheWebItself {
+                Divider()
+                Text("\(conversationViewModel.selectedModelName) searches the web itself, whatever is set here")
+            }
         } label: {
             pill(isOn: isArmed, emphasis: .outlined) {
                 HStack(spacing: 4) {
@@ -184,10 +192,16 @@ struct MessageFieldControls: View {
         guard modelCanUseTools else {
             return "\(conversationViewModel.selectedModelName) can't call tools, so none are offered to it. Pick a model that supports them to use this."
         }
+        // Appended rather than replacing what's here: the tools still work as
+        // described, and the model's own searching is a fact about that model
+        // sitting alongside them.
+        let searchesItself = conversationViewModel.modelSearchesTheWebItself
+            ? " \(conversationViewModel.selectedModelName) also searches the web itself, which nothing here governs."
+            : ""
         if activeToolIDs.isEmpty {
-            return "Abilities the assistant may use in this conversation, such as searching the web. None are on. Changing this affects this conversation only — Settings › Instructions › Assistant sets the default for new ones."
+            return "Abilities the assistant may use in this conversation, such as searching the web. None are on. Changing this affects this conversation only — Settings › Instructions › Assistant sets the default for new ones." + searchesItself
         }
-        return "Abilities the assistant may use in this conversation. It decides when to reach for one. Changing this affects this conversation only — Settings › Instructions › Assistant sets the default for new ones."
+        return "Abilities the assistant may use in this conversation. It decides when to reach for one. Changing this affects this conversation only — Settings › Instructions › Assistant sets the default for new ones." + searchesItself
     }
 
     // MARK: - Context
