@@ -69,18 +69,50 @@ struct ServiceForm: View {
             #endif
 
             Section {
-                ServiceModelPicker("Chats", service.models, selection: $service.preferredChatModel)
-                    .help("The model that answers your messages. This is the one to set for ordinary use.")
-                ServiceModelPicker("Images", service.models, selection: $service.preferredImageModel)
-                    .help("Used when the assistant generates a picture.")
-                ServiceModelPicker("Embeddings", service.models, selection: $service.preferredEmbeddingModel)
-                    .help("Turns text into vectors for searching by meaning rather than by wording.")
-                ServiceModelPicker("Transcriptions", service.models, selection: $service.preferredTranscriptionModel)
-                    .help("Turns speech into text.")
-                ServiceModelPicker("Speech", service.models, selection: $service.preferredSpeechModel)
-                    .help("Reads text aloud.")
-                ServiceModelPicker("Summarization", service.models, selection: $service.preferredSummarizationModel)
-                    .help("Used for Heat's own short jobs: naming a conversation, drafting follow-up suggestions, and condensing a web page it has read. Worth a smaller, faster model than the one answering you. Falls back to the Chats model when unset.")
+                ServiceModelPicker(
+                    "Chats",
+                    service.models,
+                    help: "The model that answers your messages. This is the one to set for ordinary use.",
+                    selection: $service.preferredChatModel
+                )
+                ServiceModelPicker(
+                    "Images",
+                    service.models,
+                    help: "Used when the assistant generates a picture.",
+                    selection: $service.preferredImageModel
+                )
+                ServiceModelPicker(
+                    "Summarization",
+                    service.models,
+                    help: "Used for Heat's own short jobs: naming a conversation, drafting follow-up suggestions, and condensing a web page it has read. Worth a smaller, faster model than the one answering you. Falls back to the Chats model when unset.",
+                    selection: $service.preferredSummarizationModel
+                )
+
+                // Nothing reads these yet: there is no embedding, transcription
+                // or speech call anywhere in the app. Said in the label rather
+                // than left to be discovered, since a setting that appears to
+                // configure something is a claim, and left alone these three
+                // were the same sort of lie as a thinking toggle that changed
+                // nothing. Kept rather than hidden so what's coming is visible,
+                // and so a choice made now survives until it's read.
+                ServiceModelPicker(
+                    "Embeddings (Not Implemented)",
+                    service.models,
+                    help: "Turns text into vectors for searching by meaning rather than by wording. Heat doesn't use this yet — the setting is remembered for when it does.",
+                    selection: $service.preferredEmbeddingModel
+                )
+                ServiceModelPicker(
+                    "Transcriptions (Not Implemented)",
+                    service.models,
+                    help: "Turns speech into text. Heat doesn't use this yet — the setting is remembered for when it does.",
+                    selection: $service.preferredTranscriptionModel
+                )
+                ServiceModelPicker(
+                    "Speech (Not Implemented)",
+                    service.models,
+                    help: "Reads text aloud. Heat doesn't use this yet — the setting is remembered for when it does.",
+                    selection: $service.preferredSpeechModel
+                )
             } header: {
                 Text("Models")
             } footer: {
@@ -465,11 +497,20 @@ struct ServiceModelPicker: View {
     let title: String
     let models: [Model]
 
+    /// Carried in rather than applied at the call site.
+    ///
+    /// `.help()` on the outside of this view attaches to the composed view,
+    /// and a Form splits a labelled control into separate cells — so the
+    /// tooltip ended up on a container with nothing to hover over and never
+    /// appeared. On the picker itself it has a control to belong to.
+    let help: String
+
     @Binding var selection: String?
 
-    init(_ title: String, _ models: [Model]?, selection: Binding<String?>) {
+    init(_ title: String, _ models: [Model]?, help: String = "", selection: Binding<String?>) {
         self.title = title
         self.models = models ?? []
+        self.help = help
         self._selection = selection
     }
 
@@ -483,5 +524,6 @@ struct ServiceModelPicker: View {
         } label: {
             Text(title)
         }
+        .help(help)
     }
 }
