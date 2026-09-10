@@ -20,7 +20,7 @@ struct ServiceForm: View {
     private enum ModelLoad: Equatable {
         case idle
         case loading
-        case loaded(Int)
+        case loaded(found: Int, withdrawn: Int)
         case failed(String)
     }
 
@@ -134,10 +134,14 @@ struct ServiceForm: View {
                     Text("Asking \(service.name)…")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                case .loaded(let count):
-                    Text(count == 1 ? "Found 1 model." : "Found \(count) models.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                case .loaded(let found, let withdrawn):
+                    Text(
+                        withdrawn > 0
+                            ? "Found \(found) models. \(withdrawn) have been withdrawn and are hidden."
+                            : (found == 1 ? "Found 1 model." : "Found \(found) models.")
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 case .failed(let message):
                     Text(message)
                         .font(.footnote)
@@ -239,14 +243,15 @@ struct ServiceForm: View {
                 // reports, and reversible: the judgement came from one refused
                 // request, and a model can come back or be refused for a
                 // reason since fixed.
-                let refused = state.config.unavailableModelCount(in: service)
-                if refused > 0 {
+                let unavailable = state.config.unavailableModelCount(in: service)
+                if unavailable > 0 {
                     LabeledContent(
-                        refused == 1
-                            ? "1 model hidden — \(service.name) refused it"
-                            : "\(refused) models hidden — \(service.name) refused them"
+                        unavailable == 1
+                            ? "1 model hidden as unavailable"
+                            : "\(unavailable) models hidden as unavailable"
                     ) {
                         Button("Show Again") { clearUnavailableModels() }
+                            .help("Brings back models hidden because \(service.name) publishes them as withdrawn, or refused a request for them. Loading models again will hide the withdrawn ones a second time.")
                     }
                     .font(.footnote)
                 }
@@ -492,11 +497,41 @@ struct ServiceForm: View {
             guard !Task.isCancelled else { return }
             service.models = models
             manager.update(service: service)
-            modelLoad = .loaded(models.count)
+            modelLoad = .loaded(found: models.count, withdrawn: 0)
+            await hideWithdrawnModels(among: models)
         } catch {
             guard !Task.isCancelled else { return }
             state.log(error: error)
             modelLoad = .failed(failureMessage(for: error))
+        }
+    }
+
+    /// Hides the models the service has published as withdrawn.
+    ///
+    /// Best effort, and deliberately silent when it can't be done: this reads
+    /// a documentation page, and a page that has moved or been restructured
+    /// must not stop models from loading. Failing here leaves every model
+    /// offered, which is where things stood before — and a request for a dead
+    /// one is still caught when the service refuses it.
+    private func hideWithdrawnModels(among models: [Model]) async {
+        do {
+            let withdrawn = try await ModelDeprecations.withdrawnModelIDs(for: service.kind)
+            guard !Task.isCancelled else { return }
+
+            let affected = models.filter { withdrawn.contains($0.id) }
+            guard !affected.isEmpty else { return }
+
+            var config = state.config
+            for model in affected {
+                config.markModelUnavailable(model, in: service)
+            }
+            try? await API.shared.configUpdate(config)
+
+            guard !Task.isCancelled else { return }
+            modelLoad = .loaded(found: models.count, withdrawn: affected.count)
+            logger.info("hid \(affected.count) withdrawn models for \(service.name)")
+        } catch {
+            logger.warning("couldn't read \(service.name)'s deprecations: \(error)")
         }
     }
 
