@@ -944,6 +944,7 @@ final class ConversationViewModel {
     /// Generate a response using text as the only input. Add context—often memories—to augment the system prompt. Optionally force a tool call.
     func generate(chat prompt: String, images: [URL] = [], context: [String: Value] = [:], toolChoice: Tool? = nil) async throws {
         error = nil
+        currentJob = .answer
         do {
             let (service, model) = try chatService()
             pinCurrentDefaults()
@@ -1129,6 +1130,51 @@ final class ConversationViewModel {
         }
     }
 
+    /// Which configured service a failed request was made to, worked out from
+    /// the URL the error names.
+    ///
+    /// Matched on host and port, and where several services share those, on
+    /// whichever one's path the failing URL is under — two OpenAI-compatible
+    /// services on one machine differ only by their path.
+    private func failingService(for error: NSError) -> Service? {
+        let url = (error.userInfo[NSURLErrorFailingURLErrorKey] as? URL)
+            ?? (error.userInfo[NSURLErrorFailingURLStringErrorKey] as? String).flatMap { URL(string: $0) }
+        guard let url, let host = url.host() else { return nil }
+
+        let candidates = API.shared.config.services.filter { service in
+            guard let serviceURL = URL(string: service.host) else { return false }
+            return serviceURL.host() == host && serviceURL.port == url.port
+        }
+        if candidates.count > 1 {
+            let byPath = candidates.first { service in
+                guard let path = URL(string: service.host)?.path(), !path.isEmpty else { return false }
+                return url.path().hasPrefix(path)
+            }
+            if let byPath { return byPath }
+        }
+        return candidates.first
+    }
+
+    /// What a turn is doing, so a failure can say which part of it failed.
+    ///
+    /// An answer arriving and then a follow-up job failing reads, without
+    /// this, as though the answer itself had gone wrong.
+    enum TurnJob {
+        case answer
+        case suggestions
+        case title
+
+        var failurePrefix: String {
+            switch self {
+            case .answer: ""
+            case .suggestions: "Couldn't draft follow-up suggestions. "
+            case .title: "Couldn't name this conversation. "
+            }
+        }
+    }
+
+    @ObservationIgnored private var currentJob: TurnJob = .answer
+
     /// Maps an error to a friendly, actionable message for display in the
     /// conversation. Falls back to the raw description for unexpected errors.
     private func errorMessage(for error: Swift.Error) -> String {
@@ -1151,24 +1197,34 @@ final class ConversationViewModel {
         // to say, which is that nothing is listening.
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain {
-            // Resolved the same way the request itself resolves it, so the
-            // name is the service that was actually asked.
-            let service = try? API.shared.resolvedChatService(
-                serviceID: conversation.serviceID,
-                modelID: conversation.modelID
-            ).0
+            // Named from the URL that actually failed, which the error carries.
+            //
+            // Asking which service this *conversation* answers with was wrong
+            // whenever the failure came from one of the jobs that follow an
+            // answer: those go to the Summarization service, so a working
+            // Anthropic conversation whose local Ollama was down reported that
+            // Anthropic hadn't answered — sending someone to check a server
+            // that had just replied perfectly well. Reading the URL covers
+            // titles, suggestions and anything added later without any of them
+            // having to say which service they used.
+            let service = failingService(for: nsError)
+                ?? (try? API.shared.resolvedChatService(
+                    serviceID: conversation.serviceID,
+                    modelID: conversation.modelID
+                ).0)
             let name = service?.name ?? "The model service"
             let host = service.map { " at \($0.host)" } ?? ""
+            let job = currentJob.failurePrefix
 
             switch nsError.code {
             case NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost,
                  NSURLErrorDNSLookupFailed, NSURLErrorNotConnectedToInternet,
                  NSURLErrorNetworkConnectionLost:
-                return "\(name) didn't answer\(host). Check that it's running."
+                return "\(job)\(name) didn't answer\(host). Check that it's running."
             case NSURLErrorTimedOut:
-                return "\(name) took too long to answer\(host). It may be loading a model, or it may have stopped responding."
+                return "\(job)\(name) took too long to answer\(host). It may be loading a model, or it may have stopped responding."
             default:
-                return "\(name) couldn't be reached\(host): \(nsError.localizedDescription)"
+                return "\(job)\(name) couldn't be reached\(host): \(nsError.localizedDescription)"
             }
         }
 
@@ -1190,6 +1246,7 @@ final class ConversationViewModel {
     }
 
     func generateSuggestions() async throws {
+        currentJob = .suggestions
         let (service, model) = try taskService()
 
         // Cached instructions
@@ -1270,6 +1327,7 @@ final class ConversationViewModel {
     }
 
     func generateTitle() async throws {
+        currentJob = .title
         // The copy held here was taken when the conversation was opened, so a
         // rename since then is on disk and not in it. That mattered twice over:
         // the guard below read the old name and named an already-named
