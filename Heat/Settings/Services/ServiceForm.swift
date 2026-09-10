@@ -203,10 +203,16 @@ struct ServiceForm: View {
                     Toggle(isOn: modelBinding(for: model)) {
                         HStack(spacing: 6) {
                             Text(model.name ?? model.id)
-                            if !state.config.isModelChoiceExplicit(model, in: service) {
-                                // Says the row is following the guess rather
-                                // than a decision, so "Use Suggested" has
-                                // something visible to have done.
+                            // Marks the rows Use Suggested would turn on, so
+                            // the note names what it says: a suggestion.
+                            //
+                            // It used to mark every row without an explicit
+                            // decision, which meant the ones the guess had
+                            // decided *against* were labelled "suggested"
+                            // too — nearly the whole list, saying the
+                            // opposite of what it meant.
+                            if state.config.isModelEnabled(model, in: service),
+                               !state.config.isModelChoiceExplicit(model, in: service) {
                                 Text("suggested")
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)

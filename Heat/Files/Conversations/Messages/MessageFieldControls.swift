@@ -293,23 +293,25 @@ struct MessageFieldControls: View {
                 // nothing to pick, and saying so beats a blank sheet.
                 Text("No models available — add a service in Settings")
             }
-            ForEach(services) { service in
-                Section(service.name) {
-                    // Only what this service is set to offer. See
-                    // `Config.isModelEnabled` — OpenAI alone lists around 130,
-                    // most of them not for conversation at all.
-                    ForEach(state.config.enabledModels(in: service)) { model in
-                        // A Toggle rather than a Button carrying a checkmark
-                        // image, for the reason the tools menu found: AppKit
-                        // takes a menu item's label apart and draws its own,
-                        // so the image was discarded and the selected model
-                        // looked no different from the rest. A Toggle asks for
-                        // the platform's own checkmark instead of drawing one.
-                        //
-                        // A checkmark rather than a highlighted row because
-                        // this lists every model across every service, and the
-                        // same name can appear under two of them.
-                        Toggle(model.name ?? model.id, isOn: binding(for: model, in: service))
+            // A submenu per service once the flat list would be too tall to
+            // open on screen.
+            //
+            // A menu is a pull-down: it opens below the button and, when it
+            // can't fit, extends off the bottom and scrolls — which is where
+            // 39 models put it. SwiftUI gives no say over placement, so the
+            // only lever is height, and one row per service is a menu that
+            // always fits. Kept flat while it does fit, since a submenu for
+            // five local models is a click that buys nothing.
+            if isModelListLong {
+                ForEach(services) { service in
+                    Menu(service.name) {
+                        modelItems(for: service)
+                    }
+                }
+            } else {
+                ForEach(services) { service in
+                    Section(service.name) {
+                        modelItems(for: service)
                     }
                 }
             }
@@ -338,6 +340,30 @@ struct MessageFieldControls: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help(modelHelp)
+    }
+
+    /// Where a flat list stops fitting. Rough on purpose — the point is
+    /// whether the menu opens whole, not an exact row count.
+    private var isModelListLong: Bool {
+        services.reduce(0) { $0 + state.config.enabledModels(in: $1).count } > 12
+    }
+
+    @ViewBuilder
+    private func modelItems(for service: Service) -> some View {
+        // Only what this service is set to offer. See `Config.isModelEnabled`
+        // — OpenAI alone lists around 130, most of them not for conversation.
+        ForEach(state.config.enabledModels(in: service)) { model in
+            // A Toggle rather than a Button carrying a checkmark image, for
+            // the reason the tools menu found: AppKit takes a menu item's
+            // label apart and draws its own, so the image was discarded and
+            // the selected model looked no different from the rest. A Toggle
+            // asks for the platform's own checkmark instead of drawing one.
+            //
+            // A checkmark rather than a highlighted row because this lists
+            // every model across every service, and the same name can appear
+            // under two of them.
+            Toggle(model.name ?? model.id, isOn: binding(for: model, in: service))
+        }
     }
 
     private var modelHelp: String {
