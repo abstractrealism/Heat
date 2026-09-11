@@ -10,13 +10,17 @@ struct ServicesView: View {
 
     var body: some View {
         #if os(macOS)
-        HSplitView {
+        // A plain stack rather than an HSplitView. The split's divider showed
+        // a resize cursor but never moved — the pane on the right is sized
+        // from its container, so the split had nothing to give — and a
+        // control that promises what it can't do is worse than none.
+        HStack(spacing: 0) {
             List(selection: $selection) {
                 ForEach(manager.services) { service in
                     Text(service.name).tag(service.id)
                 }
             }
-            .frame(minWidth: 200, idealWidth: 200, maxWidth: 400)
+            .frame(width: 200)
             .listStyle(.bordered)
             .alternatingRowBackgrounds(.enabled)
             .environment(\.defaultMinListRowHeight, 32)
@@ -46,35 +50,36 @@ struct ServicesView: View {
             // taller than the window was simply cut off, with nothing to drag
             // and nothing to scroll. Wrapping it here rather than switching to
             // the grouped style keeps these panes looking as they do.
-            ScrollView {
-                Group {
-                    if let service = manager.get(selection) {
-                        ServiceForm(service: service)
-                            .id(service.id)
-                    } else {
-                        Form {
-                            ServiceDefaults()
+            //
+            // Sized from the pane, not left to the form. Offered "as wide as
+            // you like", a columns-style Form comes out about 40% wider than
+            // the pane — measured: 834 points of form in a 660 pane, 561 in
+            // 458 — and a scroll view that only scrolls vertically won't be
+            // narrower than its content, so the whole thing was centred and
+            // clipped at both ends: labels lost their first letters on the
+            // left and every field ran off the right. A GeometryReader takes
+            // whatever width is left after the list and passes it down as a
+            // fixed one; the rows then lay out to exactly that, and anything
+            // the form genuinely can't fit overflows to the right alone, where
+            // the labels stay whole. (containerRelativeFrame was tried first
+            // and resolved against the window here, not the pane.)
+            GeometryReader { pane in
+                ScrollView {
+                    Group {
+                        if let service = manager.get(selection) {
+                            ServiceForm(service: service)
+                                .id(service.id)
+                        } else {
+                            Form {
+                                ServiceDefaults()
+                            }
                         }
                     }
+                    .frame(width: max(0, pane.size.width - 64), alignment: .leading)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 12)
                 }
-                // Sized from the pane, not left to the form. Offered "as wide
-                // as you like", a columns-style Form comes out about 40% wider
-                // than the pane — measured: 834 points of form in a 660 pane,
-                // 561 in 458 — and a scroll view that only scrolls vertically
-                // won't be narrower than its content, so the pane's hosting
-                // view centred the lot and clipped both ends: labels lost
-                // their first letters on the left and every field ran off
-                // the right. Told the pane's width outright, the rows lay out
-                // to exactly that, and anything the form genuinely can't fit
-                // overflows to the right alone, where the labels stay whole.
-                .containerRelativeFrame(.horizontal, alignment: .leading) { width, _ in
-                    max(0, width - 64)
-                }
-                .padding(.horizontal, 32)
-                .padding(.vertical, 12)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .layoutPriority(1)
         }
         .onAppear {
             manager.update(config: state.config)
