@@ -102,6 +102,17 @@ public enum ThinkingEffort: String, Codable, Sendable, CaseIterable, Identifiabl
         switch kind {
         case .anthropic:
             [.off, .low, .medium, .high, .xhigh, .max]
+        case .openAI:
+            // The union of what its models take. The newest take none through
+            // xhigh; gpt-5 stops at high and can't be told none, and asking
+            // it for either gets the nearest it has — gen-kit's table decides
+            // per model, and says so in the log.
+            [.off, .low, .medium, .high, .xhigh]
+        case .deepseek:
+            // Its endpoint names all seven, max included. Whether each of its
+            // models honours each level is unmeasured; a refusal would be a
+            // 400 naming what the model does take.
+            [.off, .low, .medium, .high, .xhigh, .max]
         default:
             [.off, .brief, .full]
         }
