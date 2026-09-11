@@ -504,7 +504,7 @@ final class TranscriptCoordinator: NSObject {
         // here was ever long enough to show it until an error arrived, which
         // ran off the side of the pane in a single line.
         if footerNeedsRebuild || abs(footerBuiltAtWidth - width) > 0.5 {
-            view.rootView = AnyView(footerBuilder().frame(width: width))
+            view.rootView = AnyView(TopPinned { footerBuilder().frame(width: width) })
             footerBuiltAtWidth = width
             footerNeedsRebuild = false
         }
@@ -538,10 +538,11 @@ final class TranscriptCoordinator: NSObject {
         return view.fittingSize.height
     }
 
-    /// A run's content, pinned to the width it will be laid out at.
+    /// A run's content, pinned to the width it will be laid out at and to the
+    /// top of whatever height it is given.
     private func rootView(for run: Run, width: CGFloat) -> AnyView {
         guard let content else { return AnyView(EmptyView()) }
-        return AnyView(content(run).frame(width: width))
+        return AnyView(TopPinned { content(run).frame(width: width) })
     }
 
     /// Marks the footer for rebuilding rather than rebuilding it here: only
@@ -807,6 +808,49 @@ final class RunHostingView: NSHostingView<AnyView> {
         guard abs(height - lastReported) > 0.5 else { return }
         lastReported = height
         onHeightChange?(runID, height)
+    }
+}
+
+/// Fills whatever height it is given and puts its content at the top.
+///
+/// A hosting view centres a root that isn't the size of its bounds. That is
+/// harmless while the two agree, and they don't while an answer streams: the
+/// content grows the moment a token lands, and the frame catches up a pass
+/// later, when the height has settled. For that one frame the content stands
+/// taller than its frame and is centred in it — which is to say, moved up by
+/// half the difference — and then dropped back when the frame catches up.
+/// Measured off a screen recording, every new line the answer grew was a
+/// jump of 3 points up and back, and a paragraph break 17. The rows above it,
+/// whose frames weren't changing, never moved.
+///
+/// Asked for its ideal size, with nothing proposed, this answers with the
+/// content's own, so `intrinsicContentSize` still reports the true height.
+/// Laid out in a frame, it takes exactly that frame — so there is nothing for
+/// the hosting view to centre — and pins the content to the top edge, where
+/// a frame that is a pass behind shows at the bottom, off the end of the row,
+/// rather than as the whole row shifting.
+///
+/// `.frame(maxHeight: .infinity, alignment: .top)` does not do this. Checked:
+/// offered less height than its content, a flexible frame grows to the
+/// content, and the hosting view centres the result exactly as before. Only a
+/// layout that answers the proposal with the proposal keeps the root the size
+/// of its bounds. The content is proposed no height at all, so it lays out at
+/// its own — a `Text` proposed a shorter height than it needs will drop lines
+/// to fit, and this is what the plain frame did to every row in the check.
+private struct TopPinned: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        let ideal = child.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: proposal.width ?? ideal.width, height: proposal.height ?? ideal.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let child = subviews.first else { return }
+        child.place(
+            at: CGPoint(x: bounds.minX, y: bounds.minY),
+            anchor: .topLeading,
+            proposal: ProposedViewSize(width: bounds.width, height: nil)
+        )
     }
 }
 #endif
