@@ -57,7 +57,19 @@ struct ServicesView: View {
                         }
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Sized from the pane, not left to the form. Offered "as wide
+                // as you like", a columns-style Form comes out about 40% wider
+                // than the pane — measured: 834 points of form in a 660 pane,
+                // 561 in 458 — and a scroll view that only scrolls vertically
+                // won't be narrower than its content, so the pane's hosting
+                // view centred the lot and clipped both ends: labels lost
+                // their first letters on the left and every field ran off
+                // the right. Told the pane's width outright, the rows lay out
+                // to exactly that, and anything the form genuinely can't fit
+                // overflows to the right alone, where the labels stay whole.
+                .containerRelativeFrame(.horizontal, alignment: .leading) { width, _ in
+                    max(0, width - 64)
+                }
                 .padding(.horizontal, 32)
                 .padding(.vertical, 12)
             }
