@@ -1094,7 +1094,7 @@ final class ConversationViewModel {
 
             // Generate response stream
             var streamUpdates = 0
-            let stream = ChatSession.shared.stream(req)
+            let stream = ChatSession.shared.stream(req, runLoopLimit: Self.toolRoundLimit)
             // Publishing every token re-renders the message, and rendering
             // means re-parsing the whole answer as markdown and laying it out
             // again — work that grows with the answer while tokens keep
@@ -1324,8 +1324,28 @@ final class ConversationViewModel {
             }
         }
 
+        if let sessionError = error as? ChatSessionError {
+            switch sessionError {
+            case .maxRunLoopLimit:
+                // Not a token ceiling, whatever "limit" suggests: the model
+                // answered every tool result with another tool call, round
+                // after round, and never got to an answer. Everything it did
+                // up to then is kept in the thread.
+                return "The model called tools \(Self.toolRoundLimit) times in a row without finishing an answer, so Heat stopped it. What it found is kept above; try asking again, or with Tools off."
+            default:
+                return "\(sessionError)"
+            }
+        }
+
         return "\(error)"
     }
+
+    /// How many rounds of tool calls a single turn may run before Heat
+    /// stops it — each round being a tool result answered with another call.
+    ///
+    /// A ceiling on rounds, not on tokens. Ten is gen-kit's default, named
+    /// here so the message that reports it can say the number.
+    private static let toolRoundLimit = 10
 
     /// The service for Heat's own short jobs — naming a conversation, drafting
     /// follow-up suggestions.
