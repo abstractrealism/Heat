@@ -109,10 +109,11 @@ public enum ThinkingEffort: String, Codable, Sendable, CaseIterable, Identifiabl
             // per model, and says so in the log.
             [.off, .low, .medium, .high, .xhigh]
         case .deepseek:
-            // Its endpoint names all seven, max included. Whether each of its
-            // models honours each level is unmeasured; a refusal would be a
-            // 400 naming what the model does take.
-            [.off, .low, .medium, .high, .xhigh, .max]
+            // Three levels, from its own guide: the endpoint accepts every
+            // name but documents medium and xhigh as high, so offering them
+            // would be two more names for one thing. High is what it does
+            // left alone. Off is a switch of its own, which gen-kit throws.
+            [.off, .low, .high, .max]
         default:
             [.off, .brief, .full]
         }
