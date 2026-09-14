@@ -11,9 +11,30 @@ public protocol WebImageSearch {
 
 // MARK: Types
 
-enum WebSearchError: Error {
+/// Described in words, because the description is what the model reads. A
+/// tool failure goes back as the tool's result, and a bare `Error` describes
+/// itself as "The operation couldn't be completed" — which tells the model
+/// nothing about whether to try again.
+enum WebSearchError: LocalizedError {
     case invalidHTML
     case missingElement(String)
+    /// DuckDuckGo answered with a bot challenge instead of results.
+    case challenged
+    /// A challenge was served moments ago, so nothing was asked.
+    case holdingOff(TimeInterval)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidHTML:
+            "The search page couldn't be read."
+        case .missingElement(let element):
+            "The search page has changed and \(element) wasn't found on it."
+        case .challenged:
+            "DuckDuckGo answered with a bot challenge instead of results: it has seen too many searches from this address in a short time. Searching again straight away gets the same answer, so work with what you already have."
+        case .holdingOff(let seconds):
+            "Not searched: DuckDuckGo challenged a search moments ago and will refuse another for about \(Int(seconds.rounded(.up))) seconds. Work with what you already have."
+        }
+    }
 }
 
 enum WebSearchUserAgent: String {

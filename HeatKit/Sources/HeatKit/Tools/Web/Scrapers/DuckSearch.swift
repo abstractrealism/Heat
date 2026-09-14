@@ -25,7 +25,8 @@ public struct DuckSearch: WebSearch, WebImageSearch {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let baseURL = response.url ?? urlComponents.url!
-        let resp = try extractResults(data, baseURL: baseURL, query: query)
+        let status = (response as? HTTPURLResponse)?.statusCode
+        let resp = try extractResults(data, baseURL: baseURL, query: query, status: status)
         return resp
     }
 
@@ -122,11 +123,31 @@ extension DuckSearch {
 
 extension DuckSearch {
 
-    private func extractResults(_ data: Data, baseURL: URL, query: String) throws -> WebSearchResponse {
+    func extractResults(_ data: Data, baseURL: URL, query: String, status: Int? = nil) throws -> WebSearchResponse {
 
         // Do not use the code path `Fuzi.HTMLDocument(string:)` because it will lead to silent parsing failures
         // only on release builds. There be demons in this package.
         let doc = try parse(data: data)
+
+        // Refused, not empty. Asked too often in too short a time, DuckDuckGo
+        // answers with a puzzle — "select all squares containing a duck" —
+        // on a page with no results on it and, as it happens, status 202. To
+        // the selectors below that page is indistinguishable from a search
+        // that found nothing, and it was being reported as exactly that: the
+        // model was told the web had no answer, rephrased, and asked again,
+        // which is the one thing that keeps the puzzle coming. Measured: one
+        // search answered, the next four were all challenges. So it's an
+        // error, worded for the model, rather than an empty success.
+        //
+        // Two markers, either will do: the form the puzzle posts to, and the
+        // overlay it sits in. Checked against a captured challenge with the
+        // same selector engine — the first attempt matched an id that turned
+        // out to be a `data-testid`, which Fuzi's selectors can't see.
+        if !doc.css("#challenge-form").isEmpty || !doc.css(".anomaly-modal__mask").isEmpty {
+            logger.warning("DuckDuckGo served a bot challenge instead of results (status \(status ?? 0, privacy: .public))")
+            throw WebSearchError.challenged
+        }
+
         let elements = doc.css("#links .result")
 
         // A result with no usable link is skipped rather than crashed on. These
