@@ -16,6 +16,12 @@ public protocol WebImageSearch {
 /// itself as "The operation couldn't be completed" — which tells the model
 /// nothing about whether to try again.
 enum WebSearchError: LocalizedError {
+    private static func describe(_ seconds: TimeInterval) -> String {
+        if seconds < 90 { return "\(Int(seconds.rounded(.up))) seconds" }
+        let minutes = Int((seconds / 60).rounded(.up))
+        return minutes == 1 ? "a minute" : "\(minutes) minutes"
+    }
+
     case invalidHTML
     case missingElement(String)
     /// DuckDuckGo answered with a bot challenge instead of results.
@@ -32,7 +38,7 @@ enum WebSearchError: LocalizedError {
         case .challenged:
             "DuckDuckGo answered with a bot challenge instead of results: it has seen too many searches from this address in a short time. Searching again straight away gets the same answer, so work with what you already have."
         case .holdingOff(let seconds):
-            "Not searched: DuckDuckGo challenged a search moments ago and will refuse another for about \(Int(seconds.rounded(.up))) seconds. Work with what you already have."
+            "Not searched: DuckDuckGo challenged a recent search and will refuse another for about \(Self.describe(seconds)). Work with what you already have."
         }
     }
 }
@@ -40,6 +46,10 @@ enum WebSearchError: LocalizedError {
 enum WebSearchUserAgent: String {
     case desktop = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
     case mobile = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1"
+    /// Safari on a Mac, which is what the network stack underneath actually
+    /// is. Safari has reported 10_15_7 on every macOS since Catalina, so the
+    /// frozen version is the accurate one.
+    case safari = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15"
 }
 
 public struct WebSearchResponse: Codable, Sendable {
