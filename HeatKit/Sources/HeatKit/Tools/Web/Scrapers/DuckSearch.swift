@@ -13,17 +13,39 @@ public struct DuckSearch: WebSearch, WebImageSearch {
     /// the endpoint the image tab itself calls, which answers in JSON.
     let imageSearchHost = "https://duckduckgo.com"
 
+    /// A session of its own, so that it keeps cookies. The request used to
+    /// refuse them, and a client that says it's Safari and then drops every
+    /// cookie it's handed doesn't behave like Safari. Ephemeral, so nothing
+    /// outlives the app or is shared with any other request Heat makes.
+    private static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpAdditionalHeaders = [
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        ]
+        return URLSession(configuration: configuration)
+    }()
+
     public func search(web query: String) async throws -> WebSearchResponse {
+        // The platform's own browser, since the TLS stack underneath really
+        // is Apple's: a Mac presenting as macOS Safari is accurate, where a
+        // Mac presenting as an iPhone is one more thing that doesn't add up.
+        #if os(macOS)
+        let userAgent = WebSearchUserAgent.safari
+        #else
         let userAgent = WebSearchUserAgent.mobile
+        #endif
 
         var urlComponents = URLComponents(string: host)!
         urlComponents.queryItems = [.init(name: "q", value: query)]
 
         var request = URLRequest(url: urlComponents.url!)
-        request.httpShouldHandleCookies = false
         request.setValue(userAgent.rawValue, forHTTPHeaderField: "User-Agent")
+        request.setValue("document", forHTTPHeaderField: "Sec-Fetch-Dest")
+        request.setValue("navigate", forHTTPHeaderField: "Sec-Fetch-Mode")
+        request.setValue("none", forHTTPHeaderField: "Sec-Fetch-Site")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await Self.session.data(for: request)
         let baseURL = response.url ?? urlComponents.url!
         let status = (response as? HTTPURLResponse)?.statusCode
         let resp = try extractResults(data, baseURL: baseURL, query: query, status: status)

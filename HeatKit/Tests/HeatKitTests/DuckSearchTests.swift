@@ -63,7 +63,8 @@ struct DuckSearchTests {
         let text = WebSearchError.challenged.localizedDescription
         #expect(text.contains("bot challenge"))
         #expect(text.contains("too many searches"))
-        let holding = WebSearchError.holdingOff(42).localizedDescription
-        #expect(holding.contains("42 seconds"))
+        #expect(WebSearchError.holdingOff(42).localizedDescription.contains("42 seconds"))
+        #expect(WebSearchError.holdingOff(1800).localizedDescription.contains("30 minutes"))
+        #expect(WebSearchError.holdingOff(61).localizedDescription.contains("a minute"))
     }
 }

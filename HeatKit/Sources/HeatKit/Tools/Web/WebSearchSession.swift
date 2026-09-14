@@ -7,31 +7,66 @@ public actor WebSearchSession {
 
     private init() {}
 
-    /// When DuckDuckGo last answered a search with a bot challenge.
-    ///
-    /// A challenge is served to an address that has asked too often, and
-    /// asking again straight away is what keeps it coming — a model working
-    /// through a question searches twice a round, round after round, and one
-    /// such turn was measured at twenty searches in ninety seconds. So after
-    /// a challenge nothing is asked for a while, and the model is told so
-    /// rather than sent another puzzle. The interval is a guess: long enough
-    /// to break the burst, short enough not to lose the tool for the session.
+    // MARK: - Pacing
+    //
+    // DuckDuckGo's HTML endpoint is rate-limited per address, and it says so
+    // with a bot challenge rather than a status. Measured, from this machine:
+    // four requests in thirteen seconds tripped it, and the block that
+    // followed was still in force seventy-six minutes later — twenty of them
+    // with no request at all — where the first block of the day had cleared
+    // inside an hour. So the block appears to lengthen with repeated trips,
+    // and quite possibly with every request made during it.
+    //
+    // Two consequences. Requests are spaced, one at a time, because a model
+    // working through a question asks for two at once, round after round,
+    // and that is precisely the burst that trips it. And after a challenge
+    // nothing is asked for a long while — long enough that the retry itself
+    // isn't what keeps the door shut — with the wait doubling each time a
+    // retry is challenged again, and the model told the truth meanwhile.
+
+    /// The least time between two requests. Four in thirteen seconds was
+    /// refused; this is a guess at the other side of that line.
+    private static let spacing: TimeInterval = 6
+
+    /// When the next request may go, or nil if now. Reserved *before* the
+    /// wait rather than recorded after it, so two callers arriving together
+    /// take successive slots instead of sleeping the same interval and firing
+    /// as one.
+    private var nextSlot: Date?
+
+    private static let firstHold: TimeInterval = 30 * 60
+    private static let longestHold: TimeInterval = 4 * 60 * 60
+
     private var challengedAt: Date?
-    private static let holdAfterChallenge: TimeInterval = 60
+    private var hold: TimeInterval = WebSearchSession.firstHold
 
     public func search(query: String) async throws -> WebSearchResponse {
         if let challengedAt {
-            let remaining = Self.holdAfterChallenge - Date.now.timeIntervalSince(challengedAt)
+            let remaining = hold - Date.now.timeIntervalSince(challengedAt)
             if remaining > 0 {
                 throw WebSearchError.holdingOff(remaining)
             }
-            self.challengedAt = nil
+        }
+
+        let slot = max(Date.now, nextSlot ?? .distantPast)
+        nextSlot = slot.addingTimeInterval(Self.spacing)
+        let wait = slot.timeIntervalSinceNow
+        if wait > 0 {
+            try await Task.sleep(for: .seconds(wait))
         }
 
         let engine = DuckSearch()
         do {
-            return try await engine.search(web: query)
+            let response = try await engine.search(web: query)
+            challengedAt = nil
+            hold = Self.firstHold
+            return response
         } catch WebSearchError.challenged {
+            // Challenged again on the first try after a hold: the hold was
+            // too short, so the next is longer.
+            if challengedAt != nil {
+                hold = min(hold * 2, Self.longestHold)
+            }
             challengedAt = .now
             throw WebSearchError.challenged
         }
