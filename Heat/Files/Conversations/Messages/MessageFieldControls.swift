@@ -126,7 +126,15 @@ struct MessageFieldControls: View {
     @ViewBuilder
     private var toolsMenu: some View {
         let count = activeToolIDs.count
-        let isArmed = count > 0 && modelCanUseTools
+        // A model that searches the web on its own lights the pill as though
+        // Search had been switched on — it is on, just not here — and counts
+        // as one ability unless Heat's own search is on too, when it's the
+        // same one twice. Otherwise the note explaining it sits in a menu
+        // nobody has a reason to open.
+        let searchesItself = conversationViewModel.modelSearchesTheWebItself
+        let searchAlreadyCounted = activeToolIDs.contains(Toolbox.searchWeb.name)
+        let shown = count + (searchesItself && !searchAlreadyCounted ? 1 : 0)
+        let isArmed = shown > 0 && modelCanUseTools
         Menu {
             // Toggles rather than buttons: a menu Toggle draws the platform's
             // own checkmark, which is what says a tool is on. A Button with a
@@ -166,10 +174,10 @@ struct MessageFieldControls: View {
                     // Always laid out, hidden when there's nothing to count, so
                     // the pill keeps its width and the row doesn't shift as
                     // tools are switched on and off.
-                    Text("\(max(count, 1))")
+                    Text("\(max(shown, 1))")
                         .monospacedDigit()
-                        .opacity(count > 0 ? 1 : 0)
-                        .accessibilityHidden(count == 0)
+                        .opacity(shown > 0 ? 1 : 0)
+                        .accessibilityHidden(shown == 0)
                 }
             }
         }
