@@ -146,6 +146,26 @@ struct ModelDeprecationsTests {
         #expect(ModelDeprecations.withdrawnModelIDs(in: markdown, asOf: Self.asOf).isEmpty)
     }
 
+    // MARK: - What's known without the page
+
+    /// Aliases whose snapshots the page lists but whose bare names it
+    /// doesn't, met the hard way. If one of these ever *is* found on the
+    /// page the list entry is redundant, not wrong.
+    @Test("The search-preview aliases are known withdrawn without the page")
+    func knownWithoutThePage() {
+        let known = ModelDeprecations.alreadyKnown(for: .openAI)
+        #expect(known.contains("gpt-4o-search-preview"))
+        #expect(known.contains("gpt-4o-mini-search-preview"))
+        // And are not, in fact, named on the page as of the fixture.
+        #expect(!Self.withdrawn.contains("gpt-4o-search-preview"))
+    }
+
+    @Test("Nothing is known for services that publish nothing")
+    func nothingKnownElsewhere() {
+        #expect(ModelDeprecations.alreadyKnown(for: .deepseek).isEmpty)
+        #expect(ModelDeprecations.alreadyKnown(for: .ollama).isEmpty)
+    }
+
     // MARK: - Noticing that the page has changed
 
     /// The whole fixture parses cleanly, so nothing should be flagged. If this

@@ -514,25 +514,29 @@ struct ServiceForm: View {
     /// offered, which is where things stood before — and a request for a dead
     /// one is still caught when the service refuses it.
     private func hideWithdrawnModels(among models: [Model]) async {
+        // What's known regardless of the page — aliases the page doesn't
+        // name — so a fresh install doesn't suggest a model that failed on
+        // this one, and so the page being unreachable hides those at least.
+        var withdrawn = ModelDeprecations.alreadyKnown(for: service.kind)
         do {
-            let withdrawn = try await ModelDeprecations.withdrawnModelIDs(for: service.kind)
-            guard !Task.isCancelled else { return }
-
-            let affected = models.filter { withdrawn.contains($0.id) }
-            guard !affected.isEmpty else { return }
-
-            var config = state.config
-            for model in affected {
-                config.markModelUnavailable(model, in: service)
-            }
-            try? await API.shared.configUpdate(config)
-
-            guard !Task.isCancelled else { return }
-            modelLoad = .loaded(found: models.count, withdrawn: affected.count)
-            logger.info("hid \(affected.count) withdrawn models for \(service.name)")
+            withdrawn.formUnion(try await ModelDeprecations.withdrawnModelIDs(for: service.kind))
         } catch {
             logger.warning("couldn't read \(service.name)'s deprecations: \(error)")
         }
+        guard !Task.isCancelled else { return }
+
+        let affected = models.filter { withdrawn.contains($0.id) }
+        guard !affected.isEmpty else { return }
+
+        var config = state.config
+        for model in affected {
+            config.markModelUnavailable(model, in: service)
+        }
+        try? await API.shared.configUpdate(config)
+
+        guard !Task.isCancelled else { return }
+        modelLoad = .loaded(found: models.count, withdrawn: affected.count)
+        logger.info("hid \(affected.count) withdrawn models for \(service.name)")
     }
 
     /// What to say when a service won't answer.

@@ -41,6 +41,25 @@ public struct ModelDeprecations {
         }
     }
 
+    /// Models known to be withdrawn that the page doesn't name outright.
+    ///
+    /// The page lists dated snapshots — `gpt-4o-search-preview-2025-03-11`
+    /// — while the model list offers the bare alias, and exact matching is
+    /// the only sound kind (see above). So an alias whose every snapshot is
+    /// gone slips through, is offered, is marked suggested on a fresh
+    /// install, and fails the first message sent to it with "has been
+    /// deprecated". That refusal hides it, but only on the install that
+    /// sent it. These are the ones already met that way; a list, not a
+    /// rule, and it will fall behind — which the refusal still covers.
+    public static func alreadyKnown(for kind: Service.Kind) -> Set<String> {
+        switch kind {
+        case .openAI:
+            ["gpt-4o-search-preview", "gpt-4o-mini-search-preview"]
+        default:
+            []
+        }
+    }
+
     /// Where a service publishes this, where it publishes it at all.
     public static func documentURL(for kind: Service.Kind) -> URL? {
         switch kind {
