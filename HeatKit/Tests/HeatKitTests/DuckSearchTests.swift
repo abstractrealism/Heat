@@ -61,8 +61,8 @@ struct DuckSearchTests {
     @Test("The refusal is worded for the model")
     func wording() {
         let text = WebSearchError.challenged.localizedDescription
-        #expect(text.contains("bot challenge"))
-        #expect(text.contains("too many searches"))
+        #expect(text.hasPrefix("Web search isn't available right now"))
+        #expect(text.contains("too many"))
         #expect(WebSearchError.holdingOff(42).localizedDescription.contains("42 seconds"))
         #expect(WebSearchError.holdingOff(1800).localizedDescription.contains("30 minutes"))
         #expect(WebSearchError.holdingOff(61).localizedDescription.contains("a minute"))

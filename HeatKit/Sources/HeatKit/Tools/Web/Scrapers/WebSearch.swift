@@ -36,9 +36,9 @@ enum WebSearchError: LocalizedError {
         case .missingElement(let element):
             "The search page has changed and \(element) wasn't found on it."
         case .challenged:
-            "DuckDuckGo answered with a bot challenge instead of results: it has seen too many searches from this address in a short time. Searching again straight away gets the same answer, so work with what you already have."
+            "Web search isn't available right now: DuckDuckGo is refusing searches from this address because too many were made in a short time. Searching again straight away will get the same answer, so work with what you already have and tell the user search is temporarily unavailable."
         case .holdingOff(let seconds):
-            "Not searched: DuckDuckGo challenged a recent search and will refuse another for about \(Self.describe(seconds)). Work with what you already have."
+            "Web search isn't available right now, and won't be for about \(Self.describe(seconds)): DuckDuckGo refused a recent search for making too many too quickly. Work with what you already have and tell the user search is temporarily unavailable."
         }
     }
 }
