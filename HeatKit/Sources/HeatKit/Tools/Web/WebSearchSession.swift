@@ -24,9 +24,10 @@ public actor WebSearchSession {
     // isn't what keeps the door shut — with the wait doubling each time a
     // retry is challenged again, and the model told the truth meanwhile.
 
-    /// The least time between two requests. Four in thirteen seconds was
-    /// refused; this is a guess at the other side of that line.
-    private static let spacing: TimeInterval = 6
+    /// The gap between two requests, drawn afresh each time. Four in
+    /// thirteen seconds was refused; this range is a guess at the other side
+    /// of that line, and varied so the pattern isn't a metronome.
+    private static let spacing: ClosedRange<TimeInterval> = 4...10
 
     /// When the next request may go, or nil if now. Reserved *before* the
     /// wait rather than recorded after it, so two callers arriving together
@@ -49,7 +50,7 @@ public actor WebSearchSession {
         }
 
         let slot = max(Date.now, nextSlot ?? .distantPast)
-        nextSlot = slot.addingTimeInterval(Self.spacing)
+        nextSlot = slot.addingTimeInterval(.random(in: Self.spacing))
         let wait = slot.timeIntervalSinceNow
         if wait > 0 {
             try await Task.sleep(for: .seconds(wait))
