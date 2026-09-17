@@ -1,6 +1,9 @@
 import Foundation
+import OSLog
 import QuartzCore
 import Fuzi
+
+private let logger = Logger(subsystem: "WebSearch", category: "HeatKit")
 
 public actor WebSearchSession {
     public static let shared = WebSearchSession()
@@ -45,6 +48,7 @@ public actor WebSearchSession {
         if let challengedAt {
             let remaining = hold - Date.now.timeIntervalSince(challengedAt)
             if remaining > 0 {
+                logger.notice("search held off, \(Int(remaining), privacy: .public)s of a challenge hold left: \(query, privacy: .public)")
                 throw WebSearchError.holdingOff(remaining)
             }
         }
@@ -56,11 +60,21 @@ public actor WebSearchSession {
             try await Task.sleep(for: .seconds(wait))
         }
 
+        // Said at the moment the request actually goes, with how long it
+        // queued: the tool-call log lines print when calls are dispatched,
+        // all at once, and read as though the pacing weren't happening.
+        logger.notice("→ search after \(Self.seconds(max(0, wait)), privacy: .public)s in the queue: \(query, privacy: .public)")
+        let sentAt = Date.now
+
         let engine = DuckSearch()
         do {
             let response = try await engine.search(web: query)
             challengedAt = nil
             hold = Self.firstHold
+            logger.notice("← search answered in \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s with \(response.results.count, privacy: .public) results: \(query, privacy: .public)")
+            for (index, result) in response.results.enumerated() {
+                logger.info("   \(index + 1, privacy: .public). \(result.title ?? "", privacy: .public) — \(result.url.absoluteString, privacy: .public)")
+            }
             return response
         } catch WebSearchError.challenged {
             // Challenged again on the first try after a hold: the hold was
@@ -69,8 +83,16 @@ public actor WebSearchSession {
                 hold = min(hold * 2, Self.longestHold)
             }
             challengedAt = .now
+            logger.notice("← search refused after \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s; holding off \(Int(self.hold / 60), privacy: .public) min: \(query, privacy: .public)")
             throw WebSearchError.challenged
+        } catch {
+            logger.notice("← search failed after \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s: \(error, privacy: .public): \(query, privacy: .public)")
+            throw error
         }
+    }
+
+    private static func seconds(_ interval: TimeInterval) -> String {
+        String(format: "%.1f", interval)
     }
 
     public func searchImages(query: String) async throws -> WebSearchResponse {
