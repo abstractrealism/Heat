@@ -195,11 +195,34 @@ extension DuckSearch {
         // nothing and reports success, and the assistant faithfully relays that
         // it found nothing.
         if elements.isEmpty {
-            logger.warning("No results matched the page layout — either the search found nothing, or the markup changed")
+            logger.warning("No results matched the page layout (status \(status ?? 0, privacy: .public)) — either the search found nothing, or the markup changed")
+            keepForInspection(data, reason: "no-results", status: status)
         } else if results.count < elements.count {
-            logger.warning("Skipped \(elements.count - results.count, privacy: .public) of \(elements.count, privacy: .public) results with no usable link")
+            logger.warning("Skipped \(elements.count - results.count, privacy: .public) of \(elements.count, privacy: .public) results with no usable link (status \(status ?? 0, privacy: .public))")
+            if results.isEmpty {
+                keepForInspection(data, reason: "no-usable-link", status: status)
+            }
         }
         return WebSearchResponse(query: query, results: results)
+    }
+
+    /// Saves a page the parser couldn't read anything from, so it can be
+    /// looked at. Debug builds only — this is for finding out what a page
+    /// that yields nothing actually is, which the log lines above can't say.
+    /// Written under the app's own Documents, in `Debug/DuckSearch/`.
+    private func keepForInspection(_ data: Data, reason: String, status: Int?) {
+        #if DEBUG
+        let directory = URL.documentsDirectory.appending(path: "Debug/DuckSearch", directoryHint: .isDirectory)
+        let stamp = ISO8601DateFormatter().string(from: .now).replacingOccurrences(of: ":", with: "-")
+        let file = directory.appending(path: "\(stamp)-\(reason)-\(status ?? 0).html")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: file)
+            logger.warning("kept the page for inspection: \(file.path, privacy: .public)")
+        } catch {
+            logger.warning("couldn't keep the page for inspection: \(error, privacy: .public)")
+        }
+        #endif
     }
 
     private func parse(data: Data) throws -> Fuzi.HTMLDocument {
