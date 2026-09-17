@@ -170,6 +170,18 @@ extension DuckSearch {
             throw WebSearchError.challenged
         }
 
+        // Nothing found, said by the page. A search that matches nothing —
+        // an exact phrase that appears nowhere, mostly — comes back as one
+        // row in the results list, marked `result--no-result` and holding
+        // "No results found for …" where a title would be. To the selectors
+        // below that is one result with no link in it, and it was logged as
+        // a skipped row and kept for inspection on every over-quoted query
+        // the model tried. It's the ordinary empty case, and quiet.
+        if !doc.css("#links .result--no-result").isEmpty {
+            logger.info("DuckDuckGo found nothing for \(query, privacy: .public)")
+            return WebSearchResponse(query: query, results: [])
+        }
+
         let elements = doc.css("#links .result")
 
         // A result with no usable link is skipped rather than crashed on. These
