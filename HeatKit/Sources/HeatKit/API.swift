@@ -12,7 +12,17 @@ public final class API {
 
     private var session: URLSession = {
         let cfg = URLSessionConfiguration.ephemeral
-        cfg.timeoutIntervalForRequest = 60       // keep it conservative
+
+        // The most a reply may go quiet for once it has started, and the
+        // floor under everything else. It's an inactivity timeout — reset by
+        // every byte — so a streaming answer is safe at any length; what it
+        // bounds is a gap. How long a round may take to *start* is decided
+        // per round by the chat session (`RoundTimeouts`), a minute for the
+        // first token of a turn and five for a round after tool results, and
+        // this has to be at least the larger of those or it cuts in first.
+        // It did: at 60 a local model reading ten searches' worth of results
+        // was killed before its first token.
+        cfg.timeoutIntervalForRequest = 300
 
         // A refused connection has to be reported, not waited out.
         //

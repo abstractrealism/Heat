@@ -1094,7 +1094,7 @@ final class ConversationViewModel {
 
             // Generate response stream
             var streamUpdates = 0
-            let stream = ChatSession.shared.stream(req, runLoopLimit: Self.toolRoundLimit)
+            let stream = ChatSession.shared.stream(req, runLoopLimit: Self.toolRoundLimit, timeouts: Self.turnTimeouts)
             // Publishing every token re-renders the message, and rendering
             // means re-parsing the whole answer as markdown and laying it out
             // again — work that grows with the answer while tokens keep
@@ -1325,6 +1325,10 @@ final class ConversationViewModel {
         }
 
         if let sessionError = error as? ChatSessionError {
+            let name = (try? API.shared.resolvedChatService(
+                serviceID: conversation.serviceID,
+                modelID: conversation.modelID
+            ).0.name) ?? "The model service"
             switch sessionError {
             case .maxRunLoopLimit:
                 // Not a token ceiling, whatever "limit" suggests: the model
@@ -1332,6 +1336,11 @@ final class ConversationViewModel {
                 // after round, and never got to an answer. Everything it did
                 // up to then is kept in the thread.
                 return "The model called tools \(Self.toolRoundLimit) times in a row without finishing an answer, so Heat stopped it. What it found is kept above; try asking again, or with Tools off."
+            case .timedOut(let seconds, let afterTools):
+                let allowed = seconds >= 120 ? "\(Int(seconds / 60)) minutes" : "\(Int(seconds)) seconds"
+                return afterTools
+                    ? "\(name) didn't start answering within \(allowed) of getting the tool results. Reading them can take a local model a while; what the tools found is kept above."
+                    : "\(name) didn't start answering within \(allowed). It may be loading a model, or it may have stopped responding."
             default:
                 return "\(sessionError)"
             }
@@ -1346,6 +1355,22 @@ final class ConversationViewModel {
     /// A ceiling on rounds, not on tokens. Ten is gen-kit's default, named
     /// here so the message that reports it can say the number.
     private static let toolRoundLimit = 10
+
+    /// How long a round may take to start answering.
+    ///
+    /// A minute for the first token of a turn, which has never been hit.
+    /// Five for a round that follows tool results, because the model is
+    /// reading everything the tools returned before it can say a word — a
+    /// turn with ten searches behind it took a local 27B model longer than
+    /// a minute over that, and the minute was the whole of what it got.
+    /// The session's own inactivity timeout (`API`) sits at the larger
+    /// figure so it never cuts in first.
+    private static let turnTimeouts = ChatSession.RoundTimeouts(firstToken: 60, afterTools: 300)
+
+    /// For jobs whose prompt is large by nature — condensing a whole
+    /// conversation, concluding from a long stretch of reasoning — the
+    /// first token gets the longer allowance.
+    private static let heavyPromptTimeouts = ChatSession.RoundTimeouts(firstToken: 300)
 
     /// The service for Heat's own short jobs — naming a conversation, drafting
     /// follow-up suggestions.
@@ -1393,7 +1418,7 @@ final class ConversationViewModel {
 
         // Generate suggestions stream
         var lastResponse = ""
-        let stream = ChatSession.shared.stream(req)
+        let stream = ChatSession.shared.stream(req, timeouts: Self.turnTimeouts)
         for try await message in stream {
             try Task.checkCancellation()
             guard let content = message.content else { continue }
@@ -1537,7 +1562,7 @@ final class ConversationViewModel {
 
         // Generate suggestions stream
         var lastResponse = ""
-        let stream = ChatSession.shared.stream(req)
+        let stream = ChatSession.shared.stream(req, timeouts: Self.turnTimeouts)
         for try await message in stream {
             try Task.checkCancellation()
             guard let content = message.content else { continue }
@@ -1757,7 +1782,7 @@ final class ConversationViewModel {
 
         var summary: String?
         var lastResponse = ""
-        let stream = ChatSession.shared.stream(req)
+        let stream = ChatSession.shared.stream(req, timeouts: Self.heavyPromptTimeouts)
         for try await message in stream {
             try Task.checkCancellation()
             guard let content = message.content else { continue }
@@ -1926,7 +1951,7 @@ final class ConversationViewModel {
         var deltas = 0
         var deltasAtClose: Int?
 
-        let stream = ChatSession.shared.stream(req)
+        let stream = ChatSession.shared.stream(req, timeouts: Self.heavyPromptTimeouts)
         for try await message in stream {
             try Task.checkCancellation()
             deltas += 1
