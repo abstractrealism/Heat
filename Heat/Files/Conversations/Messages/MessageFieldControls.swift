@@ -128,12 +128,13 @@ struct MessageFieldControls: View {
         let count = activeToolIDs.count
         // A model that searches the web on its own lights the pill as though
         // Search had been switched on — it is on, just not here — and counts
-        // as one ability unless Heat's own search is on too, when it's the
-        // same one twice. Otherwise the note explaining it sits in a menu
-        // nobody has a reason to open.
+        // as one more, so the number on the pill is the number of ticks in
+        // the menu. (With Heat's own search on too that's the same ability
+        // twice, and it's counted twice: matching the menu matters more.)
+        // Otherwise the note explaining it sits in a menu nobody has a
+        // reason to open.
         let searchesItself = conversationViewModel.modelSearchesTheWebItself
-        let searchAlreadyCounted = activeToolIDs.contains(Toolbox.searchWeb.name)
-        let shown = count + (searchesItself && !searchAlreadyCounted ? 1 : 0)
+        let shown = count + (searchesItself ? 1 : 0)
         let isArmed = shown > 0 && modelCanUseTools
         Menu {
             // Toggles rather than buttons: a menu Toggle draws the platform's
@@ -162,9 +163,13 @@ struct MessageFieldControls: View {
             // whose switches it makes a liar of. Heat's search is a tool it
             // runs itself, so turning it off stops it — and a model that
             // searches on its own carries on regardless.
-            if conversationViewModel.modelSearchesTheWebItself {
+            // A tick that can't be cleared, beside the switches that can: the
+            // model's own searching is on and stays on, and drawing it the
+            // same way as the rest is what makes the pill's count add up.
+            if searchesItself {
                 Divider()
-                Text("\(conversationViewModel.selectedModelName) searches the web itself, whatever is set here")
+                Toggle("\(conversationViewModel.selectedModelName) always searches the web", isOn: .constant(true))
+                    .disabled(true)
             }
         } label: {
             pill(isOn: isArmed, emphasis: .outlined) {
