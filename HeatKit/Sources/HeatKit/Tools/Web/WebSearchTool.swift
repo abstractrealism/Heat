@@ -52,6 +52,24 @@ extension WebSearchTool {
             switch args.kind {
             case .web:
                 let searchResponse = try await WebSearchSession.shared.search(query: args.query)
+
+                // Said outright, because the template below asks the model to
+                // pick at least three of the results — an instruction that,
+                // given none, reads as a reason to search again the same way.
+                // What the engine itself suggests is what a model that has
+                // over-quoted needs to hear.
+                if searchResponse.results.isEmpty {
+                    return [.init(
+                        role: .tool,
+                        content: """
+                            No results found for "\(args.query)". Try different or fewer words, and drop quotation marks and OR — an exact phrase rarely matches.
+                            """,
+                        toolCallID: toolCall.id,
+                        name: toolCall.function?.name,
+                        metadata: ["label": .string("Searched web for '\(args.query)' — nothing found")]
+                    )]
+                }
+
                 let results = Array(searchResponse.results.prefix(10)).map {
                     """
                         <result>

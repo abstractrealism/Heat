@@ -49,6 +49,18 @@ struct DuckSearchTests {
         }
     }
 
+    /// What "Skipped 1 of 1 results with no usable link" turned out to be:
+    /// DuckDuckGo's no-results page, verbatim, for a quoted phrase that
+    /// appears nowhere. One row in the results list, marked as such, with
+    /// "No results found for …" where the title would be.
+    @Test("The engine's own no-results page is empty, quietly")
+    func noResultsPage() throws {
+        let response = try DuckSearch().extractResults(
+            try Self.page("duckduckgo-no-results"), baseURL: Self.base, query: "test", status: 200
+        )
+        #expect(response.results.isEmpty)
+    }
+
     @Test("A page with no results and no challenge is empty, not an error")
     func genuinelyEmpty() throws {
         let empty = Data("<html><body><div id=\"links\"></div></body></html>".utf8)
