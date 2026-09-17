@@ -43,6 +43,10 @@ struct ServicesView: View {
                         .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                 }
             }
+            // The list keeps its margin below; only the pane runs to the
+            // edge. After the overlay, or the Defaults button would sit in
+            // the margin rather than at the foot of the list.
+            .scenePadding(.bottom)
 
             // The pane scrolls, because the form inside it doesn't. macOS
             // gives a Form the columns style by default, which lays its rows
@@ -78,6 +82,10 @@ struct ServicesView: View {
                     .frame(width: max(0, pane.size.width - 64), alignment: .leading)
                     .padding(.horizontal, 32)
                     .padding(.vertical, 12)
+                    // The margin the pane gave up goes inside the scroll
+                    // instead, so the last row still ends a margin above the
+                    // edge once scrolled to the bottom.
+                    .scenePadding(.bottom)
                 }
             }
         }
