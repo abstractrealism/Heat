@@ -1100,9 +1100,12 @@ final class ConversationViewModel {
             // the template can't tell from an answer. Earlier turns are the
             // Settings switch's business and are left to historyForRequest.
             let priorCount = history.count
-            req.with(prepareHistory: { messages in
-                Self.strippingReasoning(from: messages, after: priorCount)
-            })
+            if state.config.stripReasoningWithinTurn {
+                req.with(prepareHistory: { messages in
+                    Self.strippingReasoning(from: messages, after: priorCount)
+                })
+            }
+            ChatDebug.log("→ reasoning from earlier rounds: \(state.config.stripReasoningWithinTurn ? "removed" : "kept")")
             req.with(tools: Toolbox.get(names: conversation.toolIDs))
             req.with(context: context)
             // Only when one was chosen for this model. Saying nothing is what
