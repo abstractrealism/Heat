@@ -22,7 +22,11 @@ public struct Defaults {
         (instructionSuggestionsID, "Suggestions", suggestionsInstruction),
         (instructionThinkingBriefID, "Thinking (Brief)", thinkingBriefInstruction),
         (instructionTitleID, "Title", titleInstruction),
-        (instructionWebSearchID, "Web Search", webSearchInstruction),
+        // "Web Search" is no longer seeded. It was never read from the file:
+        // the tool used the default text directly, so editing it in Settings
+        // changed nothing — and the text itself now lives in the tool's own
+        // description, sent once rather than with every result. An install
+        // that already has the file keeps it, unread; it can be deleted.
     ]
 
     public static let instructionAssistantID = "instruction-assistant"
