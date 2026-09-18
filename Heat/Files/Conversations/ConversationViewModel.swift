@@ -1492,9 +1492,16 @@ final class ConversationViewModel {
             let tag = result.first(tag: name)
 
             guard let content = tag?.content else { continue }
+            // One per line, with the lines a small model adds that aren't
+            // suggestions left out: blanks, a stray tag, and the same three
+            // repeated — a 4B model once returned its list twice around a
+            // second <suggested_replies>, which came through as seven chips.
+            var seen: Set<String> = []
             let suggestions = content
-                .trimmingCharacters(in: .whitespacesAndNewlines)
                 .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty && !($0.hasPrefix("<") && $0.hasSuffix(">")) }
+                .filter { seen.insert($0).inserted }
 
             conversation.suggestions = suggestions
             file.modified = .now
