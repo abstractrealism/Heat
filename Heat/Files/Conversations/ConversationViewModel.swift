@@ -1812,7 +1812,7 @@ final class ConversationViewModel {
         // What the model is currently being sent, plus any notes already
         // standing in for what came before — so compacting twice folds the
         // earlier notes in rather than dropping them.
-        var history = preparePlainTextHistory(activeMessages)
+        var history = preparePlainTextHistory(activeMessages, includingToolResults: true)
         if let existing = conversation.contextSummary, !existing.isEmpty {
             history = """
                 Notes on the conversation before this point:
@@ -2205,15 +2205,30 @@ final class ConversationViewModel {
         return runs
     }
 
-    private func preparePlainTextHistory(_ messages: [Message]) -> String {
+    /// The conversation as one block of text, for the jobs that read it
+    /// whole — a title, follow-up suggestions, a compaction.
+    ///
+    /// The exchange only, unless asked otherwise: what people said and what
+    /// the assistant answered. Tool results and reasoning are left out by
+    /// default, because they are most of a searching turn — one such turn
+    /// put 15,000 tokens through the 4B model twice, once for a title and
+    /// once for suggestions, seventy seconds of reading ten searches to name
+    /// a conversation — and neither job needs them: the answer already says
+    /// what the searches found. Compaction asks for the tool results, since
+    /// it stands in for the whole context and the facts have to survive.
+    private func preparePlainTextHistory(_ messages: [Message], includingToolResults: Bool = false) -> String {
         var out = ""
         for message in messages {
-            out += message.role.rawValue + ":\n"
+            if message.role == .tool, !includingToolResults { continue }
+            var lines: [String] = []
             for content in message.contents ?? [] {
-                guard case .text(let text) = content else { continue }
-                out += text + "\n"
+                guard case .text(let raw) = content else { continue }
+                let text = message.role == .assistant ? Self.removingThinking(from: raw) : raw
+                if !text.isEmpty { lines.append(text) }
             }
-            out += "\n"
+            // A reply that only called tools has nothing to say here.
+            guard !lines.isEmpty else { continue }
+            out += message.role.rawValue + ":\n" + lines.joined(separator: "\n") + "\n\n"
         }
         return out
     }
