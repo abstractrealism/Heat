@@ -138,6 +138,10 @@ final class ConversationViewModel {
     /// can tell it no longer speaks for this conversation.
     @ObservationIgnored private var currentTurn: UUID?
 
+    /// The links this turn's searches have returned, so a repeat comes back
+    /// by title alone. Fresh for every turn.
+    @ObservationIgnored private var seenLinks = SeenLinks()
+
     enum Error: Swift.Error, CustomStringConvertible {
         case generationError(String)
         case unexpectedError(String)
@@ -776,6 +780,24 @@ final class ConversationViewModel {
             // images and files alongside its text, and those have to survive.
             message.contents = message.contents?.map { content in
                 guard case .text(let text) = content else { return content }
+                return .text(Self.removingThinking(from: text))
+            }
+            return message
+        }
+    }
+
+    /// The turn's messages with reasoning removed from every assistant
+    /// reply after the first `priorCount`, which are earlier turns.
+    ///
+    /// Contents only. A reply that reasoned in the open keeps its reasoning
+    /// in metadata too, and that stays: DeepSeek requires it back and reads
+    /// it from there, not from the text.
+    nonisolated private static func strippingReasoning(from messages: [Message], after priorCount: Int) -> [Message] {
+        messages.enumerated().map { index, message in
+            guard index >= priorCount, message.role == .assistant else { return message }
+            var message = message
+            message.contents = message.contents?.map { content in
+                guard case .text(let text) = content else { return content }
                 return .text(removingThinking(from: text))
             }
             return message
@@ -789,7 +811,7 @@ final class ConversationViewModel {
     /// after it is working rather than reply — that whole message is what
     /// would otherwise be sent back as though it were something the assistant
     /// had said.
-    private func removingThinking(from text: String) -> String {
+    nonisolated private static func removingThinking(from text: String) -> String {
         var out = text
         for tag in ["think", "thinking"] {
             while let open = out.range(of: "<\(tag)>", options: [.caseInsensitive]) {
@@ -965,6 +987,7 @@ final class ConversationViewModel {
         // the one the new turn just set. The token says which turn is current.
         let token = UUID()
         currentTurn = token
+        seenLinks = SeenLinks()
         ConversationViewModelStore.shared.setGenerating(true, for: file.id)
 
         generateTask = Task {
@@ -1067,7 +1090,19 @@ final class ConversationViewModel {
             // Initial request
             var req = ChatSessionRequest(service: service, model: model, toolCallback: prepareToolResponse)
             req.with(system: systemForRequest(context: context))
-            req.with(history: historyForRequest())
+            let history = historyForRequest()
+            req.with(history: history)
+            // Earlier rounds of *this* turn go back without their reasoning.
+            // The model's scratch work from a round it has finished is the
+            // largest thing in a searching turn's context and the least
+            // useful: Qwen's own chat template drops it, and would here too
+            // if it could see it — but the fold makes it plain text, which
+            // the template can't tell from an answer. Earlier turns are the
+            // Settings switch's business and are left to historyForRequest.
+            let priorCount = history.count
+            req.with(prepareHistory: { messages in
+                Self.strippingReasoning(from: messages, after: priorCount)
+            })
             req.with(tools: Toolbox.get(names: conversation.toolIDs))
             req.with(context: context)
             // Only when one was chosen for this model. Saying nothing is what
@@ -1110,9 +1145,34 @@ final class ConversationViewModel {
             deltasAtEndOfThinking = nil
             liveTokensPerSecond = nil
 
+            // Rate and reasoning split are per reply, not per turn. A turn
+            // that calls tools has several replies with long silences between
+            // them — the model reading tool results — and a rate averaged
+            // over the whole turn read as under a token a second by round
+            // six, when the model was writing at thirty and reading the rest
+            // of the time.
+            var roundMessageID: String?
             for try await message in stream {
                 try Task.checkCancellation()
                 streamUpdates += 1
+
+                guard message.role == .assistant else {
+                    // Tool results arrive whole and aren't tokens the model wrote.
+                    if let pending, pending.id != message.id { publish(pending) }
+                    pending = message
+                    publish(message)
+                    lastPublished = .now
+                    continue
+                }
+
+                if message.id != roundMessageID {
+                    if let previous = roundMessageID { applyThinkingSplit(to: previous) }
+                    roundMessageID = message.id
+                    streamedDeltas = 0
+                    firstDeltaAt = nil
+                    deltasAtEndOfThinking = nil
+                    liveTokensPerSecond = nil
+                }
                 streamedDeltas += 1
                 if firstDeltaAt == nil { firstDeltaAt = .now }
 
@@ -2093,7 +2153,7 @@ final class ConversationViewModel {
                 let messages = await ImageGeneratorTool.handle(toolCall)
                 return .init(messages: messages, shouldContinue: false)
             case .searchWeb:
-                let messages = await WebSearchTool.handle(toolCall)
+                let messages = await WebSearchTool.handle(toolCall, seen: seenLinks)
                 return .init(messages: messages, shouldContinue: true)
             case .browseWeb:
                 let messages = await WebBrowseTool.handle(toolCall)

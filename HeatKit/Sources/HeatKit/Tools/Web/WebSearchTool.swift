@@ -22,7 +22,7 @@ public struct WebSearchTool {
     
     public static let function = Tool.Function(
         name: "web_search",
-        description: "Return a search query used to search the web for website only or image only results.",
+        description: "Search the web (kind: web) for pages, or (kind: image) for pictures to show the user. Web results are up to ten titles, links and snippets; a link already returned earlier in this turn comes back by title only, marked as seen. Plain words find more than exact phrases in quotes.",
         parameters: .object(
             properties: [
                 "query": .string(description: "A web search query"),
@@ -45,7 +45,7 @@ extension WebSearchTool.Arguments {
 
 extension WebSearchTool {
     
-    public static func handle(_ toolCall: ToolCall) async -> [Message] {
+    public static func handle(_ toolCall: ToolCall, seen: SeenLinks? = nil) async -> [Message] {
         do {
             let args = try Arguments(toolCall.function?.arguments)
             
@@ -70,25 +70,40 @@ extension WebSearchTool {
                     )]
                 }
 
-                let results = Array(searchResponse.results.prefix(10)).map {
-                    """
+                let found = Array(searchResponse.results.prefix(10))
+                let alreadySeen = await seen?.mark(found.map(\.url)) ?? []
+
+                // Results and nothing else. A page of instructions used to
+                // ride along with every one of these — the same two hundred
+                // and fifty tokens, fifteen times in one turn — and the model
+                // re-read every copy on every round. What it needs to know
+                // about the tool is in the tool's own description, sent once.
+                let results = found.map { result in
+                    if alreadySeen.contains(result.url) {
+                        return """
+                            <result>
+                                <title>\(result.title ?? "No title")</title>
+                                <url>\(result.url)</url>
+                                <description>Returned earlier in this turn; see above.</description>
+                            </result>
+                        """
+                    }
+                    return """
                         <result>
-                            <title>\($0.title ?? "No title")</title>
-                            <url>\($0.url)</url>
-                            <description>\($0.description ?? "No description")</description>
+                            <title>\(result.title ?? "No title")</title>
+                            <url>\(result.url)</url>
+                            <description>\(result.description ?? "No description")</description>
                         </result>
                     """
                 }
 
-                // TODO: Use cached instructions
-                // Probably need to pass in these instructions at the call site instead of referencing Defaults here.
-
                 return [.init(
                     role: .tool,
-                    content: PromptTemplate(Defaults.webSearchInstruction.instructions, with: [
-                        "query": .string(args.query),
-                        "results": .string(results.joined(separator: "\n")),
-                    ]),
+                    content: """
+                        <search_results query="\(args.query)">
+                        \(results.joined(separator: "\n"))
+                        </search_results>
+                        """,
                     toolCallID: toolCall.id,
                     name: toolCall.function?.name,
                     metadata: ["label": .string("Searched web for '\(args.query)'")]
