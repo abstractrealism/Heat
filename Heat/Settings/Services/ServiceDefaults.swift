@@ -52,8 +52,6 @@ struct ServiceDefaults: View {
             Toggle("Remove thinking from prompt context", isOn: stripThinkingBinding)
                 .help("Leaves earlier reasoning out of what's sent back to the model. Reasoning is the model's working, not its answer, and it often runs many times the length of the reply — so keeping it means every later message re-sends all of it, filling the context window and slowing each turn. Your conversation keeps its thinking either way; Show Thinking still works. Turn this off only if you want the model to reread how it got to its earlier answers.")
 
-            Toggle("Also within a turn's tool rounds", isOn: stripWithinTurnBinding)
-                .help("The same, for the rounds of a single turn: when the model calls tools, each round's request carries the turn so far, and with this on the reasoning from its earlier rounds is left out. That's what Qwen's own chat template does. Turn it off to let the model reread its earlier rounds' thinking — slower, and possibly better on long searches. Takes effect on the next turn.")
         } header: {
             Text("Conversations")
         } footer: {
@@ -91,16 +89,6 @@ struct ServiceDefaults: View {
         )
     }
 
-    private var stripWithinTurnBinding: Binding<Bool> {
-        Binding(
-            get: { state.config.stripReasoningWithinTurn },
-            set: { enabled in
-                var config = state.config
-                config.stripReasoningWithinTurn = enabled
-                Task { try? await API.shared.configUpdate(config) }
-            }
-        )
-    }
 
     func servicePickerView(_ prop: KeyPath<Service, Bool>) -> some View {
         Group {

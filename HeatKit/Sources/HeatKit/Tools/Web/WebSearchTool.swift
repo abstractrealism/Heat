@@ -6,7 +6,16 @@ public struct WebSearchTool {
 
     public struct Arguments: Codable {
         public var query: String
+        /// Web unless said otherwise. Models leave it out, and a search
+        /// with no kind is plainly a web search — it used to fail decoding
+        /// and come back as "The operation couldn't be completed".
         public var kind: Kind
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            query = try container.decode(String.self, forKey: .query)
+            kind = try container.decodeIfPresent(Kind.self, forKey: .kind) ?? .web
+        }
     }
     
     public struct Response: Codable {
@@ -22,7 +31,7 @@ public struct WebSearchTool {
     
     public static let function = Tool.Function(
         name: "web_search",
-        description: "Search the web (kind: web) for pages, or (kind: image) for pictures to show the user. Web results are up to ten titles, links and snippets; a link already returned earlier in this turn comes back by title only, marked as seen. Plain words find more than exact phrases in quotes.",
+        description: "Search the web (kind: web) for pages, or (kind: image) for pictures to show the user. Web results are up to ten titles, links and snippets; a link already returned earlier in this turn comes back by title only, marked as seen. Search with a few plain words naming the thing and the place. Exact phrases in quotes rarely match anything, and OR makes each term match on its own, so the results are about one of them rather than all.",
         parameters: .object(
             properties: [
                 "query": .string(description: "A web search query"),
@@ -37,15 +46,19 @@ extension WebSearchTool.Arguments {
     
     public init(_ arguments: String?) throws {
         guard let arguments, let data = arguments.data(using: .utf8) else {
-            throw ToolboxError.failedDecoding
+            throw ToolboxError.badArguments(tool: "web_search", expected: #"{"query": "…", "kind": "web" or "image"}"#, got: arguments ?? "nothing")
         }
-        self = try JSONDecoder().decode(Self.self, from: data)
+        do {
+            self = try JSONDecoder().decode(Self.self, from: data)
+        } catch {
+            throw ToolboxError.badArguments(tool: "web_search", expected: #"{"query": "…", "kind": "web" or "image"}"#, got: arguments)
+        }
     }
 }
 
 extension WebSearchTool {
     
-    public static func handle(_ toolCall: ToolCall, seen: SeenLinks? = nil) async -> [Message] {
+    public static func handle(_ toolCall: ToolCall, turn: SearchTurn? = nil) async -> [Message] {
         do {
             let args = try Arguments(toolCall.function?.arguments)
             
@@ -59,10 +72,17 @@ extension WebSearchTool {
                 // What the engine itself suggests is what a model that has
                 // over-quoted needs to hear.
                 if searchResponse.results.isEmpty {
+                    // Said more firmly the third time. A model that gets
+                    // nothing back tends to try again more precisely — more
+                    // quotes, more ORs — when the precision is the problem.
+                    let empties = await turn?.noteEmpty() ?? 1
+                    let advice = empties >= 3
+                        ? "That's \(empties) searches this turn that found nothing, and the shape of the query is why: an exact phrase in quotes rarely appears anywhere, and OR makes each term match on its own. Search more broadly, the way a person would — a few plain words naming the thing and the place, no quotes, no OR — and read what comes back."
+                        : "Try different or fewer words, and drop quotation marks and OR — an exact phrase rarely matches."
                     return [.init(
                         role: .tool,
                         content: """
-                            No results found for "\(args.query)". Try different or fewer words, and drop quotation marks and OR — an exact phrase rarely matches.
+                            No results found for "\(args.query)". \(advice)
                             """,
                         toolCallID: toolCall.id,
                         name: toolCall.function?.name,
@@ -71,7 +91,16 @@ extension WebSearchTool {
                 }
 
                 let found = Array(searchResponse.results.prefix(10))
-                let alreadySeen = await seen?.mark(found.map(\.url)) ?? []
+                let alreadySeen = await turn?.mark(found.map(\.url)) ?? []
+
+                // OR doesn't narrow, it widens: DuckDuckGo matches any one of
+                // the terms on its own, and "… Rhinebeck OR Hudson OR Beacon"
+                // came back as ten pages about the word Beacon. Said with the
+                // results, so the model reads them knowing that.
+                let usedOr = args.query.range(of: #"\bOR\b"#, options: .regularExpression) != nil
+                let caveat = usedOr
+                    ? "\nNote: OR makes each term match on its own, so some of these are about just one of the terms. Plain words without OR match all of them together.\n"
+                    : ""
 
                 // Results and nothing else. A page of instructions used to
                 // ride along with every one of these — the same two hundred
@@ -102,7 +131,7 @@ extension WebSearchTool {
                     content: """
                         <search_results query="\(args.query)">
                         \(results.joined(separator: "\n"))
-                        </search_results>
+                        </search_results>\(caveat)
                         """,
                     toolCallID: toolCall.id,
                     name: toolCall.function?.name,

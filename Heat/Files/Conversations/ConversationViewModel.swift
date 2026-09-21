@@ -138,9 +138,10 @@ final class ConversationViewModel {
     /// can tell it no longer speaks for this conversation.
     @ObservationIgnored private var currentTurn: UUID?
 
-    /// The links this turn's searches have returned, so a repeat comes back
-    /// by title alone. Fresh for every turn.
-    @ObservationIgnored private var seenLinks = SeenLinks()
+    /// What this turn's searches have done so far — the links returned, so
+    /// a repeat comes back by title alone, and how many found nothing.
+    /// Fresh for every turn.
+    @ObservationIgnored private var searchTurn = SearchTurn()
 
     enum Error: Swift.Error, CustomStringConvertible {
         case generationError(String)
@@ -987,7 +988,7 @@ final class ConversationViewModel {
         // the one the new turn just set. The token says which turn is current.
         let token = UUID()
         currentTurn = token
-        seenLinks = SeenLinks()
+        searchTurn = SearchTurn()
         ConversationViewModelStore.shared.setGenerating(true, for: file.id)
 
         generateTask = Task {
@@ -1100,12 +1101,9 @@ final class ConversationViewModel {
             // the template can't tell from an answer. Earlier turns are the
             // Settings switch's business and are left to historyForRequest.
             let priorCount = history.count
-            if state.config.stripReasoningWithinTurn {
-                req.with(prepareHistory: { messages in
-                    Self.strippingReasoning(from: messages, after: priorCount)
-                })
-            }
-            ChatDebug.log("→ reasoning from earlier rounds: \(state.config.stripReasoningWithinTurn ? "removed" : "kept")")
+            req.with(prepareHistory: { messages in
+                Self.strippingReasoning(from: messages, after: priorCount)
+            })
             req.with(tools: Toolbox.get(names: conversation.toolIDs))
             req.with(context: context)
             // Only when one was chosen for this model. Saying nothing is what
@@ -2163,7 +2161,7 @@ final class ConversationViewModel {
                 let messages = await ImageGeneratorTool.handle(toolCall)
                 return .init(messages: messages, shouldContinue: false)
             case .searchWeb:
-                let messages = await WebSearchTool.handle(toolCall, seen: seenLinks)
+                let messages = await WebSearchTool.handle(toolCall, turn: searchTurn)
                 return .init(messages: messages, shouldContinue: true)
             case .browseWeb:
                 let messages = await WebBrowseTool.handle(toolCall)

@@ -116,21 +116,6 @@ extension Config {
         set { metadata["stripThinkingFromContext"] = .bool(newValue) }
         get { metadata["stripThinkingFromContext"]?.boolValue ?? true }
     }
-
-    /// Whether a turn's earlier rounds of reasoning are taken out of the
-    /// requests that follow them, within the same turn.
-    ///
-    /// Separate from the switch above, which is about earlier *turns*. A turn
-    /// that calls tools sends the model its own reasoning from every round so
-    /// far, and that reasoning is the largest thing in the context; Qwen's own
-    /// chat template drops it, which is the case for stripping. The case
-    /// against is that the plan the model made in round three might be what
-    /// gets it to the answer in round eight. On by default; a switch so the
-    /// two can be compared on the same question.
-    public var stripReasoningWithinTurn: Bool {
-        set { metadata["stripReasoningWithinTurn"] = .bool(newValue) }
-        get { metadata["stripReasoningWithinTurn"]?.boolValue ?? true }
-    }
 }
 
 // MARK: - Context Length

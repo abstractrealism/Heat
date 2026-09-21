@@ -63,6 +63,19 @@ public enum Toolbox: CaseIterable, Sendable {
     }
 }
 
-public enum ToolboxError: Error {
+/// Described in words, because a tool's failure goes back to the model as
+/// the tool's result, and "The operation couldn't be completed" gives it
+/// nothing to correct.
+public enum ToolboxError: LocalizedError {
     case failedDecoding
+    case badArguments(tool: String, expected: String, got: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .failedDecoding:
+            "The tool's arguments couldn't be read."
+        case .badArguments(let tool, let expected, let got):
+            "\(tool) couldn't read its arguments. Expected \(expected); got \(got)."
+        }
+    }
 }
