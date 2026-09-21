@@ -114,6 +114,12 @@ public enum ThinkingEffort: String, Codable, Sendable, CaseIterable, Identifiabl
             // would be two more names for one thing. High is what it does
             // left alone. Off is a switch of its own, which gen-kit throws.
             [.off, .low, .high, .max]
+        case .groq:
+            // The union of what its reasoning models take, from its API
+            // reference: gpt-oss low/medium/high with no off (struck
+            // through, and Off asks for low), qwen3.8 off through high.
+            // Llama doesn't reason and is sent nothing whatever is chosen.
+            [.off, .low, .medium, .high]
         default:
             [.off, .brief, .full]
         }
