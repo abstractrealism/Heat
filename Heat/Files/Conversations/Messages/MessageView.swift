@@ -34,6 +34,7 @@ struct MessageView: View {
                ForEachToolCall(message.toolCalls) { toolCall in
                    ToolCallView(toolCall)
                }
+               MessageCutOffView(message)
                MessageUsageView(message)
             case .tool:
                ToolContentsView(message)
@@ -394,11 +395,43 @@ struct ToolResponseName: View {
     }
 }
 
+/// Says when a reply stopped because it ran out of room rather than because
+/// it was finished.
+///
+/// Nothing else says. A reply at the ceiling simply ends — mid-sentence, or
+/// partway through a numbered list — with no error, nothing in the log a
+/// reader would see, and an answer that looks as though the model lost
+/// interest. The service reports it as a finish reason and it was recorded
+/// and never shown.
+///
+/// Worth its own line rather than a footnote to the token count, because
+/// what to do about it is different: ask the model to go on, or raise
+/// Longest Reply for this service and ask again.
+struct MessageCutOffView: View {
+    let message: Message
+
+    init(_ message: Message) {
+        self.message = message
+    }
+
+    var body: some View {
+        if message.finishReason == .length {
+            Label(
+                "This reply reached its length limit and stopped here. Ask the model to continue, or raise Longest Reply in Settings ▸ Services.",
+                systemImage: "scissors"
+            )
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+        }
+    }
+}
+
 /// What a response cost, shown quietly beneath it once the service reports it.
 ///
-/// The counts cover the whole generation. Reasoning isn't broken out because
-/// no separate figure is reported for it — the service counts every token it
-/// produced together, so splitting them would mean inventing a number.
+/// The counts cover the whole generation. Where the service reports what
+/// reasoning cost it's shown as counted; where it doesn't, the split is
+/// apportioned from the stream and marked with ≈.
 struct MessageUsageView: View {
     let message: Message
 
@@ -433,7 +466,15 @@ struct MessageUsageView: View {
         // it had been going round in circles, and folding the two together
         // would answer a different question.
         let interrupted = message.metadata["interruptedThinkingTokens"]?.intValue ?? 0
-        let thinking = message.metadata["thinkingTokens"]?.intValue ?? 0
+
+        // A figure the service counted, where there is one. Every other
+        // number here is counted, and this one used to be the exception:
+        // deltas standing in for tokens, because a local model reports no
+        // such figure. The hosted services do, so it's read in preference —
+        // and what's shown says which it is, since an apportioned number and
+        // a counted one deserve different confidence.
+        let counted = message.metadata["reasoningTokens"]?.intValue
+        let thinking = counted ?? message.metadata["thinkingTokens"]?.intValue ?? 0
 
         // Everything the model produced, across both requests when there were
         // two. Input is counted once: the second request re-sent much the same
@@ -453,7 +494,10 @@ struct MessageUsageView: View {
         }
         if !breakdown.isEmpty {
             breakdown.append("\(format(output - thinking)) answer")
-            outputDetail += " ≈ " + breakdown.joined(separator: " + ")
+            // The interrupted figure is apportioned however the rest came by,
+            // so one estimate in the sum makes the whole of it one.
+            let exact = counted != nil && interrupted == 0
+            outputDetail += (exact ? " = " : " ≈ ") + breakdown.joined(separator: " + ")
         }
 
         if let input = message.metadata["inputTokens"]?.intValue {

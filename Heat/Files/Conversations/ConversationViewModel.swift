@@ -832,7 +832,12 @@ final class ConversationViewModel {
               let boundary = deltasAtEndOfThinking,
               streamedDeltas > 0,
               let index = conversation.messages.firstIndex(where: { $0.id == messageID }),
-              let total = conversation.messages[index].metadata["outputTokens"]?.intValue
+              let total = conversation.messages[index].metadata["outputTokens"]?.intValue,
+              // Only where the service reported no figure of its own. The
+              // hosted ones count reasoning tokens and say so; apportioning
+              // from deltas over the top of that would replace a counted
+              // number with a guess.
+              conversation.messages[index].metadata["reasoningTokens"] == nil
         else { return }
 
         let share = Double(boundary) / Double(streamedDeltas)
@@ -1218,6 +1223,14 @@ final class ConversationViewModel {
             // buried the request/response lines worth reading. Each new
             // message is already announced as it arrives.
             ChatDebug.log("← stream finished after \(streamUpdates) updates | conversation now has \(conversation.messages.count) messages")
+
+            // Said outright, because a reply that stopped at the ceiling
+            // looks exactly like one that finished: it simply ends, often
+            // mid-sentence or partway through a list, with no error anywhere.
+            if let last = conversation.messages.last, last.finishReason == .length {
+                let ceiling = resolvedChatService.flatMap { state.config.maxTokens(serviceID: $0.0.id) }
+                ChatDebug.log("← the reply hit the reply-length ceiling (\(ceiling.map(String.init) ?? "the service's own default")) and stopped unfinished")
+            }
 
             // The answer is what someone stepped away from, so tell them here
             // rather than after the suggestions and title that follow it.
