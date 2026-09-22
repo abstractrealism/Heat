@@ -1228,8 +1228,22 @@ final class ConversationViewModel {
             // looks exactly like one that finished: it simply ends, often
             // mid-sentence or partway through a list, with no error anywhere.
             if let last = conversation.messages.last, last.finishReason == .length {
-                let ceiling = resolvedChatService.flatMap { state.config.maxTokens(serviceID: $0.0.id) }
+                let resolved = resolvedChatService
+                let ceiling = resolved.flatMap { state.config.maxTokens(serviceID: $0.0.id) }
                 ChatDebug.log("← the reply hit the reply-length ceiling (\(ceiling.map(String.init) ?? "the service's own default")) and stopped unfinished")
+
+                // What the provider's own ceiling is, which nothing publishes
+                // and nothing else can say: the reply stopped *because* of it,
+                // so what it generated is the figure. Only where Heat sent no
+                // ceiling of its own — otherwise this would record ours.
+                if ceiling == nil,
+                   let (service, model) = resolved,
+                   let produced = last.metadata["outputTokens"]?.intValue, produced > 0 {
+                    var config = state.config
+                    config.noteReplyCeiling(produced, serviceID: service.id, modelID: model.id)
+                    try? await API.shared.configUpdate(config)
+                    ChatDebug.log("← \(service.name) allows \(produced) tokens a reply on \(model.id), left to itself")
+                }
             }
 
             // The answer is what someone stepped away from, so tell them here

@@ -429,6 +429,12 @@ struct ServiceForm: View {
                 step: 1
             )
             .help("The most a single reply may generate. Where a model reasons before answering, this covers the reasoning and the reply together — so a figure that was generous for answers alone can be spent thinking, and the answer arrives cut off.")
+            // Dimmed while nothing is set, because then nothing here is in
+            // force: the knob has to sit somewhere, and a knob sitting at
+            // 16k beside a caption reading "Provider default" was read as
+            // 16k being the default. It isn't — the request carries no
+            // ceiling at all and the provider picks, which on Groq was 3,072.
+            .opacity(chosen == nil ? 0.45 : 1)
 
             LabeledContent("Longest reply") {
                 HStack(spacing: 8) {
@@ -445,7 +451,7 @@ struct ServiceForm: View {
         } header: {
             Text("Longest Reply")
         } footer: {
-            Text("Per service, since it's a limit on how long an answer may run rather than anything about a particular model. Left alone, the provider decides.")
+            Text("Per service, since it's a limit on how long an answer may run rather than anything about a particular model. Left alone, the provider decides — and what it decides is often well short of what the model could write, especially where reasoning is counted against the same figure.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -453,15 +459,35 @@ struct ServiceForm: View {
 
     private var maxTokensCaption: String {
         guard let chosen = state.config.maxTokens(serviceID: service.id) else {
-            return "Provider default"
+            // Named where it's been seen. No endpoint publishes what it
+            // allows a reply left to itself, so the only thing that can say
+            // is a reply that ran into it — and until one has, there is
+            // genuinely nothing to report but the fact that we aren't asking.
+            guard let seen = replyCeilingSeen else { return "Provider default" }
+            return "Provider default (\(seen.formatted(.number.grouping(.automatic))) seen)"
         }
         return chosen.formatted(.number.grouping(.automatic)) + " tokens"
+    }
+
+    /// What this provider allowed a reply on the current Chats model, if a
+    /// reply has ever been cut off by it.
+    private var replyCeilingSeen: Int? {
+        guard let model = chatModel else { return nil }
+        return state.config.replyCeilingSeen(serviceID: service.id, modelID: model.id)
     }
 
     private var maxTokensExponentBinding: Binding<Double> {
         Binding(
             get: {
-                let current = state.config.maxTokens(serviceID: service.id) ?? 16384
+                // Where it starts when there's nothing set: what the provider
+                // was seen to allow, so taking hold of the slider begins at
+                // the figure that cut a reply off rather than at an invented
+                // one. 16k only where nothing has been observed — it's the
+                // ceiling gen-kit itself defaults to for Anthropic, and as
+                // good a place to start as any.
+                let current = state.config.maxTokens(serviceID: service.id)
+                    ?? replyCeilingSeen
+                    ?? 16384
                 return log2(Double(min(max(current, 256), 65536)))
             },
             set: { exponent in

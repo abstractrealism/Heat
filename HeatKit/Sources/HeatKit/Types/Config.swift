@@ -194,6 +194,42 @@ extension Config {
         all[serviceID] = tokens
         maxTokensByService = all
     }
+
+    /// What a provider's own ceiling turned out to be, learned from a reply
+    /// that hit it.
+    ///
+    /// No endpoint publishes this. A service left to decide for itself
+    /// decides silently, and the only thing that ever says what it chose is a
+    /// reply that ran into it — at which point the token count *is* the
+    /// ceiling, since the ceiling is what stopped it.
+    ///
+    /// Per model as well as per service, because a provider serving several
+    /// models need not allow them the same.
+    private var replyCeilingsSeen: [String: Int] {
+        get {
+            guard case .object(let entries)? = metadata["replyCeilingSeen"] else { return [:] }
+            return entries.compactMapValues(\.intValue)
+        }
+        set {
+            metadata["replyCeilingSeen"] = newValue.isEmpty
+                ? nil
+                : .object(newValue.mapValues { .int($0) })
+        }
+    }
+
+    public func replyCeilingSeen(serviceID: String, modelID: String) -> Int? {
+        replyCeilingsSeen[contextKey(serviceID: serviceID, modelID: modelID)]
+    }
+
+    /// The largest seen wins, so a provider that raises its default is
+    /// remembered at the new figure rather than the old one.
+    public mutating func noteReplyCeiling(_ tokens: Int, serviceID: String, modelID: String) {
+        var seen = replyCeilingsSeen
+        let key = contextKey(serviceID: serviceID, modelID: modelID)
+        guard tokens > (seen[key] ?? 0) else { return }
+        seen[key] = tokens
+        replyCeilingsSeen = seen
+    }
 }
 
 // MARK: - Service Availability
