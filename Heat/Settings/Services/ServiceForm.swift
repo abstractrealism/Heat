@@ -196,8 +196,10 @@ struct ServiceForm: View {
                 HStack(spacing: 8) {
                     Button("Enable All") { setAllModels(true) }
                     Button("Disable All") { setAllModels(false) }
-                    Button("Use Suggested") { clearModelChoices() }
-                        .help("Forgets every choice here and goes back to Heat's guess: models that look like they're for conversation are offered, and video, image, audio, embedding and pre-chat models aren't.")
+                    if guessDiscriminates {
+                        Button("Use Suggested") { clearModelChoices() }
+                            .help("Forgets every choice here and goes back to Heat's guess: models that look like they're for conversation are offered, and video, image, audio, embedding and pre-chat models aren't.")
+                    }
                     Spacer(minLength: 0)
                     Text("\(enabledCount) of \(offerableModels.count)")
                         .font(.footnote)
@@ -223,8 +225,16 @@ struct ServiceForm: View {
                             // decided *against* were labelled "suggested"
                             // too — nearly the whole list, saying the
                             // opposite of what it meant.
-                            if state.config.isModelEnabled(model, in: service),
-                               !state.config.isModelChoiceExplicit(model, in: service) {
+                            //
+                            // And then it marked only rows nobody had decided
+                            // about, which read as a bug: unticking a model
+                            // took the tag away and re-ticking it never
+                            // brought it back, because re-ticking records a
+                            // decision where before there had been none. The
+                            // model was as suggested as it ever was. What the
+                            // tag describes is the suggestion, not whether it
+                            // still stands unanswered.
+                            if guessDiscriminates, service.isLikelyChatModel(modelID: model.id) {
                                 Text("suggested")
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
@@ -267,6 +277,17 @@ struct ServiceForm: View {
 
     private var enabledCount: Int {
         offerableModels.filter { state.config.isModelEnabled($0, in: service) }.count
+    }
+
+    /// Whether the suggestion says anything about *this* service.
+    ///
+    /// It's a guess from the model's name, and it exists for OpenAI, which
+    /// lists around 130 models and means half a dozen of them for
+    /// conversation. Everywhere else it keeps everything — so every row would
+    /// carry a "suggested" tag saying nothing, beside a button that does what
+    /// Enable All already does. Both are left out where that's so.
+    private var guessDiscriminates: Bool {
+        offerableModels.contains { !service.isLikelyChatModel(modelID: $0.id) }
     }
 
     private func clearUnavailableModels() {
