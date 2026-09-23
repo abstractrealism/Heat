@@ -16,10 +16,14 @@ public protocol WebImageSearch {
 /// itself as "The operation couldn't be completed" — which tells the model
 /// nothing about whether to try again.
 enum WebSearchError: LocalizedError {
+    /// A wait, in round terms. The figure is what the model is told, not
+    /// what is enforced — the session holds off for the real interval
+    /// whatever this says — so reading naturally matters more than
+    /// precision, and "about 61 seconds" is precision nobody asked for.
     private static func describe(_ seconds: TimeInterval) -> String {
-        if seconds < 90 { return "\(Int(seconds.rounded(.up))) seconds" }
-        let minutes = Int((seconds / 60).rounded(.up))
-        return minutes == 1 ? "a minute" : "\(minutes) minutes"
+        if seconds < 60 { return "\(Int(seconds.rounded(.up))) seconds" }
+        if seconds < 90 { return "a minute" }
+        return "\(Int((seconds / 60).rounded(.up))) minutes"
     }
 
     case invalidHTML
