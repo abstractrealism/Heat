@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import GenKit
 
 @testable import HeatKit
 
@@ -165,9 +166,9 @@ struct RetiredModelTests {
 
     @Test("A model past its date is not offered")
     func pastDate() {
-        let service = openAI([
-            model("gpt-5-codex", retiresOn: .now.addingTimeInterval(-twoDays)),
-            model("gpt-5.6-sol", retiresOn: nil),
+        let service = Self.openAI([
+            Self.model("gpt-5-codex", retiresOn: .now.addingTimeInterval(-Self.twoDays)),
+            Self.model("gpt-5.6-sol", retiresOn: nil),
         ])
         #expect(Config().enabledModels(in: service).map(\.id) == ["gpt-5.6-sol"])
     }
@@ -175,7 +176,7 @@ struct RetiredModelTests {
     /// A date still to come is a warning, not a reason to withhold it.
     @Test("A model with a date still to come is offered")
     func futureDate() {
-        let service = openAI([model("gpt-4o", retiresOn: .now.addingTimeInterval(twoDays))])
+        let service = Self.openAI([Self.model("gpt-4o", retiresOn: .now.addingTimeInterval(Self.twoDays))])
         #expect(Config().enabledModels(in: service).count == 1)
     }
 
@@ -184,14 +185,19 @@ struct RetiredModelTests {
     /// the learned refusals and the blacklist are still for.
     @Test("A model with no date is offered")
     func noDate() {
-        let service = openAI([model("gpt-5.6-sol", retiresOn: nil)])
+        let service = Self.openAI([Self.model("gpt-5.6-sol", retiresOn: nil)])
         #expect(Config().enabledModels(in: service).count == 1)
     }
 
     /// It is a day, not an instant. A model retiring today has today.
+    ///
+    /// Named like a chat model on purpose: OpenAI's guess from the name
+    /// drops anything with `sora` or `image` in it, so a fixture called
+    /// `sora-2` would be absent for a reason that has nothing to do with
+    /// the date.
     @Test("The day itself is not past")
     func today() {
-        let service = openAI([model("sora-2", retiresOn: .now)])
+        let service = Self.openAI([Self.model("gpt-5.6-sol", retiresOn: .now)])
         #expect(Config().enabledModels(in: service).count == 1)
     }
 
@@ -200,8 +206,8 @@ struct RetiredModelTests {
     /// and none to forget when a date moves.
     @Test("It is read from the model, not remembered against it")
     func notRecorded() {
-        let retired = model("gpt-5-codex", retiresOn: .now.addingTimeInterval(-twoDays))
-        let service = openAI([retired])
+        let retired = Self.model("gpt-5-codex", retiresOn: .now.addingTimeInterval(-Self.twoDays))
+        let service = Self.openAI([retired])
         var config = Config()
         config.setModelEnabled(true, for: retired, in: service)
 
