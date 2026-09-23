@@ -665,25 +665,24 @@ struct ServiceForm: View {
         }
     }
 
-    /// Hides the models the service has published as withdrawn.
+    /// Hides the models known to be withdrawn that nothing else catches.
     ///
-    /// Best effort, and deliberately silent when it can't be done: this reads
-    /// a documentation page, and a page that has moved or been restructured
-    /// must not stop models from loading. Failing here leaves every model
-    /// offered, which is where things stood before — and a request for a dead
-    /// one is still caught when the service refuses it.
+    /// Three things now say a model is gone, and this is the last of them.
+    /// The service's own `shutdown_date` is read off each model and needs no
+    /// help — a date already past hides it wherever it's offered. A refusal
+    /// hides the model that was refused. What neither covers is an alias
+    /// whose whole family has gone: `gpt-4o-search-preview` is still listed,
+    /// carries no shutdown date, and refuses every request — and its dated
+    /// snapshot's date can't be transferred to it, because an alias points
+    /// at whichever snapshot the service promoted. Measured against the real
+    /// list: `gpt-audio-mini-2025-10-06` is shut down while `gpt-audio-mini`
+    /// runs to 2027, and the looser form of that rule would condemn
+    /// `gpt-4o`, `gpt-5`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5-pro` and `o3`.
+    ///
+    /// So this is a short list of names, and a list is all it can be. It
+    /// will fall behind, which the refusal covers.
     private func hideWithdrawnModels(among models: [Model]) async {
-        // What's known regardless of the page — aliases the page doesn't
-        // name — so a fresh install doesn't suggest a model that failed on
-        // this one, and so the page being unreachable hides those at least.
-        var withdrawn = ModelDeprecations.alreadyKnown(for: service.kind)
-        do {
-            withdrawn.formUnion(try await ModelDeprecations.withdrawnModelIDs(for: service.kind))
-        } catch {
-            logger.warning("couldn't read \(service.name)'s deprecations: \(error)")
-        }
-        guard !Task.isCancelled else { return }
-
+        let withdrawn = ModelDeprecations.alreadyKnown(for: service.kind)
         let affected = models.filter { withdrawn.contains($0.id) }
         guard !affected.isEmpty else { return }
 
