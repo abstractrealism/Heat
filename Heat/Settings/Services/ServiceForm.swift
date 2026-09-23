@@ -257,6 +257,13 @@ struct ServiceForm: View {
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
                             }
+                            // Worth knowing before picking one for a
+                            // conversation that will outlive it.
+                            if let retiresOn = model.retiresOn, !model.hasRetired {
+                                Text("retires \(retiresOn.formatted(.dateTime.day().month(.abbreviated).year()))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
                     }
                 }
@@ -288,6 +295,24 @@ struct ServiceForm: View {
                 // something different: these work, they just don't converse.
                 // They stay listed here — the Models section above may yet
                 // want one for Speech or Transcriptions.
+                // Published by the service and then ignored by it: these
+                // are models it dated and went on listing past the date.
+                // Said rather than silently dropped, since the list here is
+                // otherwise the whole of what the service offers.
+                let retired = offerableModels.filter(\.hasRetired)
+                if !retired.isEmpty {
+                    LabeledContent(
+                        retired.count == 1
+                            ? "1 model is past its shutdown date"
+                            : "\(retired.count) models are past their shutdown date"
+                    ) {
+                        Text(retired.prefix(3).map { $0.name ?? $0.id }.joined(separator: ", ")
+                             + (retired.count > 3 ? "…" : ""))
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.footnote)
+                }
+
                 let withoutChat = state.config.modelsWithoutChatCount(in: service)
                 if withoutChat > 0 {
                     LabeledContent(

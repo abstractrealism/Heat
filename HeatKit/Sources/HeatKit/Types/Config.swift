@@ -335,6 +335,13 @@ extension Config {
             isModelEnabled($0, in: service)
                 && !isModelUnavailable($0, in: service)
                 && !isModelWithoutChat($0, in: service)
+                // A model whose shutdown date has gone by. Not a preference
+                // and not a guess: the service published the date and then
+                // went on listing the model past it — OpenAI was offering
+                // seventeen such on 23 Sept 2026, `gpt-5-codex` and
+                // `gpt-5.1-codex` among them, which every guess from the
+                // name takes for good chat models.
+                && !$0.hasRetired
         }
     }
 

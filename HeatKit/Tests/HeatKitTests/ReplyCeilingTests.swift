@@ -144,3 +144,69 @@ struct ModelsWithoutChatTests {
         #expect(decoded.isModelWithoutChat(Self.whisper, in: service) == true)
     }
 }
+
+/// Models a service has dated and gone on listing past the date.
+///
+/// OpenAI dates 58 of the 136 models it lists, and on 23 Sept 2026
+/// seventeen of those dates had already passed — `gpt-5-codex`,
+/// `gpt-5.1-codex`, `gpt-5.2-codex`, `gpt-5-chat-latest` and three more,
+/// every one of which a guess from the name takes for a good chat model.
+struct RetiredModelTests {
+
+    private static func openAI(_ models: [Model]) -> Service {
+        Service(kind: .openAI, name: "OpenAI", models: models)
+    }
+
+    private static func model(_ id: String, retiresOn: Date?) -> Model {
+        Model(id: id, owner: "openai", retiresOn: retiresOn)
+    }
+
+    private static let twoDays: TimeInterval = 86_400 * 2
+
+    @Test("A model past its date is not offered")
+    func pastDate() {
+        let service = openAI([
+            model("gpt-5-codex", retiresOn: .now.addingTimeInterval(-twoDays)),
+            model("gpt-5.6-sol", retiresOn: nil),
+        ])
+        #expect(Config().enabledModels(in: service).map(\.id) == ["gpt-5.6-sol"])
+    }
+
+    /// A date still to come is a warning, not a reason to withhold it.
+    @Test("A model with a date still to come is offered")
+    func futureDate() {
+        let service = openAI([model("gpt-4o", retiresOn: .now.addingTimeInterval(twoDays))])
+        #expect(Config().enabledModels(in: service).count == 1)
+    }
+
+    /// No announced end is not the same as no end — `gpt-4o-search-preview`
+    /// refused requests for months carrying no date at all, which is what
+    /// the learned refusals and the blacklist are still for.
+    @Test("A model with no date is offered")
+    func noDate() {
+        let service = openAI([model("gpt-5.6-sol", retiresOn: nil)])
+        #expect(Config().enabledModels(in: service).count == 1)
+    }
+
+    /// It is a day, not an instant. A model retiring today has today.
+    @Test("The day itself is not past")
+    func today() {
+        let service = openAI([model("sora-2", retiresOn: .now)])
+        #expect(Config().enabledModels(in: service).count == 1)
+    }
+
+    /// Nothing is recorded against the model: the service says this every
+    /// time it is asked, so there is no decision of anyone's to overrule
+    /// and none to forget when a date moves.
+    @Test("It is read from the model, not remembered against it")
+    func notRecorded() {
+        let retired = model("gpt-5-codex", retiresOn: .now.addingTimeInterval(-twoDays))
+        let service = openAI([retired])
+        var config = Config()
+        config.setModelEnabled(true, for: retired, in: service)
+
+        #expect(config.enabledModels(in: service).isEmpty)
+        #expect(config.isModelUnavailable(retired, in: service) == false)
+        #expect(config.isModelEnabled(retired, in: service) == true)
+    }
+}
