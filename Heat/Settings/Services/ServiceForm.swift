@@ -518,7 +518,18 @@ struct ServiceForm: View {
             guard let seen = replyCeilingSeen else { return "Provider default" }
             return "Provider default (\(seen.formatted(.number.grouping(.automatic))) seen)"
         }
-        return chosen.formatted(.number.grouping(.automatic)) + " tokens"
+        let text = chosen.formatted(.number.grouping(.automatic)) + " tokens"
+
+        // One figure for a whole service, and a service's models needn't
+        // agree on what they'll write: Groq allows gpt-oss-120b 65,536 and
+        // qwen3.8-27b 16,384. The request is capped at what the model takes
+        // rather than refused, so this says which figure is really in force
+        // rather than leaving the setting to look like a promise.
+        if let allowed = chatModel?.maxOutput, chosen > allowed {
+            let name = chatModel?.name ?? chatModel?.id ?? "the current model"
+            return "\(text) — \(name) allows \(allowed.formatted(.number.grouping(.automatic)))"
+        }
+        return text
     }
 
     /// What this provider allowed a reply on the current Chats model, if a
