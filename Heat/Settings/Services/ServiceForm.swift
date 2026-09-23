@@ -265,6 +265,23 @@ struct ServiceForm: View {
                     }
                     .font(.footnote)
                 }
+
+                // Said for the same reason, and separately, because it means
+                // something different: these work, they just don't converse.
+                // They stay listed here — the Models section above may yet
+                // want one for Speech or Transcriptions.
+                let withoutChat = state.config.modelsWithoutChatCount(in: service)
+                if withoutChat > 0 {
+                    LabeledContent(
+                        withoutChat == 1
+                            ? "1 model doesn't do chat"
+                            : "\(withoutChat) models don't do chat"
+                    ) {
+                        Button("Offer Again") { clearModelsWithoutChat() }
+                            .help("Brings these back to the picker beside the message field. \(service.name) said each of them doesn't answer chat when one was asked to — Whisper transcribes, Orpheus speaks — so they were dropped from it. They are still listed here, and can still be chosen above for the jobs they do.")
+                    }
+                    .font(.footnote)
+                }
             }
         } header: {
             Text("Models to Offer")
@@ -288,6 +305,12 @@ struct ServiceForm: View {
     /// Enable All already does. Both are left out where that's so.
     private var guessDiscriminates: Bool {
         offerableModels.contains { !service.isLikelyChatModel(modelID: $0.id) }
+    }
+
+    private func clearModelsWithoutChat() {
+        var config = state.config
+        config.clearModelsWithoutChat(in: service)
+        Task { try? await API.shared.configUpdate(config) }
     }
 
     private func clearUnavailableModels() {
@@ -418,17 +441,20 @@ struct ServiceForm: View {
     private static let minReplyExponent = 8.0    // 256
     private static let maxReplyExponent = 16.0   // 65,536
 
-    /// A notch of its own, off the left end of the scale, for sending no
-    /// ceiling at all.
+    /// A notch of its own, one step off the left end of the scale, for
+    /// sending no ceiling at all.
     ///
-    /// Not a small number — no number. It sits two steps below 256 rather
-    /// than one so that the step between them reads as a gap rather than as
-    /// another doubling, because it isn't one: everything to its right is a
-    /// figure Heat sends, and this is Heat sending nothing and the provider
-    /// deciding. A knob resting inside the scale said the opposite, and at
-    /// 16,384 specifically, which is what made Groq's own 3,072 look like a
-    /// 16k allowance running out.
-    private static let defaultExponent = 6.0
+    /// Not a small number — no number. Everything to its right is a figure
+    /// Heat sends; this is Heat sending nothing and the provider deciding. A
+    /// knob resting inside the scale said the opposite, and at 16,384
+    /// specifically, which is what made Groq's own 3,072 look like a 16k
+    /// allowance running out.
+    ///
+    /// Two steps were tried first, to set the notch apart by a gap. A
+    /// stepped slider draws a tick at every step, so the gap came with a
+    /// tick of its own in the middle of it — a position that looked
+    /// selectable and meant nothing.
+    private static let defaultExponent = 7.0
 
     @ViewBuilder
     private var maxTokensSection: some View {
@@ -477,7 +503,7 @@ struct ServiceForm: View {
         } header: {
             Text("Longest Reply")
         } footer: {
-            Text("Per service, since it's a limit on how long an answer may run rather than anything about a particular model. Left alone, the provider decides — and what it decides is often well short of what the model could write, especially where reasoning is counted against the same figure.")
+            Text("Set per service, since it's a policy about how long an answer may run rather than a fact about a model. Left alone, each model gets whatever its provider decides, which differs from model to model and is often well short of what the model could write — Groq allowed one of its models 3,072 tokens and another 2,048. Where reasoning is counted against the same figure, most of it can go on thinking.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

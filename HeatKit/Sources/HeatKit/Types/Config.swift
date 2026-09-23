@@ -331,7 +331,11 @@ extension Config {
 
     /// The models to offer for a conversation.
     public func enabledModels(in service: Service) -> [Model] {
-        service.models.filter { isModelEnabled($0, in: service) && !isModelUnavailable($0, in: service) }
+        service.models.filter {
+            isModelEnabled($0, in: service)
+                && !isModelUnavailable($0, in: service)
+                && !isModelWithoutChat($0, in: service)
+        }
     }
 
     /// Models the service has refused to serve.
@@ -377,5 +381,53 @@ extension Config {
     public mutating func clearUnavailableModels(in service: Service) {
         let prefix = "\(service.id)\u{1F}"
         unavailableModelKeys = unavailableModelKeys.filter { !$0.hasPrefix(prefix) }
+    }
+
+    /// Models that exist and work but don't answer chat.
+    ///
+    /// A service's model list is every model it serves, whatever the model
+    /// does: Groq's holds Whisper for transcription and Orpheus for speech
+    /// beside the ones that converse. Nothing in the list says which is
+    /// which — its fields are an id, an owner, a timestamp and a context
+    /// window, and no field anywhere reports a modality — so as with a
+    /// withdrawn model, the attempt is the only thing that can say. Asking
+    /// Whisper to chat answers "The model `whisper-large-v3` does not
+    /// support chat completions".
+    ///
+    /// Kept apart from `unavailableModels` because the two mean different
+    /// things and deserve different treatment. A model here is not broken
+    /// and hasn't gone anywhere; it is simply the wrong tool for this job,
+    /// and remains perfectly good for its own. So it drops out of the
+    /// conversation's model picker and stays everywhere else, ready for a
+    /// Speech or Transcriptions setting to point at.
+    private var modelsWithoutChatKeys: Set<String> {
+        get {
+            guard case .array(let entries)? = metadata["modelsWithoutChat"] else { return [] }
+            return Set(entries.compactMap(\.stringValue))
+        }
+        set {
+            metadata["modelsWithoutChat"] = newValue.isEmpty
+                ? nil
+                : .array(newValue.sorted().map { .string($0) })
+        }
+    }
+
+    public func isModelWithoutChat(_ model: Model, in service: Service) -> Bool {
+        modelsWithoutChatKeys.contains(modelKey(serviceID: service.id, modelID: model.id))
+    }
+
+    public mutating func markModelWithoutChat(_ model: Model, in service: Service) {
+        modelsWithoutChatKeys.insert(modelKey(serviceID: service.id, modelID: model.id))
+    }
+
+    public func modelsWithoutChatCount(in service: Service) -> Int {
+        service.models.filter { isModelWithoutChat($0, in: service) }.count
+    }
+
+    /// Forgets what was learned, for a service that gains chat on a model it
+    /// refused it on before.
+    public mutating func clearModelsWithoutChat(in service: Service) {
+        let prefix = "\(service.id)\u{1F}"
+        modelsWithoutChatKeys = modelsWithoutChatKeys.filter { !$0.hasPrefix(prefix) }
     }
 }
