@@ -155,7 +155,25 @@ struct ServiceForm: View {
             maxTokensSection
         }
         .navigationTitle(service.name)
-        .task(id: service.id) {
+        // Selecting a service shows what it has; it doesn't go and ask.
+        //
+        // It used to ask on selection, which made the Load Models button look
+        // like it did nothing — the list was already full by the time anyone
+        // could press it — and meant that moving down the list of services to
+        // read their settings sent a request to each one in turn. Clicking a
+        // row in a settings pane isn't an action anywhere else, and it
+        // shouldn't be one here.
+        //
+        // Still driven by `.task(id:)` rather than a Task of its own, for the
+        // reason the button used to rely on: a task tied to the view is
+        // cancelled when the view goes, and this form is rebuilt per service
+        // (`.id(service.id)` where it's used). An unowned task would carry on
+        // and write its result back through the manager after the form had
+        // moved on, which is how clicking between services ends up showing
+        // one service's models under another's name. The count changing is
+        // what starts it, so nothing runs until the button is pressed.
+        .task(id: loadRequests) {
+            guard loadRequests > 0 else { return }
             await loadModels()
         }
         .onDisappear {
@@ -589,17 +607,18 @@ struct ServiceForm: View {
         )
     }
 
+    /// Bumped by the button, which is the only thing that loads models.
+    /// Pressing again while one is in flight cancels it and starts another.
+    @State private var loadRequests = 0
+
     func handleLoadModels() {
-        Task { await loadModels() }
+        loadRequests += 1
     }
 
     /// Fetches the models this service offers.
     ///
-    /// Run from `.task(id:)` rather than `onAppear` so that selecting another
-    /// service cancels it. An unowned task would carry on and write its result
-    /// back through the manager after the form had moved on, which is how
-    /// clicking between services ends up showing one service's models under
-    /// another's name.
+    /// Run from `.task(id:)`, so selecting another service cancels it — see
+    /// the modifier for why that matters.
     func loadModels() async {
         // Nothing to connect to, and the request would sit there until it
         // timed out — which is the delay when opening a service you haven't
