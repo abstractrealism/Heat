@@ -1273,6 +1273,7 @@ final class ConversationViewModel {
             // indicator doesn't spin forever.
             conversation.state = .none
             noteModelUnavailableIfRefused(error)
+            noteModelWithoutChatIfRefused(error)
             self.error = errorMessage(for: error)
 
             // The prompt is saved as soon as it's sent, so the conversation on
@@ -1312,6 +1313,37 @@ final class ConversationViewModel {
         Task { try? await API.shared.configUpdate(config) }
 
         ChatDebug.log("← \(service.name) won't serve \(model.id); no longer offering it")
+    }
+
+    /// Stops offering a model for chat that the service has said doesn't do
+    /// chat.
+    ///
+    /// A service's model list is everything it serves, whatever each one is
+    /// for — Groq's holds Whisper and Orpheus beside the models that
+    /// converse — and no field in it reports a modality. So, as with a
+    /// withdrawn model, the attempt is the only thing that can say.
+    ///
+    /// Distinct from marking it unavailable: the model works, it just
+    /// doesn't do this. It leaves the conversation's picker and stays in
+    /// Settings, where a Speech or Transcriptions setting may yet want it.
+    private func noteModelWithoutChatIfRefused(_ error: Swift.Error) {
+        let message = "\(error)".lowercased()
+        // "does not support chat completions" is Groq's wording. Matched
+        // loosely enough to cover the same sentence said differently, and
+        // not so loosely that a model refusing one *feature* of chat — an
+        // image, a tool, a reasoning level — is taken for one that can't
+        // chat at all.
+        guard message.contains("does not support chat")
+            || message.contains("doesn't support chat")
+            || message.contains("not supported for chat") else { return }
+        guard let (service, model) = resolvedChatService else { return }
+
+        var config = API.shared.config
+        guard !config.isModelWithoutChat(model, in: service) else { return }
+        config.markModelWithoutChat(model, in: service)
+        Task { try? await API.shared.configUpdate(config) }
+
+        ChatDebug.log("← \(service.name) says \(model.id) doesn't do chat; no longer offering it as a chat model")
     }
 
     /// Which configured service a failed request was made to, worked out from
@@ -1410,6 +1442,17 @@ final class ConversationViewModel {
             default:
                 return "\(job)\(name) couldn't be reached\(host): \(nsError.localizedDescription)"
             }
+        }
+
+        // Said in Heat's own words, because the service's — "The model
+        // `whisper-large-v3` does not support chat completions" — says what
+        // went wrong but not what has been done about it, and something has.
+        let text = "\(error)".lowercased()
+        if text.contains("does not support chat")
+            || text.contains("doesn't support chat")
+            || text.contains("not supported for chat") {
+            let name = resolvedChatService.map { $0.1.name ?? $0.1.id } ?? "That model"
+            return "\(name) doesn't do chat — it's one of the service's other models, for speech or transcription. It's been removed from the chat model list; it stays in Settings ▸ Services for the jobs it does do."
         }
 
         if let sessionError = error as? ChatSessionError {

@@ -71,3 +71,76 @@ struct ReplyCeilingTests {
         #expect(config.maxTokens(serviceID: Self.service) == nil)
     }
 }
+
+/// Models a service serves that don't answer chat.
+///
+/// A service's model list is everything it serves, whatever each one does:
+/// Groq's holds Whisper and Orpheus beside the models that converse, and no
+/// field in the list reports a modality. So the attempt is the only thing
+/// that can say — asking Whisper to chat answers "The model
+/// `whisper-large-v3` does not support chat completions".
+struct ModelsWithoutChatTests {
+
+    private static func groq(_ models: [String]) -> Service {
+        Service(kind: .groq, name: "Groq", models: models.map { Model(id: $0, owner: "groq") })
+    }
+
+    private static let whisper = Model(id: "whisper-large-v3", owner: "groq")
+
+    @Test("Nothing is assumed until a model has refused")
+    func nothingAssumed() {
+        let service = Self.groq(["whisper-large-v3", "openai/gpt-oss-120b"])
+        let config = Config()
+        #expect(config.isModelWithoutChat(Self.whisper, in: service) == false)
+        #expect(config.enabledModels(in: service).count == 2)
+    }
+
+    @Test("A model that refused chat leaves the conversation's picker")
+    func leavesThePicker() {
+        let service = Self.groq(["whisper-large-v3", "openai/gpt-oss-120b"])
+        var config = Config()
+        config.markModelWithoutChat(Self.whisper, in: service)
+
+        #expect(config.enabledModels(in: service).map(\.id) == ["openai/gpt-oss-120b"])
+        #expect(config.modelsWithoutChatCount(in: service) == 1)
+    }
+
+    /// The point of keeping this apart from `unavailableModels`: the model
+    /// works, so it stays listed and stays choosable for what it does do.
+    @Test("It is not marked unavailable, and the choice about it is untouched")
+    func stillThereForOtherJobs() {
+        let service = Self.groq(["whisper-large-v3"])
+        var config = Config()
+        config.setModelEnabled(true, for: Self.whisper, in: service)
+        config.markModelWithoutChat(Self.whisper, in: service)
+
+        #expect(config.isModelUnavailable(Self.whisper, in: service) == false)
+        #expect(config.isModelEnabled(Self.whisper, in: service) == true)
+        #expect(service.models.count == 1, "still listed by the service")
+    }
+
+    @Test("Offer Again forgets it, for the service alone")
+    func cleared() {
+        let groq = Self.groq(["whisper-large-v3"])
+        var openRouter = Self.groq(["whisper-large-v3"])
+        openRouter.kind = .openRouter
+        var config = Config()
+        config.markModelWithoutChat(Self.whisper, in: groq)
+        config.markModelWithoutChat(Self.whisper, in: openRouter)
+
+        config.clearModelsWithoutChat(in: groq)
+        #expect(config.isModelWithoutChat(Self.whisper, in: groq) == false)
+        #expect(config.isModelWithoutChat(Self.whisper, in: openRouter) == true)
+    }
+
+    @Test("It survives being written out and read back")
+    func roundTrips() throws {
+        let service = Self.groq(["whisper-large-v3"])
+        var config = Config()
+        config.markModelWithoutChat(Self.whisper, in: service)
+
+        let data = try JSONEncoder().encode(config)
+        let decoded = try JSONDecoder().decode(Config.self, from: data)
+        #expect(decoded.isModelWithoutChat(Self.whisper, in: service) == true)
+    }
+}
