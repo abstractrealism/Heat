@@ -418,23 +418,49 @@ struct ServiceForm: View {
     private static let minReplyExponent = 8.0    // 256
     private static let maxReplyExponent = 16.0   // 65,536
 
+    /// A notch of its own, off the left end of the scale, for sending no
+    /// ceiling at all.
+    ///
+    /// Not a small number — no number. It sits two steps below 256 rather
+    /// than one so that the step between them reads as a gap rather than as
+    /// another doubling, because it isn't one: everything to its right is a
+    /// figure Heat sends, and this is Heat sending nothing and the provider
+    /// deciding. A knob resting inside the scale said the opposite, and at
+    /// 16,384 specifically, which is what made Groq's own 3,072 look like a
+    /// 16k allowance running out.
+    private static let defaultExponent = 6.0
+
     @ViewBuilder
     private var maxTokensSection: some View {
         Section {
             let chosen = state.config.maxTokens(serviceID: service.id)
 
+            // The end labels name what the ends are, which matters most at
+            // the left one: the notch out there isn't 128, it's no ceiling
+            // at all. Dimming the slider was tried first and read as nothing
+            // much — a control that looks slightly faded next to a caption
+            // is a hint, where a knob parked in its own notch under a label
+            // reading "Default" is a position.
             Slider(
                 value: maxTokensExponentBinding,
-                in: Self.minReplyExponent...Self.maxReplyExponent,
+                in: Self.defaultExponent...Self.maxReplyExponent,
                 step: 1
-            )
-            .help("The most a single reply may generate. Where a model reasons before answering, this covers the reasoning and the reply together — so a figure that was generous for answers alone can be spent thinking, and the answer arrives cut off.")
-            // Dimmed while nothing is set, because then nothing here is in
-            // force: the knob has to sit somewhere, and a knob sitting at
-            // 16k beside a caption reading "Provider default" was read as
-            // 16k being the default. It isn't — the request carries no
-            // ceiling at all and the provider picks, which on Groq was 3,072.
-            .opacity(chosen == nil ? 0.45 : 1)
+            ) {
+                // Empty: the row below already says what this is, and a
+                // label here would render beside the track and say it twice.
+                EmptyView()
+            } minimumValueLabel: {
+                Text("Default")
+                    .font(.caption)
+                    .foregroundStyle(chosen == nil ? .primary : .secondary)
+            } maximumValueLabel: {
+                Text("64k")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .help("The most a single reply may generate. Where a model reasons before answering, this covers the reasoning and the reply together — so a figure that was generous for answers alone can be spent thinking, and the answer arrives cut off. All the way to the left sends no ceiling and lets the provider decide.")
+            .accessibilityLabel("Longest reply")
+            .accessibilityValue(maxTokensCaption)
 
             LabeledContent("Longest reply") {
                 HStack(spacing: 8) {
@@ -479,19 +505,24 @@ struct ServiceForm: View {
     private var maxTokensExponentBinding: Binding<Double> {
         Binding(
             get: {
-                // Where it starts when there's nothing set: what the provider
-                // was seen to allow, so taking hold of the slider begins at
-                // the figure that cut a reply off rather than at an invented
-                // one. 16k only where nothing has been observed — it's the
-                // ceiling gen-kit itself defaults to for Anthropic, and as
-                // good a place to start as any.
-                let current = state.config.maxTokens(serviceID: service.id)
-                    ?? replyCeilingSeen
-                    ?? 16384
+                // Out in its own notch when nothing is set, rather than
+                // anywhere on the scale — every position on the scale is a
+                // figure Heat would send, and it sends none.
+                guard let current = state.config.maxTokens(serviceID: service.id) else {
+                    return Self.defaultExponent
+                }
                 return log2(Double(min(max(current, 256), 65536)))
             },
             set: { exponent in
-                updateMaxTokens(Int(pow(2, exponent.rounded())))
+                // The gap belongs to the notch: let go anywhere left of 256
+                // and it means no ceiling, so the knob settles back into the
+                // notch rather than resting in the space beside it.
+                let step = exponent.rounded()
+                guard step >= Self.minReplyExponent else {
+                    updateMaxTokens(nil)
+                    return
+                }
+                updateMaxTokens(Int(pow(2, step)))
             }
         )
     }
