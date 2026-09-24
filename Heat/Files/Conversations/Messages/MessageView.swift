@@ -427,7 +427,7 @@ struct MessageCutOffView: View {
     }
 }
 
-/// What a response cost, shown quietly beneath it once the service reports it.
+/// When a response happened and what it cost, shown quietly beneath it.
 ///
 /// The counts cover the whole generation. Where the service reports what
 /// reasoning cost it's shown as counted; where it doesn't, the split is
@@ -451,9 +451,24 @@ struct MessageUsageView: View {
     }
 
     private var summary: String? {
-        guard let output = message.metadata["outputTokens"]?.intValue else { return nil }
-
         var parts: [String] = []
+
+        // When this was said. First, because it's the one part of the line
+        // that means something on its own — a reply with no counts against it
+        // still happened at a time, and looking back through a conversation
+        // is the commonest reason to want any of this.
+        //
+        // The time alone for today, the date as well for anything older: a
+        // bare "10:32 AM" on something from last week reads as this morning.
+        parts.append(
+            Calendar.current.isDateInToday(message.modified)
+                ? message.modified.formatted(date: .omitted, time: .shortened)
+                : message.modified.formatted(date: .abbreviated, time: .shortened)
+        )
+
+        guard let output = message.metadata["outputTokens"]?.intValue else {
+            return parts.joined(separator: " · ")
+        }
 
         // First, because it's the thing that makes the rest mean something:
         // a conversation can change model between messages, so tokens and

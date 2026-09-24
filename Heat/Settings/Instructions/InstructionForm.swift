@@ -308,7 +308,7 @@ struct InstructionTextForm: View {
                         .stroke(.separator, lineWidth: 1)
                 }
             HStack(alignment: .top) {
-                Text("The prompt text itself. Words in {{double braces}} are placeholders Heat fills in. Conversations get {{datetime}}, the current date and time. Heat's own prompts get their own: {{history}} for Title and Suggestions, {{query}} and {{results}} for Web Search.")
+                Text("The prompt text itself. Words in {{double braces}} are placeholders Heat fills in. Heat's own prompts get their own: {{history}} for Title and Suggestions, {{query}} and {{results}} for Web Search. {{datetime}} still works but is no longer used — each message now carries the time it was sent, which says when every part of a conversation happened rather than only when the latest request went out.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 

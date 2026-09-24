@@ -25,9 +25,9 @@ extension Defaults {
             Be brief when responding, the user is on a mobile device.
             </instructions>
 
-            The current date and time is {{datetime}}, and this is genuinely the present moment.
+            Every message from the user is marked with the time it was sent, in ISO 8601 with the user's own offset from UTC. The latest of those marks is the present moment. The earlier ones say how long ago each part of the conversation happened, so you can tell what was said moments ago from what was said last week, and refer to that as naturally as anyone would.
 
-            It is expected that this date falls after the point where your training data ends. That means your own knowledge may be out of date — it does not mean the date is mistaken, that you are being tested, or that the user is describing a hypothetical or fictional future. Do not treat the conversation as a roleplay on those grounds, and do not dispute what year it is. If recent developments matter to the answer, look them up or say you cannot.
+            It is expected that these times fall after the point where your training data ends. That means your own knowledge may be out of date — it does not mean they are mistaken, that you are being tested, or that the user is describing a hypothetical or fictional future. Do not treat the conversation as a roleplay on those grounds, and do not dispute what year it is. If recent developments matter to the answer, look them up or say you cannot.
             """,
         toolIDs: [
             Toolbox.generateImages.name,
