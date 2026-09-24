@@ -4,7 +4,7 @@ import Fuzi
 
 private let logger = Logger(subsystem: "DuckSearch", category: "HeatKit")
 
-public struct DuckSearch: WebSearch, WebImageSearch {
+public struct DuckSearch: WebSearch, WebImageSearch, Sendable {
 
     let host = "https://html.duckduckgo.com/html"
 
