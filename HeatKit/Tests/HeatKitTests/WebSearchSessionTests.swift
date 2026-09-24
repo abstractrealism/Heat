@@ -12,6 +12,12 @@ import Testing
 /// 6.7 seconds later, straight into the block we had just been told about.
 struct WebSearchSessionTests {
 
+    /// A defaults store of its own per test, so a hold recorded by one
+    /// doesn't reach another — and so none of them touches the real one.
+    private static func freshStoreName() -> String {
+        "webSearchTests.\(UUID().uuidString)"
+    }
+
     /// Long enough to queue, short enough not to sleep through the suite.
     /// What the shipped gap actually is has a test of its own.
     private static let brisk: ClosedRange<TimeInterval> = 0.05...0.1
@@ -55,7 +61,7 @@ struct WebSearchSessionTests {
     @Test("A search waiting its turn doesn't go once a challenge has landed")
     func queuedSearchStandsDown() async throws {
         let engine = Engine([.failure(WebSearchError.challenged)])
-        let session = WebSearchSession(engine: engine, spacing: Self.brisk)
+        let session = WebSearchSession(engine: engine, spacing: Self.brisk, storeName: Self.freshStoreName())
 
         async let first: WebSearchResponse = session.search(query: "one")
         async let second: WebSearchResponse = session.search(query: "two")
@@ -89,7 +95,7 @@ struct WebSearchSessionTests {
             .failure(WebSearchError.challenged),
             .failure(WebSearchError.challenged),
         ])
-        let session = WebSearchSession(engine: engine, spacing: Self.brisk)
+        let session = WebSearchSession(engine: engine, spacing: Self.brisk, storeName: Self.freshStoreName())
 
         async let first: WebSearchResponse = session.search(query: "one")
         async let second: WebSearchResponse = session.search(query: "two")
@@ -109,7 +115,7 @@ struct WebSearchSessionTests {
     @Test("An ordinary search is answered and the engine is asked once")
     func ordinarySearch() async throws {
         let engine = Engine([.success(10)])
-        let session = WebSearchSession(engine: engine, spacing: Self.brisk)
+        let session = WebSearchSession(engine: engine, spacing: Self.brisk, storeName: Self.freshStoreName())
 
         let response = try await session.search(query: "tofu")
         #expect(response.results.count == 10)
@@ -121,7 +127,7 @@ struct WebSearchSessionTests {
     @Test("Searches asked for together are spaced apart")
     func searchesAreSpaced() async throws {
         let engine = Engine([.success(1), .success(1)])
-        let session = WebSearchSession(engine: engine, spacing: Self.brisk)
+        let session = WebSearchSession(engine: engine, spacing: Self.brisk, storeName: Self.freshStoreName())
 
         let started = Date.now
         async let first: WebSearchResponse = session.search(query: "one")
@@ -147,10 +153,75 @@ struct WebSearchSessionTests {
     @Test("A search that works clears what came before it")
     func successClearsTheHold() async throws {
         let engine = Engine([.success(5)])
-        let session = WebSearchSession(engine: engine, spacing: Self.brisk)
+        let session = WebSearchSession(engine: engine, spacing: Self.brisk, storeName: Self.freshStoreName())
 
         _ = try await session.search(query: "tofu")
         // Nothing thrown means nothing held.
         #expect(engine.asked == ["tofu"])
+    }
+}
+
+/// A challenge hold outlives the app, because a block does.
+///
+/// These used to be in memory alone, so quitting Heat — or rebuilding it,
+/// which over a day's work is the same thing many times over — forgot the
+/// block and sent the next question's searches straight into it. Measured on
+/// 24 Sept 2026: a block outlasted eighty-two minutes of silence, so a
+/// restart cannot be assumed to have outlived one.
+struct WebSearchHoldPersistenceTests {
+
+    private final class Refusing: WebSearch, WebImageSearch, @unchecked Sendable {
+        private let lock = NSLock()
+        private(set) var asked = 0
+
+        func search(web query: String) async throws -> WebSearchResponse {
+            lock.withLock { asked += 1 }
+            throw WebSearchError.challenged
+        }
+
+        func search(images query: String) async throws -> WebSearchResponse {
+            try await search(web: query)
+        }
+    }
+
+    private static let brisk: ClosedRange<TimeInterval> = 0.05...0.1
+
+    @Test("A hold survives the session being rebuilt")
+    func holdSurvives() async throws {
+        let store = "webSearchHold.\(UUID().uuidString)"
+        let engine = Refusing()
+
+        let first = WebSearchSession(engine: engine, spacing: Self.brisk, storeName: store)
+        _ = try? await first.search(query: "one")
+        #expect(engine.asked == 1)
+
+        // As though the app had been quit and opened again.
+        let second = WebSearchSession(engine: engine, spacing: Self.brisk, storeName: store)
+        do {
+            _ = try await second.search(query: "two")
+            Issue.record("a search went out during a hold that a restart forgot")
+        } catch let WebSearchError.holdingOff(remaining) {
+            #expect(remaining > 25 * 60)
+        }
+        #expect(engine.asked == 1, "the second never reached the engine")
+    }
+
+    /// An image search is the same address and the same bucket, and costs two
+    /// requests rather than one — the token page, then the JSON.
+    @Test("An image search is held off too")
+    func imagesAreHeld() async throws {
+        let store = "webSearchHold.\(UUID().uuidString)"
+        let engine = Refusing()
+
+        let session = WebSearchSession(engine: engine, spacing: Self.brisk, storeName: store)
+        _ = try? await session.search(query: "one")
+
+        do {
+            _ = try await session.searchImages(query: "a picture")
+            Issue.record("an image search went out during a hold")
+        } catch let WebSearchError.holdingOff(remaining) {
+            #expect(remaining > 25 * 60)
+        }
+        #expect(engine.asked == 1)
     }
 }

@@ -20,10 +20,14 @@ public actor WebSearchSession {
 
     init(
         engine: any WebSearch & WebImageSearch & Sendable = DuckSearch(),
-        spacing: ClosedRange<TimeInterval> = WebSearchSession.spacing
+        spacing: ClosedRange<TimeInterval> = WebSearchSession.spacing,
+        // Named rather than passed: `UserDefaults` predates Sendable, and
+        // a name crosses an actor boundary without argument.
+        storeName: String? = nil
     ) {
         self.engine = engine
         self.spacing = spacing
+        self.store = storeName.flatMap { UserDefaults(suiteName: $0) } ?? .standard
     }
 
     // MARK: - Pacing
@@ -79,40 +83,48 @@ public actor WebSearchSession {
     private static let firstHold: TimeInterval = 30 * 60
     private static let longestHold: TimeInterval = 4 * 60 * 60
 
-    private var challengedAt: Date?
-    private var hold: TimeInterval = WebSearchSession.firstHold
+    /// Remembered across launches, because a block is.
+    ///
+    /// These used to live only in memory, so quitting Heat — or rebuilding
+    /// it, which during a day's work is the same thing many times over —
+    /// forgot that we were in the middle of a block and sent the next
+    /// question's searches straight into it. Measured on 24 Sept: a block
+    /// outlasted eighty-two minutes of complete silence, so it is not a
+    /// timer that a restart can be assumed to have outlived.
+    ///
+    /// In defaults rather than in the config file: this is an operational
+    /// fact about the last few minutes, not a preference anyone chose, and
+    /// nothing should be restored from a backup or carried to another
+    /// machine.
+    private var challengedAt: Date? {
+        get {
+            let stored = store.double(forKey: Self.challengedAtKey)
+            return stored > 0 ? Date(timeIntervalSince1970: stored) : nil
+        }
+        set { store.set(newValue?.timeIntervalSince1970 ?? 0, forKey: Self.challengedAtKey) }
+    }
+
+    private var hold: TimeInterval {
+        get {
+            let stored = store.double(forKey: Self.holdKey)
+            return stored > 0 ? stored : Self.firstHold
+        }
+        set { store.set(newValue, forKey: Self.holdKey) }
+    }
+
+    /// `nonisolated(unsafe)` because `UserDefaults` is documented as
+    /// thread-safe and predates Sendable; only this actor touches these keys.
+    private nonisolated(unsafe) let store: UserDefaults
+    private static let challengedAtKey = "webSearchChallengedAt"
+    private static let holdKey = "webSearchHold"
 
     public func search(query: String) async throws -> WebSearchResponse {
-        try holdRemaining(for: query)
-
-        let slot = max(Date.now, nextSlot ?? .distantPast)
-        nextSlot = slot.addingTimeInterval(.random(in: spacing))
-        let wait = slot.timeIntervalSinceNow
-        if wait > 0 {
-            try await Task.sleep(for: .seconds(wait))
-        }
-
-        // Again, because the world moved while this one waited its turn.
-        //
-        // A model asks for two or three searches at once, so they arrive
-        // together, all pass the check above, and all reserve a slot. If the
-        // first is then challenged, the ones asleep behind it knew nothing of
-        // it and went anyway — measured: a challenge at 11:43:39 and another
-        // request 6.7 seconds later, straight into a block we had just been
-        // told about.
-        //
-        // Which cost twice. A request made during a block is the thing most
-        // likely to lengthen it, and it also read as a *re-challenge* — the
-        // hold doubled from thirty minutes to sixty on the strength of a
-        // request that should never have left. With this check, a challenge
-        // reaching the doubling below has by definition outlived a hold,
-        // which is what that doubling is supposed to mean.
-        try holdRemaining(for: query)
+        let wait = try await pace(query: query)
 
         // Said at the moment the request actually goes, with how long it
         // queued: the tool-call log lines print when calls are dispatched,
         // all at once, and read as though the pacing weren't happening.
-        logger.notice("→ search after \(Self.seconds(max(0, wait)), privacy: .public)s in the queue: \(query, privacy: .public)")
+        logger.notice("→ search after \(Self.seconds(wait), privacy: .public)s in the queue: \(query, privacy: .public)")
         let sentAt = Date.now
 
         do {
@@ -139,6 +151,38 @@ public actor WebSearchSession {
         }
     }
 
+    /// Waits for this request's turn, and refuses it outright if a hold is
+    /// in force — before the wait and again after it.
+    @discardableResult
+    private func pace(query: String) async throws -> TimeInterval {
+        try holdRemaining(for: query)
+
+        let slot = max(Date.now, nextSlot ?? .distantPast)
+        nextSlot = slot.addingTimeInterval(.random(in: spacing))
+        let wait = slot.timeIntervalSinceNow
+        if wait > 0 {
+            try await Task.sleep(for: .seconds(wait))
+        }
+
+        // Again, because the world moved while this one waited its turn.
+        //
+        // A model asks for two or three searches at once, so they arrive
+        // together, all pass the check above, and all reserve a slot. If the
+        // first is then challenged, the ones asleep behind it knew nothing of
+        // it and went anyway — measured: a challenge at 11:43:39 and another
+        // request 6.7 seconds later, straight into a block we had just been
+        // told about.
+        //
+        // Which cost twice. A request made during a block is the thing most
+        // likely to lengthen it, and it also read as a *re-challenge* — the
+        // hold doubled from thirty minutes to sixty on the strength of a
+        // request that should never have left. With this check, a challenge
+        // reaching the doubling below has by definition outlived a hold,
+        // which is what that doubling is supposed to mean.
+        try holdRemaining(for: query)
+        return max(0, wait)
+    }
+
     /// Throws if a challenge hold is still in force.
     private func holdRemaining(for query: String) throws {
         guard let challengedAt else { return }
@@ -153,6 +197,13 @@ public actor WebSearchSession {
     }
 
     public func searchImages(query: String) async throws -> WebSearchResponse {
+        // Through the same gate as a web search, because it is the same
+        // address and the same bucket: `html`, `lite` and the JSON endpoint
+        // were measured being challenged together. It used to go straight
+        // out — no hold, no spacing — and it costs *two* requests, the token
+        // page and then the JSON, so a single image search during a block
+        // was two more reasons for that block to last longer.
+        try await pace(query: query)
         // Was Google, which stopped working. Its image scrape asked for the
         // legacy no-JavaScript rendering (`gbv=1`) and read the results out of
         // the markup; that mode no longer carries any. The request still
