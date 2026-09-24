@@ -12,6 +12,10 @@ import Testing
 /// 6.7 seconds later, straight into the block we had just been told about.
 struct WebSearchSessionTests {
 
+    /// Long enough to queue, short enough not to sleep through the suite.
+    /// What the shipped gap actually is has a test of its own.
+    private static let brisk: ClosedRange<TimeInterval> = 0.05...0.1
+
     /// Answers however it is told to, and counts what it was asked.
     private final class Engine: WebSearch, WebImageSearch, @unchecked Sendable {
         private let lock = NSLock()
@@ -51,7 +55,7 @@ struct WebSearchSessionTests {
     @Test("A search waiting its turn doesn't go once a challenge has landed")
     func queuedSearchStandsDown() async throws {
         let engine = Engine([.failure(WebSearchError.challenged)])
-        let session = WebSearchSession(engine: engine)
+        let session = WebSearchSession(engine: engine, spacing: Self.brisk)
 
         async let first: WebSearchResponse = session.search(query: "one")
         async let second: WebSearchResponse = session.search(query: "two")
@@ -85,7 +89,7 @@ struct WebSearchSessionTests {
             .failure(WebSearchError.challenged),
             .failure(WebSearchError.challenged),
         ])
-        let session = WebSearchSession(engine: engine)
+        let session = WebSearchSession(engine: engine, spacing: Self.brisk)
 
         async let first: WebSearchResponse = session.search(query: "one")
         async let second: WebSearchResponse = session.search(query: "two")
@@ -105,7 +109,7 @@ struct WebSearchSessionTests {
     @Test("An ordinary search is answered and the engine is asked once")
     func ordinarySearch() async throws {
         let engine = Engine([.success(10)])
-        let session = WebSearchSession(engine: engine)
+        let session = WebSearchSession(engine: engine, spacing: Self.brisk)
 
         let response = try await session.search(query: "tofu")
         #expect(response.results.count == 10)
@@ -117,7 +121,7 @@ struct WebSearchSessionTests {
     @Test("Searches asked for together are spaced apart")
     func searchesAreSpaced() async throws {
         let engine = Engine([.success(1), .success(1)])
-        let session = WebSearchSession(engine: engine)
+        let session = WebSearchSession(engine: engine, spacing: Self.brisk)
 
         let started = Date.now
         async let first: WebSearchResponse = session.search(query: "one")
@@ -125,8 +129,17 @@ struct WebSearchSessionTests {
         _ = try await first
         _ = try await second
 
-        #expect(Date.now.timeIntervalSince(started) >= 4, "the shortest gap the session allows")
+        #expect(Date.now.timeIntervalSince(started) >= Self.brisk.lowerBound, "the second waited for the first")
         #expect(engine.asked.count == 2)
+    }
+
+    /// The figure that actually ships, which the tests above deliberately
+    /// don't use. Widened from 4–10 once a hosted model made the gap the
+    /// only thing pacing a searching turn: twelve requests in seventy-two
+    /// seconds, and the twelfth was refused.
+    @Test("The shipped gap is the one intended")
+    func shippedSpacing() {
+        #expect(WebSearchSession.spacing == 7...15)
     }
 
     /// A success clears the hold, so a conversation isn't punished for a
@@ -134,7 +147,7 @@ struct WebSearchSessionTests {
     @Test("A search that works clears what came before it")
     func successClearsTheHold() async throws {
         let engine = Engine([.success(5)])
-        let session = WebSearchSession(engine: engine)
+        let session = WebSearchSession(engine: engine, spacing: Self.brisk)
 
         _ = try await session.search(query: "tofu")
         // Nothing thrown means nothing held.

@@ -13,8 +13,17 @@ public actor WebSearchSession {
     /// parts with the interesting behaviour, and the parts that were wrong.
     private let engine: any WebSearch & WebImageSearch & Sendable
 
-    init(engine: any WebSearch & WebImageSearch & Sendable = DuckSearch()) {
+    /// The gap this session leaves between requests. A parameter so a test
+    /// can exercise the queueing without sleeping through it — the shipped
+    /// figure is `Self.spacing`, and one test holds that to what's intended.
+    private let spacing: ClosedRange<TimeInterval>
+
+    init(
+        engine: any WebSearch & WebImageSearch & Sendable = DuckSearch(),
+        spacing: ClosedRange<TimeInterval> = WebSearchSession.spacing
+    ) {
         self.engine = engine
+        self.spacing = spacing
     }
 
     // MARK: - Pacing
@@ -34,10 +43,32 @@ public actor WebSearchSession {
     // isn't what keeps the door shut — with the wait doubling each time a
     // retry is challenged again, and the model told the truth meanwhile.
 
-    /// The gap between two requests, drawn afresh each time. Four in
-    /// thirteen seconds was refused; this range is a guess at the other side
-    /// of that line, and varied so the pattern isn't a metronome.
-    private static let spacing: ClosedRange<TimeInterval> = 4...10
+    /// The gap between two requests, drawn afresh each time, varied so the
+    /// pattern isn't a metronome.
+    ///
+    /// Widened from 4–10 on 24 Sept 2026, and the reason is worth recording
+    /// because it wasn't the pacing that changed — it was the model. Every
+    /// run that went unchallenged was answered by a local 27B that took
+    /// minutes to think between rounds, so searches were spread out by the
+    /// model and this gap almost never bound: 25 searches over 15 minutes,
+    /// then 40 over 45. A hosted model answers a round in a second or two,
+    /// which leaves this the only thing pacing anything, and a searching
+    /// turn then runs flat out at whatever the minimum allows. Measured that
+    /// day against Claude: twelve requests in seventy-two seconds, about ten
+    /// a minute, and the twelfth was refused.
+    ///
+    /// So the figure is aimed at sustained volume rather than at bursts.
+    /// 7–15 averages eleven seconds, which is a little over five requests a
+    /// minute — between the 1.7 a minute that was never challenged and the
+    /// ten that was. Wider would be safer and was rejected deliberately: a
+    /// round of three searches at 10–20 can take forty seconds before the
+    /// model says a word, and a turn that feels broken is its own kind of
+    /// failure.
+    ///
+    /// All of which is a guess at an undocumented limit, from four data
+    /// points. The published advice — under thirty a minute — matches none
+    /// of them, and a keyed provider remains the only real answer.
+    static let spacing: ClosedRange<TimeInterval> = 7...15
 
     /// When the next request may go, or nil if now. Reserved *before* the
     /// wait rather than recorded after it, so two callers arriving together
@@ -55,7 +86,7 @@ public actor WebSearchSession {
         try holdRemaining(for: query)
 
         let slot = max(Date.now, nextSlot ?? .distantPast)
-        nextSlot = slot.addingTimeInterval(.random(in: Self.spacing))
+        nextSlot = slot.addingTimeInterval(.random(in: spacing))
         let wait = slot.timeIntervalSinceNow
         if wait > 0 {
             try await Task.sleep(for: .seconds(wait))
