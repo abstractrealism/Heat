@@ -312,15 +312,30 @@ struct InstructionTextForm: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                // Only for the prompts Heat ships, and only once one has been
-                // changed. These are seeded on first launch and never written
-                // again, so an improvement to a shipped prompt otherwise
-                // reaches new installations and nobody else.
-                if let shipped = shippedInstructions, shipped != instructions {
+                // Only for the prompts Heat ships — a prompt somebody wrote
+                // has no default to go back to, so there is nothing to offer
+                // and no button. These are seeded on first launch and never
+                // written again, so an improvement to a shipped prompt
+                // otherwise reaches new installations and nobody else.
+                //
+                // Present but disabled where the prompt already matches,
+                // rather than absent. A button that disappears once it has
+                // nothing to do can't be told from one that was never there:
+                // somebody checking whether they had already restored a
+                // prompt found no button and no way to know which it meant.
+                // Greyed out, the answer is the control itself, and its
+                // tooltip says so.
+                if let shipped = shippedInstructions {
+                    let matches = shipped == instructions
                     Button("Restore Default") {
                         instructions = shipped
                     }
-                    .help("Replaces this prompt with the one Heat ships. Use it to pick up an improved version, or to undo edits.")
+                    .disabled(matches)
+                    .help(
+                        matches
+                            ? "This prompt already matches the one Heat ships — there is nothing to restore."
+                            : "Replaces this prompt with the one Heat ships. Use it to pick up an improved version, or to undo edits."
+                    )
                     .fixedSize()
                 }
             }
