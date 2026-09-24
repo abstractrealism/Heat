@@ -772,20 +772,72 @@ final class ConversationViewModel {
     /// message — quoting a transcript, asking about the tag itself — and
     /// rewriting what somebody typed is not on.
     private func historyForRequest() -> [Message] {
-        let messages = activeMessages
-        guard state.config.stripThinkingFromContext else { return messages }
-        return messages.map { message in
-            guard message.role == .assistant else { return message }
-            var message = message
-            // Mapped rather than replaced wholesale: a message can carry
-            // images and files alongside its text, and those have to survive.
-            message.contents = message.contents?.map { content in
-                guard case .text(let text) = content else { return content }
-                return .text(Self.removingThinking(from: text))
+        activeMessages.map { message in
+            switch message.role {
+            case .user:
+                return Self.stamped(message)
+            case .assistant:
+                guard state.config.stripThinkingFromContext else { return message }
+                var message = message
+                // Mapped rather than replaced wholesale: a message can carry
+                // images and files alongside its text, and those have to
+                // survive.
+                message.contents = message.contents?.map { content in
+                    guard case .text(let text) = content else { return content }
+                    return .text(Self.removingThinking(from: text))
+                }
+                return message
+            case .system, .tool:
+                return message
             }
-            return message
         }
     }
+
+    /// A message with the time it was sent written into it.
+    ///
+    /// The model is told what time it is somewhere, or it answers questions
+    /// about the present from a training set that ended long ago. It used to
+    /// be told in the system prompt, which was wrong twice over. It said only
+    /// what time it is *now*, so a conversation held over two days read as
+    /// though every word of it had been said at whatever moment the latest
+    /// request went out — nothing could be "yesterday". And a system prompt
+    /// carrying a live clock changes every minute, which is the front of
+    /// every request, so no cached prefix survived a turn: measured at
+    /// 13,177 tokens re-read at full price on one turn and cached on the
+    /// next, the only difference being that the second fell inside the same
+    /// minute as the one before it.
+    ///
+    /// A time written onto the message it belongs to is fixed the moment the
+    /// message exists. It never changes again, so it never invalidates
+    /// anything, and it says when *that* was rather than when now is — which
+    /// is the thing worth knowing, and the latest one still says what time it
+    /// is now.
+    ///
+    /// Applied on the way out and never stored: the transcript keeps what was
+    /// typed.
+    nonisolated private static func stamped(_ message: Message) -> Message {
+        guard case .text(let text)? = message.contents?.first else { return message }
+        var message = message
+        message.contents?[0] = .text("[\(sentAt.format(message.created))]\n\(text)")
+        return message
+    }
+
+    /// ISO 8601 with the machine's own offset from UTC.
+    ///
+    /// Unambiguous — 9/24 and 24/9 are the same date to different readers,
+    /// and models read this format exactly. Local rather than UTC because
+    /// "yesterday" is a local idea. A fixed format rather than a localised
+    /// one, since the text becomes part of a cached prefix and a prefix that
+    /// changes when the machine's language does is a prefix that gets
+    /// re-read for nothing.
+    nonisolated private static let sentAt = Date.ISO8601FormatStyle(
+        timeZone: .current
+    ).year().month().day().dateSeparator(.dash)
+        .time(includingFractionalSeconds: false).timeSeparator(.colon)
+        .dateTimeSeparator(.standard)
+        // The offset, which this style leaves out unless asked: without it
+        // the reader has to assume a zone, and the prompt says there is one.
+        .timeZone(separator: .colon)
 
     /// The turn's messages with reasoning removed from every assistant
     /// reply after the first `priorCount`, which are earlier turns.
