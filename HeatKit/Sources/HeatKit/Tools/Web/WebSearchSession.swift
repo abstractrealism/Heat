@@ -8,7 +8,14 @@ private let logger = Logger(subsystem: "WebSearch", category: "HeatKit")
 public actor WebSearchSession {
     public static let shared = WebSearchSession()
 
-    private init() {}
+    /// What actually does the searching. A parameter so the pacing and the
+    /// holding can be driven without going near the network — they are the
+    /// parts with the interesting behaviour, and the parts that were wrong.
+    private let engine: any WebSearch & WebImageSearch & Sendable
+
+    init(engine: any WebSearch & WebImageSearch & Sendable = DuckSearch()) {
+        self.engine = engine
+    }
 
     // MARK: - Pacing
     //
@@ -45,13 +52,7 @@ public actor WebSearchSession {
     private var hold: TimeInterval = WebSearchSession.firstHold
 
     public func search(query: String) async throws -> WebSearchResponse {
-        if let challengedAt {
-            let remaining = hold - Date.now.timeIntervalSince(challengedAt)
-            if remaining > 0 {
-                logger.notice("search held off, \(Int(remaining), privacy: .public)s of a challenge hold left: \(query, privacy: .public)")
-                throw WebSearchError.holdingOff(remaining)
-            }
-        }
+        try holdRemaining(for: query)
 
         let slot = max(Date.now, nextSlot ?? .distantPast)
         nextSlot = slot.addingTimeInterval(.random(in: Self.spacing))
@@ -60,13 +61,29 @@ public actor WebSearchSession {
             try await Task.sleep(for: .seconds(wait))
         }
 
+        // Again, because the world moved while this one waited its turn.
+        //
+        // A model asks for two or three searches at once, so they arrive
+        // together, all pass the check above, and all reserve a slot. If the
+        // first is then challenged, the ones asleep behind it knew nothing of
+        // it and went anyway — measured: a challenge at 11:43:39 and another
+        // request 6.7 seconds later, straight into a block we had just been
+        // told about.
+        //
+        // Which cost twice. A request made during a block is the thing most
+        // likely to lengthen it, and it also read as a *re-challenge* — the
+        // hold doubled from thirty minutes to sixty on the strength of a
+        // request that should never have left. With this check, a challenge
+        // reaching the doubling below has by definition outlived a hold,
+        // which is what that doubling is supposed to mean.
+        try holdRemaining(for: query)
+
         // Said at the moment the request actually goes, with how long it
         // queued: the tool-call log lines print when calls are dispatched,
         // all at once, and read as though the pacing weren't happening.
         logger.notice("→ search after \(Self.seconds(max(0, wait)), privacy: .public)s in the queue: \(query, privacy: .public)")
         let sentAt = Date.now
 
-        let engine = DuckSearch()
         do {
             let response = try await engine.search(web: query)
             challengedAt = nil
@@ -91,6 +108,15 @@ public actor WebSearchSession {
         }
     }
 
+    /// Throws if a challenge hold is still in force.
+    private func holdRemaining(for query: String) throws {
+        guard let challengedAt else { return }
+        let remaining = hold - Date.now.timeIntervalSince(challengedAt)
+        guard remaining > 0 else { return }
+        logger.notice("search held off, \(Int(remaining), privacy: .public)s of a challenge hold left: \(query, privacy: .public)")
+        throw WebSearchError.holdingOff(remaining)
+    }
+
     private static func seconds(_ interval: TimeInterval) -> String {
         String(format: "%.1f", interval)
     }
@@ -103,7 +129,6 @@ public actor WebSearchSession {
         // none of the links the parser looks for — so the failure arrived as an
         // empty list rather than an error, and the assistant reported in good
         // faith that it had found no images.
-        let engine = DuckSearch()
         return try await engine.search(images: query)
     }
 }
