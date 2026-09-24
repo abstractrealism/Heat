@@ -431,7 +431,9 @@ struct MessageCutOffView: View {
 ///
 /// The counts cover the whole generation. Where the service reports what
 /// reasoning cost it's shown as counted; where it doesn't, the split is
-/// apportioned from the stream and marked with ≈.
+/// apportioned from the stream and marked with ≈. Input the service already
+/// had cached is noted inside the input figure rather than beside it, being
+/// part of it.
 struct MessageUsageView: View {
     let message: Message
 
@@ -501,7 +503,17 @@ struct MessageUsageView: View {
         }
 
         if let input = message.metadata["inputTokens"]?.intValue {
-            parts.append("\(format(input + produced)) tokens (\(format(input)) in, \(outputDetail))")
+            // How much of the input the service already had. Worth saying,
+            // because it's the difference between a long conversation costing
+            // what it looks like it costs and a tenth of that — and because
+            // it's the only way to see whether the caching is working at all.
+            // Part of the input rather than extra to it, so it's shown inside
+            // that figure.
+            var inputDetail = "\(format(input)) in"
+            if let cached = message.metadata["cachedTokens"]?.intValue, cached > 0 {
+                inputDetail += " (\(format(cached)) cached)"
+            }
+            parts.append("\(format(input + produced)) tokens (\(inputDetail), \(outputDetail))")
         } else {
             parts.append("\(outputDetail) tokens")
         }
