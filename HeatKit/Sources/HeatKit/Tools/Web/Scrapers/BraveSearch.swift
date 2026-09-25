@@ -57,27 +57,62 @@ public struct BraveSearch: WebSearch, Sendable {
         return try decode(data, query: query)
     }
 
-    /// What a refusal means, as far as it can be told apart.
+    /// What a refusal means, read from the body rather than the status.
     ///
-    /// Brave's documentation doesn't say what it answers when a quota runs
-    /// out or a rate limit is hit, so these are read from the status and the
-    /// body rather than from a published list, and the body is carried
-    /// through either way — an unexplained 4xx that says something useful in
-    /// its own words is worth more than a category of ours.
+    /// The status alone won't do it. A wrong key answers **422** with
+    /// `SUBSCRIPTION_TOKEN_INVALID`, which is the status this once took for a
+    /// malformed query — measured against the live API, having first been
+    /// guessed at as 401 from the shape of every other service. Brave says
+    /// which of the two it means in `error.code` and
+    /// `error.meta.component`, so those are what's read.
+    ///
+    /// Its own sentence is passed along. "The provided subscription token is
+    /// invalid" is better than anything this could infer, and a code nobody
+    /// here has seen still arrives with an explanation attached.
     static func failure(status: Int, body: Data) -> BraveSearchError {
-        let detail = String(data: body, encoding: .utf8)?
+        let payload = try? JSONDecoder().decode(ErrorPayload.self, from: body)
+        let code = payload?.error?.code?.uppercased() ?? ""
+        let component = payload?.error?.meta?.component?.lowercased() ?? ""
+        let detail = payload?.error?.detail ?? String(data: body, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .prefix(400)
             .description
-        switch status {
-        case 401, 403:
-            return .keyRefused(detail)
-        case 422:
-            return .badRequest(detail)
-        case 429:
+
+        // Quota before key, deliberately. A spent subscription may well
+        // report a code with SUBSCRIPTION in it too, and being told the key
+        // is wrong when the key is fine would send somebody to check the one
+        // thing that isn't the problem.
+        let spent = ["RATE", "QUOTA", "LIMIT", "EXCEEDED"]
+        if status == 429 || spent.contains(where: code.contains) {
             return .rateLimited(detail)
-        default:
-            return .refused(status: status, detail: detail)
+        }
+        if component == "authentication" || code.contains("TOKEN") {
+            return .keyRefused(detail)
+        }
+        if status == 422 {
+            return .badRequest(detail)
+        }
+        return .refused(status: status, detail: detail)
+    }
+
+    /// What a refusal looks like. Verbatim from the live API:
+    ///
+    ///     {"error":{"code":"SUBSCRIPTION_TOKEN_INVALID",
+    ///               "detail":"The provided subscription token is invalid.",
+    ///               "meta":{"component":"authentication"},"status":422},
+    ///      "type":"ErrorResponse"}
+    struct ErrorPayload: Decodable {
+        let error: Detail?
+
+        struct Detail: Decodable {
+            let code: String?
+            let detail: String?
+            let status: Int?
+            let meta: Meta?
+
+            struct Meta: Decodable {
+                let component: String?
+            }
         }
     }
 

@@ -7,10 +7,17 @@ import Testing
 /// the shape the service actually answers with, reduced to the three things
 /// a result is — a link, a title and a snippet.
 ///
-/// The payload below is built from Brave's documented response rather than
-/// captured from a live one, there being no key to capture with yet. It is
-/// the one thing here not taken from the wire, and worth replacing with a
-/// real response once there is one.
+/// From a live response, 25 Sept 2026. Worth saying what that changed from
+/// the documented shape it replaced: the response carries `discussions`,
+/// `mixed`, `query`, `type`, `videos` and `web` at the top, and a result
+/// carries eighteen fields where the documentation names four. Everything
+/// but `title`, `url` and `description` is ignored here, and has to be — a
+/// decoder that required any of it would fail on the next query that omits
+/// a section, which they do.
+///
+/// The descriptions are as returned, truncated where the capture truncated
+/// them. `<strong>` and `&#x27;` are both real and both from this response,
+/// which is what the stripping below exists for.
 struct BraveSearchTests {
 
     private let brave = BraveSearch(host: "https://api.search.brave.com/res/v1/web/search", token: "test")
@@ -18,25 +25,48 @@ struct BraveSearchTests {
     private static let payload = Data(#"""
     {
       "type": "search",
-      "query": { "original": "nashville tofu hudson valley", "more_results_available": true },
+      "query": { "original": "nashville hot tofu sandwich beacon ny", "more_results_available": true },
+      "discussions": { "type": "search", "results": [] },
+      "videos": { "type": "videos", "results": [] },
+      "mixed": { "type": "mixed", "main": [{ "type": "web", "index": 0, "all": false }] },
       "web": {
         "type": "search",
+        "family_friendly": true,
         "results": [
           {
-            "title": "The Beacon Daily",
-            "url": "https://thebeacondaily.com/",
-            "description": "Gourmet sandwiches in <strong>Beacon</strong>, NY &mdash; including a <strong>Nashville</strong> hot tots.",
-            "profile": { "name": "thebeacondaily", "long_name": "thebeacondaily.com" },
-            "meta_url": { "hostname": "thebeacondaily.com" }
+            "type": "search_result",
+            "subtype": "generic",
+            "title": "Nashville-Style Hot Tofu Sliders Recipe - NYT Cooking",
+            "url": "https://cooking.nytimes.com/recipes/1022584-nashville-style-hot-tofu-sliders",
+            "description": "Tofu has a high water content, but a quick dredge in rice flour and a dip in batter creates a barrier that prevents excess splattering durin",
+            "age": "2 years ago",
+            "page_age": "2024-04-18T00:00:00",
+            "language": "en",
+            "family_friendly": true,
+            "is_live": false,
+            "is_source_both": false,
+            "is_source_local": false,
+            "profile": { "name": "NYT Cooking", "long_name": "cooking.nytimes.com" },
+            "meta_url": { "hostname": "cooking.nytimes.com" },
+            "thumbnail": { "src": "https://imgs.search.brave.com/thumb" },
+            "organization": null,
+            "recipe": null,
+            "extra_snippets": ["Serve with pickles."]
           },
           {
-            "title": "veg+ &mdash; Menu",
-            "url": "https://www.yelp.com/menu/veg-hudson",
-            "description": "Tofu tacos &amp; bowls at veg+ in Hudson &quot;all day&quot;."
+            "type": "search_result",
+            "title": "Nashville hot tofu sandwich - Strongr Fastr",
+            "url": "https://www.strongrfastr.com/recipes/198408-nashville_hot_tofu_sandwich",
+            "description": "<strong>Heat oil in a non-stick skillet over medium-high heat.</strong> Add the tofu and cook until crispy, about 2-4 minutes per side."
+          },
+          {
+            "type": "search_result",
+            "title": "Crispy Nashville Hot Tofu Sandwich - Evergreen Kitchen",
+            "url": "https://evergreenkitchen.ca/hot-tofu-sandwich/",
+            "description": "Vegans and meat-lovers can&#x27;t resist this Nashville Hot Tofu Sandwich! <strong>Crispy baked tofu gets drizzled with Hot Oil</strong>"
           }
         ]
-      },
-      "mixed": { "type": "mixed", "main": [{ "type": "web", "index": 0, "all": false }] }
+      }
     }
     """#.utf8)
 
@@ -45,9 +75,12 @@ struct BraveSearchTests {
         let response = try brave.decode(Self.payload, query: "nashville tofu hudson valley")
 
         #expect(response.query == "nashville tofu hudson valley")
-        #expect(response.results.count == 2)
-        #expect(response.results.first?.url.absoluteString == "https://thebeacondaily.com/")
-        #expect(response.results.first?.title == "The Beacon Daily")
+        #expect(response.results.count == 3)
+        #expect(
+            response.results.first?.url.absoluteString
+                == "https://cooking.nytimes.com/recipes/1022584-nashville-style-hot-tofu-sliders"
+        )
+        #expect(response.results.first?.title == "Nashville-Style Hot Tofu Sliders Recipe - NYT Cooking")
     }
 
     /// Brave marks the words it matched with `<strong>`. A snippet goes into
@@ -57,12 +90,15 @@ struct BraveSearchTests {
         let response = try brave.decode(Self.payload, query: "q")
 
         #expect(
-            response.results.first?.description
-                == "Gourmet sandwiches in Beacon, NY &mdash; including a Nashville hot tots."
+            response.results[1].description
+                == "Heat oil in a non-stick skillet over medium-high heat. Add the tofu and cook until crispy, about 2-4 minutes per side."
         )
-        // The entities it does emit are turned back into characters; the ones
-        // it doesn't are left alone rather than guessed at.
-        #expect(response.results.last?.description == #"Tofu tacos & bowls at veg+ in Hudson "all day"."#)
+        // The entities it emits are turned back into characters. `&#x27;` is
+        // from this very response.
+        #expect(
+            response.results[2].description
+                == "Vegans and meat-lovers can't resist this Nashville Hot Tofu Sandwich! Crispy baked tofu gets drizzled with Hot Oil"
+        )
     }
 
     /// The response omits whole sections depending on the query, so nothing
@@ -90,20 +126,53 @@ struct BraveSearchTests {
         }
     }
 
-    /// Brave's documentation doesn't say what it answers when a quota runs
-    /// out, so the status is read and the body carried through either way.
-    @Test("A refusal is told apart as far as it can be")
-    func failures() {
-        let body = Data(#"{"error":{"detail":"RATE_LIMITED"}}"#.utf8)
+    /// A wrong key answers **422**, not 401 — which this originally assumed,
+    /// from the shape of every other service. Verbatim from the live API.
+    @Test("A wrong key is told apart from a bad query, both being 422")
+    func wrongKey() {
+        let body = Data(#"""
+        {"error":{"code":"SUBSCRIPTION_TOKEN_INVALID","detail":"The provided subscription token is invalid.","meta":{"component":"authentication"},"status":422},"type":"ErrorResponse"}
+        """#.utf8)
 
-        if case .rateLimited = BraveSearch.failure(status: 429, body: body) {} else {
-            Issue.record("429 is a rate limit")
+        if case .keyRefused(let detail) = BraveSearch.failure(status: 422, body: body) {
+            // Brave's own sentence, which beats anything this could infer.
+            #expect(detail == "The provided subscription token is invalid.")
+        } else {
+            Issue.record("422 with an authentication component is the key")
         }
-        if case .keyRefused = BraveSearch.failure(status: 401, body: body) {} else {
-            Issue.record("401 is the key")
+    }
+
+    /// A 422 that isn't about the key is about the query.
+    @Test("A malformed query is still a bad request")
+    func badRequest() {
+        let body = Data(#"""
+        {"error":{"code":"VALIDATION","detail":"q is required","meta":{"component":"validation"},"status":422}}
+        """#.utf8)
+        if case .badRequest = BraveSearch.failure(status: 422, body: body) {} else {
+            Issue.record("422 from validation is the request")
         }
-        if case .refused(let status, _) = BraveSearch.failure(status: 503, body: Data()) {
+    }
+
+    /// Quota is checked before the key, deliberately: a spent subscription
+    /// may well report a code with SUBSCRIPTION in it, and being told the key
+    /// is wrong when the key is fine sends somebody to check the one thing
+    /// that isn't the problem.
+    @Test("Running out is told apart from a wrong key", arguments: [
+        #"{"error":{"code":"SUBSCRIPTION_QUOTA_EXCEEDED","detail":"out of credit","status":422}}"#,
+        #"{"error":{"code":"RATE_LIMITED","detail":"too many","status":429}}"#,
+    ])
+    func spent(body: String) {
+        if case .rateLimited = BraveSearch.failure(status: 422, body: Data(body.utf8)) {} else {
+            Issue.record("a spent quota is not a wrong key")
+        }
+    }
+
+    @Test("A status nobody here has seen keeps its number and its words")
+    func unknownStatus() {
+        if case .refused(let status, let detail) =
+            BraveSearch.failure(status: 503, body: Data("upstream is down".utf8)) {
             #expect(status == 503)
+            #expect(detail == "upstream is down")
         } else {
             Issue.record("anything else keeps its status")
         }
