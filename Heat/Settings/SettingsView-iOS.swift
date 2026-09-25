@@ -21,7 +21,7 @@ struct SettingsView: View {
                 InstructionsView()
             }
             NavigationLink("Tools") {
-                ContentUnavailableView("Not Implemented", systemImage: "ellipsis.curlybraces")
+                ToolsView()
             }
         }
         .navigationTitle("Settings")
