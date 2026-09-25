@@ -38,9 +38,8 @@ struct PreferencesView: View {
                 }
 
                 Tab("Tools", systemImage: "ellipsis.curlybraces", value: 4) {
-                    ContentUnavailableView("Not Implemented", systemImage: "ellipsis.curlybraces")
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .scenePadding()
+                    ToolsView()
+                        .scenePadding([.horizontal, .top])
                 }
             }
         }
