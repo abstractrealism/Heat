@@ -18,16 +18,34 @@ public actor WebSearchSession {
     /// figure is `Self.spacing`, and one test holds that to what's intended.
     private let spacing: ClosedRange<TimeInterval>
 
+    /// Where to go when the first provider won't answer.
+    ///
+    /// Looked up when it's needed rather than held, because a key typed into
+    /// Settings should work on the next search and not the next launch. Nil
+    /// where nothing is configured, which is the ordinary case.
+    private let fallback: @Sendable () async -> (any WebSearch & Sendable)?
+
     init(
         engine: any WebSearch & WebImageSearch & Sendable = DuckSearch(),
         spacing: ClosedRange<TimeInterval> = WebSearchSession.spacing,
         // Named rather than passed: `UserDefaults` predates Sendable, and
         // a name crosses an actor boundary without argument.
-        storeName: String? = nil
+        storeName: String? = nil,
+        fallback: @escaping @Sendable () async -> (any WebSearch & Sendable)? = WebSearchSession.configuredFallback
     ) {
         self.engine = engine
         self.spacing = spacing
         self.store = storeName.flatMap { UserDefaults(suiteName: $0) } ?? .standard
+        self.fallback = fallback
+    }
+
+    /// Whichever keyed provider is set up, or nothing.
+    static let configuredFallback: @Sendable () async -> (any WebSearch & Sendable)? = {
+        // The config lives on the main actor; this doesn't, and only needs
+        // to read two strings out of it.
+        let brave = await MainActor.run { API.shared.config.searchProvider(.brave) }
+        guard brave.isReady else { return nil }
+        return BraveSearch(brave)
     }
 
     // MARK: - Pacing
@@ -80,6 +98,9 @@ public actor WebSearchSession {
     /// as one.
     private var nextSlot: Date?
 
+    /// The same, for the fallback provider, which has limits of its own.
+    private var nextFallbackSlot: Date?
+
     private static let firstHold: TimeInterval = 30 * 60
     private static let longestHold: TimeInterval = 4 * 60 * 60
 
@@ -119,7 +140,16 @@ public actor WebSearchSession {
     private static let holdKey = "webSearchHold"
 
     public func search(query: String) async throws -> WebSearchResponse {
-        let wait = try await pace(query: query)
+        let wait: TimeInterval
+        do {
+            wait = try await pace(query: query)
+        } catch let refusal as WebSearchError {
+            // Held off, which is when the other provider is worth the most:
+            // a hold runs for half an hour and up, and nothing the model does
+            // shortens it. Asking elsewhere turns an hour of no search into a
+            // search, and the model never learns there was a problem.
+            return try await asking(elsewhere: query, because: refusal)
+        }
 
         // Said at the moment the request actually goes, with how long it
         // queued: the tool-call log lines print when calls are dispatched,
@@ -131,10 +161,7 @@ public actor WebSearchSession {
             let response = try await engine.search(web: query)
             challengedAt = nil
             hold = Self.firstHold
-            logger.notice("← search answered in \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s with \(response.results.count, privacy: .public) results: \(query, privacy: .public)")
-            for (index, result) in response.results.enumerated() {
-                logger.info("   \(index + 1, privacy: .public). \(result.title ?? "", privacy: .public) — \(result.url.absoluteString, privacy: .public)")
-            }
+            report(response, query: query, sentAt: sentAt)
             return response
         } catch WebSearchError.challenged {
             // Challenged again on the first try after a hold: the hold was
@@ -144,10 +171,62 @@ public actor WebSearchSession {
             }
             challengedAt = .now
             logger.notice("← search refused after \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s; holding off \(Int(self.hold / 60), privacy: .public) min: \(query, privacy: .public)")
-            throw WebSearchError.challenged
+            return try await asking(elsewhere: query, because: WebSearchError.challenged)
         } catch {
             logger.notice("← search failed after \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s: \(error, privacy: .public): \(query, privacy: .public)")
             throw error
+        }
+    }
+
+    /// The other provider, when the first one won't answer.
+    ///
+    /// A search is a tool result, and a tool result that says "the search
+    /// engine is cross with us" is a turn the model has to abandon. If
+    /// another provider is configured it simply answers instead, and nothing
+    /// upstream is told which one did: the model asked for results and gets
+    /// results, which is the whole of what it needs to know.
+    ///
+    /// Where nothing is configured, the original refusal is what comes back —
+    /// the same error, worded the same way, as before there was a fallback.
+    /// And if the fallback fails too, the original still wins: the first
+    /// provider's refusal is the more useful of the two, because it says the
+    /// thing that will still be true in ten minutes.
+    private func asking(elsewhere query: String, because refusal: any Error) async throws -> WebSearchResponse {
+        guard let other = await fallback() else { throw refusal }
+
+        // A queue of its own. The gap above is aimed at what DuckDuckGo
+        // tolerates, which has nothing to do with this provider, and the two
+        // sharing a queue would mean a wait for one delaying the other. A
+        // second between requests is what Brave's own plans describe.
+        let slot = max(Date.now, nextFallbackSlot ?? .distantPast)
+        nextFallbackSlot = slot.addingTimeInterval(1)
+        let queued = slot.timeIntervalSinceNow
+        if queued > 0 {
+            try? await Task.sleep(for: .seconds(queued))
+        }
+
+        let sentAt = Date.now
+        logger.notice("→ falling back for: \(query, privacy: .public)")
+        do {
+            let response = try await other.search(web: query)
+            report(response, query: query, sentAt: sentAt, fallback: true)
+            return response
+        } catch {
+            logger.notice("← the fallback failed too after \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s: \(error, privacy: .public)")
+            throw refusal
+        }
+    }
+
+    private func report(
+        _ response: WebSearchResponse,
+        query: String,
+        sentAt: Date,
+        fallback: Bool = false
+    ) {
+        let via = fallback ? " (fallback)" : ""
+        logger.notice("← search answered\(via, privacy: .public) in \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s with \(response.results.count, privacy: .public) results: \(query, privacy: .public)")
+        for (index, result) in response.results.enumerated() {
+            logger.info("   \(index + 1, privacy: .public). \(result.title ?? "", privacy: .public) — \(result.url.absoluteString, privacy: .public)")
         }
     }
 

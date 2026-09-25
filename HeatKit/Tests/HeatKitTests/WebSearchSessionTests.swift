@@ -225,3 +225,136 @@ struct WebSearchHoldPersistenceTests {
         #expect(engine.asked == 1)
     }
 }
+
+/// The other provider, when the first one won't answer.
+///
+/// A search is a tool result, and one that says "the search engine is cross
+/// with us" is a turn the model has to abandon. Where another provider is
+/// configured it answers instead, and nothing upstream is told which one
+/// did — the model asked for results and gets results.
+struct WebSearchFallbackTests {
+
+    private static let brisk: ClosedRange<TimeInterval> = 0.05...0.1
+
+    private final class Refusing: WebSearch, WebImageSearch, @unchecked Sendable {
+        private let lock = NSLock()
+        private(set) var asked = 0
+
+        func search(web query: String) async throws -> WebSearchResponse {
+            lock.withLock { asked += 1 }
+            throw WebSearchError.challenged
+        }
+
+        func search(images query: String) async throws -> WebSearchResponse {
+            try await search(web: query)
+        }
+    }
+
+    private final class Answering: WebSearch, @unchecked Sendable {
+        private let lock = NSLock()
+        private(set) var asked: [String] = []
+        private let failing: Bool
+
+        init(failing: Bool = false) { self.failing = failing }
+
+        func search(web query: String) async throws -> WebSearchResponse {
+            lock.withLock { asked.append(query) }
+            if failing { throw BraveSearchError.rateLimited("out of credit") }
+            return WebSearchResponse(
+                query: query,
+                results: [WebSearchResult(url: URL(string: "https://example.invalid/1")!, title: "from the fallback")]
+            )
+        }
+    }
+
+    private func session(
+        _ first: Refusing,
+        fallback: (any WebSearch & Sendable)?
+    ) -> WebSearchSession {
+        WebSearchSession(
+            engine: first,
+            spacing: Self.brisk,
+            storeName: "webSearchFallback.\(UUID().uuidString)",
+            fallback: { fallback }
+        )
+    }
+
+    @Test("A refused search is answered by the other provider")
+    func refusedIsAnsweredElsewhere() async throws {
+        let first = Refusing()
+        let second = Answering()
+
+        let response = try await session(first, fallback: second).search(query: "tofu")
+
+        #expect(first.asked == 1, "the first was tried")
+        #expect(second.asked == ["tofu"], "and the second answered the same query")
+        #expect(response.results.first?.title == "from the fallback")
+    }
+
+    /// Which is the whole point: a hold runs for half an hour and up, and
+    /// nothing the model does shortens it.
+    @Test("A search held off is answered by the other provider too")
+    func heldOffIsAnsweredElsewhere() async throws {
+        let first = Refusing()
+        let second = Answering()
+        let session = session(first, fallback: second)
+
+        _ = try? await session.search(query: "one")   // trips the hold
+        let response = try await session.search(query: "two")
+
+        #expect(first.asked == 1, "the first wasn't asked again during its own hold")
+        #expect(second.asked == ["one", "two"])
+        #expect(response.results.isEmpty == false)
+    }
+
+    /// With nothing configured, the refusal is what comes back — the same
+    /// error, worded the same way, as before there was a fallback at all.
+    @Test("With no fallback the refusal stands")
+    func noFallback() async {
+        let first = Refusing()
+        do {
+            _ = try await session(first, fallback: nil).search(query: "tofu")
+            Issue.record("expected the refusal")
+        } catch let error as WebSearchError {
+            if case .challenged = error {} else {
+                Issue.record("the original refusal, not \(error)")
+            }
+        } catch {
+            Issue.record("a WebSearchError, not \(error)")
+        }
+    }
+
+    /// The first provider's refusal is the more useful of the two: it says
+    /// the thing that will still be true in ten minutes.
+    @Test("If the fallback fails too, the first refusal is what's reported")
+    func bothFail() async {
+        let first = Refusing()
+        let second = Answering(failing: true)
+        do {
+            _ = try await session(first, fallback: second).search(query: "tofu")
+            Issue.record("expected a refusal")
+        } catch let error as WebSearchError {
+            if case .challenged = error {} else {
+                Issue.record("the first provider's refusal, not \(error)")
+            }
+        } catch {
+            Issue.record("the first provider's refusal, not \(error)")
+        }
+        #expect(second.asked == ["tofu"], "it was tried before giving up")
+    }
+
+    /// Nothing in the response says which provider answered. A result is a
+    /// link, a title and a snippet whoever found it.
+    @Test("The model can't tell which provider answered")
+    func indistinguishable() async throws {
+        let first = Refusing()
+        let second = Answering()
+
+        let fallen = try await session(first, fallback: second).search(query: "tofu")
+        let direct = try await Answering().search(web: "tofu")
+
+        #expect(fallen.query == direct.query)
+        #expect(fallen.results.map(\.url) == direct.results.map(\.url))
+        #expect(fallen.results.map(\.title) == direct.results.map(\.title))
+    }
+}
