@@ -6,7 +6,15 @@ private let logger = Logger(subsystem: "DuckSearch", category: "HeatKit")
 
 public struct DuckSearch: WebSearch, WebImageSearch, Sendable {
 
-    let host = "https://html.duckduckgo.com/html"
+    /// Where the search page is, which Settings can point elsewhere — at a
+    /// mirror, a proxy, or somewhere deliberately broken to see what happens
+    /// when this provider doesn't answer. The parser is specific to
+    /// DuckDuckGo's markup either way.
+    let host: String
+
+    public init(host: String = "https://html.duckduckgo.com/html") {
+        self.host = host
+    }
 
     /// Images don't come from the no-JavaScript endpoint above — it ignores the
     /// image parameters and answers with ordinary text results. They come from
