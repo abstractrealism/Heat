@@ -358,3 +358,93 @@ struct WebSearchFallbackTests {
         #expect(fallen.results.map(\.title) == direct.results.map(\.title))
     }
 }
+
+/// Any way the first provider fails to produce results is a reason to ask
+/// the other one — not only a refusal.
+///
+/// A scrape has more ways to stop working than an API does. The page can be
+/// restructured out from under the parser, which is silent and total, and
+/// that is exactly when a second provider is worth having.
+struct WebSearchFallbackBreadthTests {
+
+    private static let brisk: ClosedRange<TimeInterval> = 0.05...0.1
+
+    private final class Failing: WebSearch, WebImageSearch, @unchecked Sendable {
+        let error: any Error
+        init(_ error: any Error) { self.error = error }
+        func search(web query: String) async throws -> WebSearchResponse { throw error }
+        func search(images query: String) async throws -> WebSearchResponse { throw error }
+    }
+
+    private final class Answering: WebSearch, @unchecked Sendable {
+        private let lock = NSLock()
+        private(set) var asked: [String] = []
+        func search(web query: String) async throws -> WebSearchResponse {
+            lock.withLock { asked.append(query) }
+            return WebSearchResponse(query: query, results: [
+                WebSearchResult(url: URL(string: "https://example.invalid/1")!, title: "elsewhere")
+            ])
+        }
+    }
+
+    private func answered(after error: any Error) async throws -> (WebSearchResponse, Answering) {
+        let second = Answering()
+        let session = WebSearchSession(
+            engine: Failing(error),
+            spacing: Self.brisk,
+            storeName: "fallbackBreadth.\(UUID().uuidString)",
+            fallback: { second }
+        )
+        return (try await session.search(query: "tofu"), second)
+    }
+
+    /// The silent one: DuckDuckGo restructures its page and the parser finds
+    /// nothing it recognises.
+    @Test("A page the parser can't read falls through")
+    func unreadablePage() async throws {
+        let (response, second) = try await answered(after: WebSearchError.missingElement("#links .result"))
+        #expect(response.results.first?.title == "elsewhere")
+        #expect(second.asked == ["tofu"])
+    }
+
+    @Test("Markup that isn't HTML falls through")
+    func invalidHTML() async throws {
+        let (response, second) = try await answered(after: WebSearchError.invalidHTML)
+        #expect(response.results.isEmpty == false)
+        #expect(second.asked == ["tofu"])
+    }
+
+    /// Including an address pointed somewhere that doesn't answer, which is
+    /// how the fallback can be tried without waiting to be rate-limited.
+    @Test("An address that doesn't answer falls through")
+    func networkFailure() async throws {
+        let offline = URLError(.cannotFindHost)
+        let (response, second) = try await answered(after: offline)
+        #expect(response.results.isEmpty == false)
+        #expect(second.asked == ["tofu"])
+    }
+
+    /// A search that genuinely found nothing is an answer, not a failure.
+    @Test("Finding nothing is not a reason to ask again")
+    func emptyIsNotFailure() async throws {
+        final class Empty: WebSearch, WebImageSearch, @unchecked Sendable {
+            func search(web query: String) async throws -> WebSearchResponse {
+                WebSearchResponse(query: query, results: [])
+            }
+            func search(images query: String) async throws -> WebSearchResponse {
+                try await search(web: query)
+            }
+        }
+        let second = Answering()
+        let session = WebSearchSession(
+            engine: Empty(),
+            spacing: Self.brisk,
+            storeName: "fallbackBreadth.\(UUID().uuidString)",
+            fallback: { second }
+        )
+
+        let response = try await session.search(query: "a phrase that is nowhere")
+        #expect(response.results.isEmpty)
+        #expect(second.asked.isEmpty, "the other provider was never asked")
+    }
+}

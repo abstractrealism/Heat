@@ -11,7 +11,10 @@ public actor WebSearchSession {
     /// What actually does the searching. A parameter so the pacing and the
     /// holding can be driven without going near the network — they are the
     /// parts with the interesting behaviour, and the parts that were wrong.
-    private let engine: any WebSearch & WebImageSearch & Sendable
+    /// An engine to use instead of the configured one. Only tests pass it;
+    /// everything else gets whatever Settings says, read per search so a
+    /// changed address works on the next search rather than the next launch.
+    private let engineOverride: (any WebSearch & WebImageSearch & Sendable)?
 
     /// The gap this session leaves between requests. A parameter so a test
     /// can exercise the queueing without sleeping through it — the shipped
@@ -26,17 +29,24 @@ public actor WebSearchSession {
     private let fallback: @Sendable () async -> (any WebSearch & Sendable)?
 
     init(
-        engine: any WebSearch & WebImageSearch & Sendable = DuckSearch(),
+        engine: (any WebSearch & WebImageSearch & Sendable)? = nil,
         spacing: ClosedRange<TimeInterval> = WebSearchSession.spacing,
         // Named rather than passed: `UserDefaults` predates Sendable, and
         // a name crosses an actor boundary without argument.
         storeName: String? = nil,
         fallback: @escaping @Sendable () async -> (any WebSearch & Sendable)? = WebSearchSession.configuredFallback
     ) {
-        self.engine = engine
+        self.engineOverride = engine
         self.spacing = spacing
         self.store = storeName.flatMap { UserDefaults(suiteName: $0) } ?? .standard
         self.fallback = fallback
+    }
+
+    /// The provider asked first, at whatever address Settings gives it.
+    private func primaryEngine() async -> any WebSearch & WebImageSearch & Sendable {
+        if let engineOverride { return engineOverride }
+        let configured = await MainActor.run { API.shared.config.searchProvider(.duckDuckGo) }
+        return DuckSearch(host: configured.host)
     }
 
     /// Whichever keyed provider is set up, or nothing.
@@ -158,7 +168,7 @@ public actor WebSearchSession {
         let sentAt = Date.now
 
         do {
-            let response = try await engine.search(web: query)
+            let response = try await primaryEngine().search(web: query)
             challengedAt = nil
             hold = Self.firstHold
             report(response, query: query, sentAt: sentAt)
@@ -173,8 +183,15 @@ public actor WebSearchSession {
             logger.notice("← search refused after \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s; holding off \(Int(self.hold / 60), privacy: .public) min: \(query, privacy: .public)")
             return try await asking(elsewhere: query, because: WebSearchError.challenged)
         } catch {
+            // Not only a refusal. A scrape has more ways to stop working
+            // than an API does — the page can be restructured out from under
+            // the parser, which is silent and total — and every one of them
+            // is a reason to ask the other provider rather than to give the
+            // model nothing. An outage of our own connection falls through
+            // too and fails twice, which costs one request and is worth it
+            // for not having to tell those cases apart.
             logger.notice("← search failed after \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s: \(error, privacy: .public): \(query, privacy: .public)")
-            throw error
+            return try await asking(elsewhere: query, because: error)
         }
     }
 
@@ -290,6 +307,6 @@ public actor WebSearchSession {
         // none of the links the parser looks for — so the failure arrived as an
         // empty list rather than an error, and the assistant reported in good
         // faith that it had found no images.
-        return try await engine.search(images: query)
+        return try await primaryEngine().search(images: query)
     }
 }
