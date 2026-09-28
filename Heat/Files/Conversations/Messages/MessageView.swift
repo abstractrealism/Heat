@@ -175,7 +175,7 @@ struct ToolContentsView: View {
             Button {
                 isDisclosed.toggle()
             } label: {
-                ToolResponseName(message.name ?? "Unknown Tool")
+                ToolResponseName(message)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
@@ -370,15 +370,29 @@ struct ToolCallName: View {
 
 // Tool Responses
 
+/// What a tool call did, in a line.
+///
+/// Prefers the `label` the tool wrote for itself. Every tool has been
+/// setting one — "Searched web for 'ferry times'", "Found 3 calendar
+/// items" — and nothing read them, so every row said the same four words
+/// whatever had happened, including when the tool had failed. The name is
+/// still there for messages with no label, which is anything from before
+/// this and anything that doesn't bother.
 struct ToolResponseName: View {
-    let name: String
+    let message: Message
 
-    init(_ name: String) {
-        self.name = name
+    init(_ message: Message) {
+        self.message = message
     }
 
     var body: some View {
-        if let tool = Toolbox(name: name) {
+        if let label = message.metadata["label"]?.stringValue, !label.isEmpty {
+            // One line: a label carries the query, and a long question
+            // shouldn't push the rest of the run down the screen.
+            Text(label)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        } else if let tool = Toolbox(name: message.name ?? "") {
             switch tool {
             case .generateImages:
                 Text("Generated image(s)")

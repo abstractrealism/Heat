@@ -79,4 +79,18 @@ struct DuckSearchTests {
         #expect(WebSearchError.holdingOff(1800).localizedDescription.contains("30 minutes"))
         #expect(WebSearchError.holdingOff(61).localizedDescription.contains("a minute"))
     }
+
+    /// Which refusals are worth offering a key for.
+    ///
+    /// A rate limit clears on its own and a second provider works around it.
+    /// A page that stopped parsing is a bug here, and suggesting somebody buy
+    /// a search subscription for it would be selling a fix for the wrong
+    /// thing — so the two have to stay told apart.
+    @Test("Only a refusal for volume counts as rate limiting")
+    func rateLimitedErrors() {
+        #expect(WebSearchError.challenged.isRateLimited)
+        #expect(WebSearchError.holdingOff(300).isRateLimited)
+        #expect(!WebSearchError.invalidHTML.isRateLimited)
+        #expect(!WebSearchError.missingElement("#links").isRateLimited)
+    }
 }

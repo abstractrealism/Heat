@@ -180,6 +180,26 @@ extension WebSearchTool {
             }
             
         } catch {
+            // A refusal is not a search, and the row said "Searched web"
+            // whatever happened — claiming a search that didn't happen, and
+            // during a hold nothing was even sent. So the row says which,
+            // and a refusal for volume is marked as such: the run shows a
+            // line about it once, and that line is the only place anything
+            // mentions that a key would help. It doesn't belong in the tool
+            // result, where the model would read it and start telling people
+            // about Heat's Settings of its own accord.
+            let refusal = error as? WebSearchError
+            var metadata: [String: Value] = [
+                "label": .string(
+                    refusal?.isRateLimited == true
+                        ? "Attempted web search — DuckDuckGo is rate-limiting this address"
+                        : "Web search failed"
+                )
+            ]
+            if refusal?.isRateLimited == true {
+                metadata["searchRateLimited"] = .bool(true)
+            }
+
             return [.init(
                 role: .tool,
                 content: """
@@ -188,7 +208,8 @@ extension WebSearchTool {
                     </error>
                     """,
                 toolCallID: toolCall.id,
-                name: toolCall.function?.name
+                name: toolCall.function?.name,
+                metadata: metadata
             )]
         }
     }
