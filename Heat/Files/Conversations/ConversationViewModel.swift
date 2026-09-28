@@ -1038,6 +1038,12 @@ final class ConversationViewModel {
             perform(command)
             return
         }
+
+        // A reply abandoned because a new question arrived is as stopped as
+        // one abandoned by the button, and should say so rather than sitting
+        // there with a bare time under it. Counted before the cancel, and
+        // before the new turn resets the delta count below.
+        recordStoppedOutput()
         generateTask?.cancel()
 
         // A superseded turn keeps unwinding after its replacement has started,
@@ -1320,6 +1326,11 @@ final class ConversationViewModel {
             // conversation now, and this cancellation was deliberate. This has
             // to come first, before anything below writes state.
             if error is CancellationError || Task.isCancelled { return }
+
+            // However far it got. A stream that fails part-way is in the same
+            // position as one that was stopped: the totals were coming on a
+            // final chunk that will now never arrive.
+            recordStoppedOutput()
 
             // Surface the failure inline and clear any in-progress state so the
             // indicator doesn't spin forever.
@@ -1895,6 +1906,7 @@ final class ConversationViewModel {
         guard canCompact else { return }
 
         error = nil
+        recordStoppedOutput()
         generateTask?.cancel()
 
         let token = UUID()
@@ -2262,6 +2274,11 @@ final class ConversationViewModel {
         "Answer now, based on the reasoning above. Don't reason further."
 
     func cancel() {
+        // Counted before cancelling, for the reason answerNow() gives above:
+        // cancelling is what makes it uncountable, because the service reports
+        // its totals on a final chunk that a cancelled stream never receives.
+        recordStoppedOutput()
+
         generateTask?.cancel()
         generateTask = nil
         currentTurn = nil
@@ -2270,6 +2287,34 @@ final class ConversationViewModel {
 
         let snapshot = conversation
         Task { try? await API.shared.fileUpdate(file.id, object: snapshot) }
+    }
+
+    /// Notes how much of a stopped reply had arrived, so it can say so.
+    ///
+    /// A reply stopped with the button used to carry nothing at all — no
+    /// model, no counts — because everything on that line came from figures
+    /// the service sends once, at the end. The model is the exception and was
+    /// there all along, arriving on the first chunk; this adds the one number
+    /// that can still be known.
+    ///
+    /// One delta stands in for one token, the same assumption the live rate
+    /// and the reasoning split already run on, so it is an estimate and is
+    /// shown as one. Under its own name rather than `outputTokens`: that one
+    /// means a figure the service counted, and a guess filed under it would
+    /// be indistinguishable from one later.
+    ///
+    /// Only where a reply really was interrupted — an assistant message, with
+    /// deltas behind it, that never received totals of its own. Between tool
+    /// rounds the last message is the tool's, and the assistant message above
+    /// it finished properly and has real counts.
+    private func recordStoppedOutput() {
+        guard streamedDeltas > 0,
+              let index = conversation.messages.indices.last,
+              conversation.messages[index].role == .assistant,
+              conversation.messages[index].metadata["outputTokens"] == nil
+        else { return }
+
+        conversation.messages[index].metadata["stoppedOutputTokens"] = .int(streamedDeltas)
     }
 
     // MARK: - Private

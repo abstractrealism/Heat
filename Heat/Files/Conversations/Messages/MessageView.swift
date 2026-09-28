@@ -449,6 +449,8 @@ struct MessageCutOffView: View {
 /// had cached is noted inside the input figure rather than beside it, being
 /// part of it.
 struct MessageUsageView: View {
+    @Environment(ConversationViewModel.self) private var conversationViewModel
+
     let message: Message
 
     init(_ message: Message) {
@@ -456,11 +458,39 @@ struct MessageUsageView: View {
     }
 
     var body: some View {
-        if let summary {
+        if !isStreaming, let summary {
             Text(summary)
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
                 .textSelection(.enabled)
+        }
+    }
+
+    /// Whether this is the reply being written right now.
+    ///
+    /// The line used to appear the moment the message did, because the time
+    /// is known from the start — so a timestamp sat under a growing answer
+    /// for the whole generation, saying when it began while looking like it
+    /// was saying when it ended. It belongs with the rest of the line, and
+    /// arrives when the rest of the line does.
+    ///
+    /// The reply being written is the last message: between tool rounds the
+    /// last message is the tool's, and the assistant message above it has
+    /// finished and should say so.
+    ///
+    /// Not `isGenerating`, which stays true through `.suggesting` while the
+    /// follow-up prompts and the title are written. The answer is finished by
+    /// then, and waiting for those would hold the line back a second or two
+    /// after the thing it describes had visibly stopped. The switch is
+    /// exhaustive on purpose, so another state has to be thought about rather
+    /// than defaulting to hidden.
+    private var isStreaming: Bool {
+        guard message.id == conversationViewModel.conversation.messages.last?.id else {
+            return false
+        }
+        switch conversationViewModel.conversation.state {
+        case .processing, .streaming: return true
+        case .suggesting, .none: return false
         }
     }
 
@@ -480,15 +510,22 @@ struct MessageUsageView: View {
                 : message.modified.formatted(date: .abbreviated, time: .shortened)
         )
 
-        guard let output = message.metadata["outputTokens"]?.intValue else {
-            return parts.joined(separator: " · ")
-        }
-
         // First, because it's the thing that makes the rest mean something:
         // a conversation can change model between messages, so tokens and
         // tok/s can't be compared without knowing what produced them.
+        //
+        // Shown whenever it's known rather than only alongside the counts.
+        // Every service reports it on the first chunk and the totals on the
+        // last, so a reply that was stopped has a model and no totals — and
+        // which model wrote something is worth as much on an abandoned
+        // answer as on a finished one. It used to be behind the guard below,
+        // so a stopped reply said nothing but the time.
         if let model = message.metadata["model"]?.stringValue, !model.isEmpty {
             parts.append(model)
+        }
+
+        guard let output = message.metadata["outputTokens"]?.intValue else {
+            return interrupted(parts)
         }
 
         // Reasoning the model was doing when Skip Thinking cut it off. Counted
@@ -549,6 +586,38 @@ struct MessageUsageView: View {
         if let seconds = message.metadata["outputSeconds"]?.doubleValue, seconds > 0 {
             parts.append(String(format: "%.1f tok/s", Double(output) / seconds))
         }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The line for a reply with no totals against it.
+    ///
+    /// Usually because it was stopped with the button or failed part-way: the
+    /// service reports what a generation cost on a final chunk, and a stream
+    /// that ended early never receives one. Two things can still be said.
+    /// The input count, where the service sends it up front rather than at
+    /// the end — Anthropic does, on its first event, so a stopped Anthropic
+    /// reply can still show what the turn cost to send. And the deltas that
+    /// arrived, standing in for output tokens as they already do for the live
+    /// rate and the reasoning split, marked ≈ because that is what they are.
+    ///
+    /// "before stopping" is said only where `stoppedOutputTokens` says it was
+    /// stopped. This path is also reached by any message that simply has no
+    /// usage against it — anything written before usage was recorded, or a
+    /// service that reports none — and those were not interrupted.
+    private func interrupted(_ parts: [String]) -> String {
+        var parts = parts
+        var counts: [String] = []
+
+        if let input = message.metadata["inputTokens"]?.intValue {
+            counts.append("\(format(input)) in")
+        }
+        let stopped = message.metadata["stoppedOutputTokens"]?.intValue ?? 0
+        if stopped > 0 {
+            counts.append("≈\(format(stopped)) out")
+        }
+
+        guard !counts.isEmpty else { return parts.joined(separator: " · ") }
+        parts.append(counts.joined(separator: ", ") + (stopped > 0 ? " before stopping" : ""))
         return parts.joined(separator: " · ")
     }
 
