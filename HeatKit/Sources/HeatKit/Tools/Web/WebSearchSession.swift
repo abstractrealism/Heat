@@ -71,9 +71,12 @@ public actor WebSearchSession {
     // Two consequences. Requests are spaced, one at a time, because a model
     // working through a question asks for two at once, round after round,
     // and that is precisely the burst that trips it. And after a challenge
-    // nothing is asked for a long while — long enough that the retry itself
-    // isn't what keeps the door shut — with the wait doubling each time a
-    // retry is challenged again, and the model told the truth meanwhile.
+    // nothing is asked for a while, with the wait doubling each time a retry
+    // is challenged again, and the model told the truth meanwhile.
+    //
+    // How long that wait starts at is argued at `firstHold`, and later
+    // measurement complicated the picture above: a challenge does not always
+    // begin a long block, and on 28 Sept two of them cleared within minutes.
 
     /// The gap between two requests, drawn afresh each time, varied so the
     /// pattern isn't a metronome.
@@ -111,7 +114,33 @@ public actor WebSearchSession {
     /// The same, for the fallback provider, which has limits of its own.
     private var nextFallbackSlot: Date?
 
-    private static let firstHold: TimeInterval = 30 * 60
+    /// How long to wait after the first challenge, before any doubling.
+    ///
+    /// Was thirty minutes, from the 24 Sept measurement where a block
+    /// outlasted eighty-two minutes of silence. On 28 Sept the opposite was
+    /// measured, twice in twelve minutes: a challenge at 13:09 was followed
+    /// at 13:14 by seventeen requests descending to half-second gaps, every
+    /// one answered, and another challenge at 13:21 likewise left the address
+    /// working. So there are two regimes — a light challenge that clears in
+    /// minutes, and an escalated block that outlasts hours — and a fixed
+    /// thirty minutes treats every challenge as the second kind.
+    ///
+    /// Five minutes assumes the first kind and lets the doubling below
+    /// discover the second, which is the right way round now that a hold
+    /// costs money. Before Brave, an over-long hold merely meant answering
+    /// without the web; now every search during one is billed at $5 per
+    /// thousand. The errors are no longer symmetric:
+    ///
+    /// - Too short: one DuckDuckGo request is refused, the doubling corrects
+    ///   it immediately, and the model never sees either — Brave answers.
+    /// - Too long: every search for up to four hours is bought from Brave
+    ///   when DuckDuckGo would have answered for nothing.
+    ///
+    /// The climb to the cap costs three more refused requests than it did
+    /// (5 → 10 → 20 → 40 → 80 → 160 → 240 against 30 → 60 → 120 → 240),
+    /// spread over about five hours. That is the price of not assuming the
+    /// worst, and it buys back the common case.
+    private static let firstHold: TimeInterval = 5 * 60
     private static let longestHold: TimeInterval = 4 * 60 * 60
 
     /// Remembered across launches, because a block is.

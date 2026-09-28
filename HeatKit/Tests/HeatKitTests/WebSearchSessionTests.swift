@@ -87,8 +87,8 @@ struct WebSearchSessionTests {
     ///
     /// The doubling means "the hold was too short — a request made after it
     /// expired was refused again". A second request from the same burst is
-    /// not that, and it used to double the hold from thirty minutes to sixty
-    /// on the strength of a request that should never have left.
+    /// not that, and it used to double the hold on the strength of a request
+    /// that should never have left.
     @Test("A second refusal from the same burst doesn't lengthen the hold")
     func holdIsNotDoubledByItsOwnBurst() async throws {
         let engine = Engine([
@@ -107,8 +107,8 @@ struct WebSearchSessionTests {
             _ = try await session.search(query: "three")
             Issue.record("a search went through during a hold")
         } catch let WebSearchError.holdingOff(remaining) {
-            #expect(remaining > 25 * 60)
-            #expect(remaining <= 30 * 60, "thirty minutes, not sixty")
+            #expect(remaining > 4 * 60)
+            #expect(remaining <= 5 * 60, "the first hold, not twice it")
         }
     }
 
@@ -201,7 +201,8 @@ struct WebSearchHoldPersistenceTests {
             _ = try await second.search(query: "two")
             Issue.record("a search went out during a hold that a restart forgot")
         } catch let WebSearchError.holdingOff(remaining) {
-            #expect(remaining > 25 * 60)
+            // Most of the first hold is left; the figure tracks `firstHold`.
+            #expect(remaining > 4 * 60)
         }
         #expect(engine.asked == 1, "the second never reached the engine")
     }
@@ -220,7 +221,8 @@ struct WebSearchHoldPersistenceTests {
             _ = try await session.searchImages(query: "a picture")
             Issue.record("an image search went out during a hold")
         } catch let WebSearchError.holdingOff(remaining) {
-            #expect(remaining > 25 * 60)
+            // Most of the first hold is left; the figure tracks `firstHold`.
+            #expect(remaining > 4 * 60)
         }
         #expect(engine.asked == 1)
     }
