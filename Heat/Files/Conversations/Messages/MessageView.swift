@@ -560,7 +560,15 @@ struct MessageUsageView: View {
         if thinking > 0 {
             breakdown.append("\(format(thinking)) thinking")
         }
-        if !breakdown.isEmpty {
+        // A split only says something where the reasoning is part of the
+        // output. Grok reported 1,396 reasoning tokens against 306 of output,
+        // which are not a whole and a part, and subtracting gave an answer of
+        // −1,090 tokens. gen-kit reconciles that at the source now, by asking
+        // the service's own total which it means; this stays as the backstop,
+        // because a figure that can't be true is worse than one that isn't
+        // shown, and the next service to disagree will disagree in some way
+        // nobody predicted either.
+        if !breakdown.isEmpty, thinking <= output {
             breakdown.append("\(format(output - thinking)) answer")
             // The interrupted figure is apportioned however the rest came by,
             // so one estimate in the sum makes the whole of it one.
