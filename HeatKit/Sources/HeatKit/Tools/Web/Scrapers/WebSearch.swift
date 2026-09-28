@@ -33,6 +33,20 @@ enum WebSearchError: LocalizedError {
     /// A challenge was served moments ago, so nothing was asked.
     case holdingOff(TimeInterval)
 
+    /// Whether the search was refused for volume rather than broken.
+    ///
+    /// The difference matters to the person watching. A refusal clears on
+    /// its own and a keyed provider works around it, so it's worth saying
+    /// what happened and what would help. A page that stopped parsing is a
+    /// bug in Heat, and telling somebody to buy a search key for it would
+    /// be selling them a fix for the wrong thing.
+    var isRateLimited: Bool {
+        switch self {
+        case .challenged, .holdingOff: true
+        case .invalidHTML, .missingElement: false
+        }
+    }
+
     var errorDescription: String? {
         switch self {
         case .invalidHTML:
