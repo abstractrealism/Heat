@@ -75,13 +75,17 @@ struct RunView: View {
 /// model improvising instructions about an app's UI gets them wrong. So the
 /// remedy is offered by the app, where it is either true or absent.
 ///
-/// Orange rather than red, and quiet: nothing is broken, the answer just
-/// went without the web. Orange is what the Tools pane already uses for a
-/// provider that isn't set up.
+/// It says the limit was reached and stops there. It used to add "so this
+/// answer went without the web", which it cannot know: a run that asks four
+/// times can have two answered and two refused, and the sentence would be
+/// false for half of them. What it can see is that a refusal happened.
+///
+/// Orange rather than red, and quiet: nothing is broken. Orange is what the
+/// Tools pane already uses for a provider that isn't set up.
 struct SearchRateLimitNotice: View {
     var body: some View {
         Label {
-            Text("You've reached DuckDuckGo's rate limit, so this answer went without the web. A Brave Search API key in Settings ▸ Tools would let Heat keep searching when this happens.")
+            Text("You've reached DuckDuckGo's rate limit. A Brave Search API key in Settings ▸ Tools would let Heat keep searching when this happens.")
                 .foregroundStyle(.secondary)
         } icon: {
             Image(systemName: "magnifyingglass")
