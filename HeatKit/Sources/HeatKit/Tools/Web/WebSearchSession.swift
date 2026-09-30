@@ -71,12 +71,12 @@ public actor WebSearchSession {
     // Two consequences. Requests are spaced, one at a time, because a model
     // working through a question asks for two at once, round after round,
     // and that is precisely the burst that trips it. And after a challenge
-    // nothing is asked for a while, with the wait doubling each time a retry
-    // is challenged again, and the model told the truth meanwhile.
+    // nothing is asked for a while, the wait stepping up each time a retry is
+    // challenged again, and the model told the truth meanwhile.
     //
-    // How long that wait starts at is argued at `firstHold`, and later
-    // measurement complicated the picture above: a challenge does not always
-    // begin a long block, and on 28 Sept two of them cleared within minutes.
+    // How long that wait runs is argued at `holds`, and later measurement
+    // complicated the picture above: a challenge does not always begin a long
+    // block, and on 28 Sept two of them cleared within minutes.
 
     /// The gap between two requests, drawn afresh each time, varied so the
     /// pattern isn't a metronome.
@@ -114,7 +114,7 @@ public actor WebSearchSession {
     /// The same, for the fallback provider, which has limits of its own.
     private var nextFallbackSlot: Date?
 
-    /// How long to wait after the first challenge, before any doubling.
+    /// How long to wait after a challenge, and how that lengthens.
     ///
     /// Was thirty minutes, from the 24 Sept measurement where a block
     /// outlasted eighty-two minutes of silence. On 28 Sept the opposite was
@@ -125,23 +125,58 @@ public actor WebSearchSession {
     /// minutes, and an escalated block that outlasts hours — and a fixed
     /// thirty minutes treats every challenge as the second kind.
     ///
-    /// Five minutes assumes the first kind and lets the doubling below
+    /// So a short first rung assumes the first kind and lets the ladder
     /// discover the second, which is the right way round now that a hold
     /// costs money. Before Brave, an over-long hold merely meant answering
     /// without the web; now every search during one is billed at $5 per
     /// thousand. The errors are no longer symmetric:
     ///
-    /// - Too short: one DuckDuckGo request is refused, the doubling corrects
-    ///   it immediately, and the model never sees either — Brave answers.
+    /// - Too short: one DuckDuckGo request is refused, the next rung
+    ///   corrects it, and the model never sees either — Brave answers.
     /// - Too long: every search for up to four hours is bought from Brave
     ///   when DuckDuckGo would have answered for nothing.
     ///
-    /// The climb to the cap costs three more refused requests than it did
-    /// (5 → 10 → 20 → 40 → 80 → 160 → 240 against 30 → 60 → 120 → 240),
-    /// spread over about five hours. That is the price of not assuming the
-    /// worst, and it buys back the common case.
-    private static let firstHold: TimeInterval = 5 * 60
-    private static let longestHold: TimeInterval = 4 * 60 * 60
+    /// A ladder rather than a doubling, because each rung costs a request
+    /// made into a live block, and those are the requests that lengthen it.
+    /// Doubling from five reached an hour only after five refusals; this
+    /// reaches it after one.
+    ///
+    /// The rungs come from what the day's first challenge does against what
+    /// a day of them does. Every quick clear measured has been the first
+    /// challenge of a session — 13:09 to 13:14 on 28 Sept, five minutes.
+    /// Every long one has followed several: ten minutes failed five times
+    /// running that evening, eleven and twelve failed twice on 29 Sept,
+    /// twenty-one failed for curl, and on 24 Sept eighty-two minutes of
+    /// silence was not enough after days of testing. So the first rung is
+    /// aimed at somebody who trips it once and the rest at somebody who has
+    /// tripped it repeatedly, with nothing in between: fifteen minutes is
+    /// the outside of the quick case, and if it hasn't cleared by then the
+    /// evidence says the answer is hours, not half an hour.
+    ///
+    /// Fifteen rather than five because the error is cheap in one direction
+    /// only when Brave is configured — then a hold that is too long is
+    /// bought at $5 per thousand, and one that is too short costs a single
+    /// refused request the ladder corrects. Without Brave a hold that is too
+    /// short costs a re-challenge, which lengthens the block itself. Fifteen
+    /// sits on the safer side of that for the keyless case while still
+    /// assuming the common one.
+    private static let holds: [TimeInterval] = [
+        15 * 60,
+        60 * 60,
+        2 * 60 * 60,
+        4 * 60 * 60,
+    ]
+
+    private static var firstHold: TimeInterval { holds[0] }
+
+    /// The next rung up from whatever is in force.
+    ///
+    /// Compares rather than indexes so that a figure stored by an earlier
+    /// build — this has been thirty minutes, and five — lands on the next
+    /// rung above it instead of being unrecognised.
+    private static func lengthened(_ current: TimeInterval) -> TimeInterval {
+        holds.first { $0 > current } ?? holds[holds.count - 1]
+    }
 
     /// Remembered across launches, because a block is.
     ///
@@ -206,7 +241,7 @@ public actor WebSearchSession {
             // Challenged again on the first try after a hold: the hold was
             // too short, so the next is longer.
             if challengedAt != nil {
-                hold = min(hold * 2, Self.longestHold)
+                hold = Self.lengthened(hold)
             }
             challengedAt = .now
             logger.notice("← search refused after \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s; holding off \(Int(self.hold / 60), privacy: .public) min: \(query, privacy: .public)")

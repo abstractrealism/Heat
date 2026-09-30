@@ -107,8 +107,8 @@ struct WebSearchSessionTests {
             _ = try await session.search(query: "three")
             Issue.record("a search went through during a hold")
         } catch let WebSearchError.holdingOff(remaining) {
-            #expect(remaining > 4 * 60)
-            #expect(remaining <= 5 * 60, "the first hold, not twice it")
+            #expect(remaining > 14 * 60)
+            #expect(remaining <= 15 * 60, "the first rung, not the one above it")
         }
     }
 
@@ -186,6 +186,41 @@ struct WebSearchHoldPersistenceTests {
 
     private static let brisk: ClosedRange<TimeInterval> = 0.05...0.1
 
+    /// A hold that expired and was challenged again goes to the next rung,
+    /// which is an hour — not half of one, and not twice fifteen minutes.
+    ///
+    /// The ladder exists because every rung costs a request made into a live
+    /// block, and those are the requests that lengthen it. Doubling from five
+    /// minutes reached an hour only after five refusals; this reaches it
+    /// after one. Every quick clear measured has been a session's first
+    /// challenge, and every long one has followed several, so there is
+    /// nothing worth trying between fifteen minutes and an hour.
+    @Test("A hold that was too short steps up to an hour")
+    func holdStepsToTheNextRung() async throws {
+        let name = "webSearchHold.\(UUID().uuidString)"
+        let store = try #require(UserDefaults(suiteName: name))
+
+        // As though a fifteen-minute hold had been set and had since run out.
+        store.set(Date.now.addingTimeInterval(-20 * 60).timeIntervalSince1970, forKey: "webSearchChallengedAt")
+        store.set(15 * 60, forKey: "webSearchHold")
+
+        let engine = Refusing()
+        let session = WebSearchSession(engine: engine, spacing: Self.brisk, storeName: name)
+
+        // Goes out, because the hold expired — and is challenged again, which
+        // is what "the hold was too short" means.
+        _ = try? await session.search(query: "one")
+        #expect(engine.asked == 1, "the expired hold let it through")
+
+        do {
+            _ = try await session.search(query: "two")
+            Issue.record("a search went out during the new hold")
+        } catch let WebSearchError.holdingOff(remaining) {
+            #expect(remaining > 59 * 60, "an hour, not thirty minutes")
+            #expect(remaining <= 60 * 60)
+        }
+    }
+
     @Test("A hold survives the session being rebuilt")
     func holdSurvives() async throws {
         let store = "webSearchHold.\(UUID().uuidString)"
@@ -201,8 +236,8 @@ struct WebSearchHoldPersistenceTests {
             _ = try await second.search(query: "two")
             Issue.record("a search went out during a hold that a restart forgot")
         } catch let WebSearchError.holdingOff(remaining) {
-            // Most of the first hold is left; the figure tracks `firstHold`.
-            #expect(remaining > 4 * 60)
+            // Most of the first hold is left; the figure tracks `holds[0]`.
+            #expect(remaining > 14 * 60)
         }
         #expect(engine.asked == 1, "the second never reached the engine")
     }
@@ -221,8 +256,8 @@ struct WebSearchHoldPersistenceTests {
             _ = try await session.searchImages(query: "a picture")
             Issue.record("an image search went out during a hold")
         } catch let WebSearchError.holdingOff(remaining) {
-            // Most of the first hold is left; the figure tracks `firstHold`.
-            #expect(remaining > 4 * 60)
+            // Most of the first hold is left; the figure tracks `holds[0]`.
+            #expect(remaining > 14 * 60)
         }
         #expect(engine.asked == 1)
     }
