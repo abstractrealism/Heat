@@ -118,7 +118,13 @@ private struct SearchProviderForm: View {
                         Text(status)
                             .foregroundStyle(isReady ? Color.secondary : Color.orange)
                         if let signUp = kind.signUp {
+                            // Opposite the status rather than under it: the
+                            // two say different kinds of thing, one about
+                            // what is here and one about what to do, and a
+                            // link sitting flush under a label reads as a
+                            // continuation of it.
                             Link("Get a key", destination: signUp)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
                     .font(.footnote)
@@ -134,7 +140,7 @@ private struct SearchProviderForm: View {
             } header: {
                 Text("Address")
             } footer: {
-                Text("Where requests go. Left as it is unless you're pointing Heat at a proxy or a compatible service of your own.")
+                Text("Where requests go. Leave as is, unless you're pointing Heat at a proxy or a compatible service of your own.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -149,15 +155,15 @@ private struct SearchProviderForm: View {
         SearchService(kind: kind, host: host, token: token).isReady
     }
 
+    /// Whether there is a key, and nothing else.
+    ///
+    /// It used to explain what the key was for in the same breath — "Set.
+    /// Heat will use this when DuckDuckGo refuses a search." — which is what
+    /// the summary at the top of the pane already says, two inches above.
+    /// Only shown where a key is wanted at all, so the DuckDuckGo case that
+    /// used to sit here was unreachable.
     private var status: String {
-        switch (kind, isReady) {
-        case (.duckDuckGo, _):
-            "No key needed."
-        case (_, true):
-            "Set. Heat will use this when DuckDuckGo refuses a search."
-        case (_, false):
-            "Not set, so DuckDuckGo refusing a search means the answer goes without it."
-        }
+        isReady ? "Set" : "Not set"
     }
 
     private func load() {
