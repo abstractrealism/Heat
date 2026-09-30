@@ -39,10 +39,14 @@ public struct SearchService: Identifiable, Codable, Hashable, Sendable {
         /// What it is for, in the pane.
         public var summary: String {
             switch self {
+            // Deliberately without the numbers. What was here described the
+            // rate limit in detail and Brave's plan by the dollar, and both
+            // are somebody else's to change — a pane that states a price is
+            // wrong the day it moves, and nothing here would notice.
             case .duckDuckGo:
-                "Free and needs no account. Heat reads the ordinary search page, which is rate-limited by something DuckDuckGo doesn't publish — a burst of searches in one answer can be refused for an hour or more."
+                "Free and needs no account, but does run into rate limits. Configure a Brave API key if you would like a backup."
             case .brave:
-                "A search API with a key. Used when DuckDuckGo refuses a search, so an answer that needs the web still gets it. $5 of credit a month is about a thousand searches; after that it's $5 per thousand."
+                "A paid search API with a key, though free monthly credits are available. Used only when DuckDuckGo refuses a search."
             }
         }
 
