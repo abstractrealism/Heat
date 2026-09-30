@@ -8,9 +8,16 @@ struct InstructionsView: View {
     @State private var pendingDeletion: String?
 
     /// The app's own prompts: the system prompt behind every new conversation,
-    /// and the task prompts behind titles, suggestions and web search. Removing
-    /// one breaks whatever reads it until the next launch seeds it again, so
-    /// they aren't deletable here — only instructions you add are.
+    /// and the task prompts behind titles, suggestions and compaction.
+    /// Removing one breaks whatever reads it until the next launch seeds it
+    /// again, so they aren't deletable here — only instructions you add are.
+    ///
+    /// Derived from the seed list rather than written out, which means a
+    /// prompt retired from that list stops being protected and becomes
+    /// deletable. That is what should happen: Web Search was retired when its
+    /// text moved into the tool's own description, and the file left behind
+    /// on existing installs is exactly the thing somebody should be able to
+    /// get rid of.
     private var builtInIDs: Set<String> {
         Set(Defaults.instructions.map(\.id))
     }
