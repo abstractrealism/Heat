@@ -27,7 +27,22 @@ struct InstructionForm: View {
 
     var body: some View {
         if let fileID {
-            editor(fileID)
+            VStack(alignment: .leading, spacing: 8) {
+                // Above the tabs rather than inside one: it is true of the
+                // whole prompt, not of its text or its tools. And said here
+                // as well as in the list because on iOS the list is a screen
+                // you have already left by the time you are typing.
+                if Defaults.unimplementedInstructionIDs.contains(fileID) {
+                    Label(
+                        "Nothing reads this prompt yet. It's kept for a feature that hasn't been built, so editing it won't change anything Heat does.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                editor(fileID)
+            }
         } else {
             ContentUnavailableView {
                 Label("No instruction selected", systemImage: "text.book.closed")

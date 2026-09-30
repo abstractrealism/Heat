@@ -31,10 +31,22 @@ struct InstructionsView: View {
         state.instructions.first { $0.id == fileID }?.name ?? "Untitled"
     }
 
+    /// The name as the list shows it, tagged where the prompt isn't read by
+    /// anything yet. Same phrasing as the Services pane uses for Embeddings,
+    /// Transcriptions and Speech, which are in the same position.
+    private func label(_ file: File) -> String {
+        let name = file.name ?? "Untitled"
+        guard Defaults.unimplementedInstructionIDs.contains(file.id) else { return name }
+        return "\(name) (Not Implemented)"
+    }
+
     /// What this screen is for, above the whole pane rather than tucked into
     /// one tab of the editor — it explains the list as much as the form.
     private var explanation: some View {
-        Text("Instructions are prompt text Heat keeps and reuses. **Assistant** is the personality every new conversation starts with; **Title**, **Suggestions** and **Web Search** are prompts Heat runs for itself. Anything you add is a **Template**: a reusable prompt you can pick from the message field options menu, instead of typing it again. E.g. a \"Code Review\" template reading *\"Review this code for bugs and edge cases:\"*")
+        // Web Search used to be named here as one of the prompts Heat runs
+        // for itself. It was retired when its text moved into the tool's own
+        // description, so the sentence outlived the thing it described.
+        Text("Instructions are prompt text Heat keeps and reuses. **Assistant** is the personality every new conversation starts with; **Title**, **Suggestions** and **Compaction** are prompts Heat runs for itself. Anything you add is a **Template**: a reusable prompt you can pick from the message field options menu, instead of typing it again. E.g. a \"Code Review\" template reading *\"Review this code for bugs and edge cases:\"*")
             .font(.footnote)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -49,7 +61,7 @@ struct InstructionsView: View {
         HSplitView {
             List(selection: $selection) {
                 ForEach(state.instructions) { file in
-                    Text(file.name ?? "Untitled")
+                    Text(label(file))
                         .tag(file.id)
                 }
             }
@@ -89,7 +101,7 @@ struct InstructionsView: View {
             Section { explanation }
 
             ForEach(state.instructions) { file in
-                NavigationLink(file.name ?? "Untitled") {
+                NavigationLink(label(file)) {
                     InstructionForm(file.id)
                         .id(file.id)
                 }

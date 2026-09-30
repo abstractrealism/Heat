@@ -29,6 +29,20 @@ public struct Defaults {
         // that already has the file keeps it, unread; it can be deleted.
     ]
 
+    /// Prompts that are seeded and listed but that nothing reads yet.
+    ///
+    /// Memory is a feature that was begun and not finished: the prompt is
+    /// here, it appears in Settings with its own editor, its own tabs and a
+    /// working Restore Default, and no code anywhere sends it. Marked rather
+    /// than retired, because the text is worth keeping for when the feature
+    /// is picked up — and marked rather than left alone, because an editor
+    /// that takes your changes and ignores them is the same fault as an
+    /// address field that goes nowhere or a slider that reads 16k when it
+    /// means something else.
+    public static let unimplementedInstructionIDs: Set<String> = [
+        instructionMemoryID,
+    ]
+
     public static let instructionAssistantID = "instruction-assistant"
     public static let instructionCompactionID = "instruction-compaction"
     public static let instructionMemoryID = "instruction-memory"
