@@ -15,29 +15,44 @@ struct GeneralForm: View {
         case profile = "Profile"
     }
 
+    /// A tab bar for one tab is a control that can't do anything: "Profile"
+    /// sat at the top of General looking like a button, and pressing it
+    /// selected what was already selected. The switcher appears when there is
+    /// something to switch between, and the structure stays for when there
+    /// is.
+    private var hasTabs: Bool { Tab.allCases.count > 1 }
+
     var body: some View {
         #if os(macOS)
-        TabView(selection: $selectedTab) {
-            ForEach(Tab.allCases, id: \.self) { tab in
-                tabContent(for: tab)
-                    .padding()
-                    .tag(tab)
-                    .tabItem {
-                        Text(tab.rawValue)
-                    }
-            }
-        }
-        .tabViewStyle(.tabBarOnly)
-        .navigationTitle("Account")
-        #else
-        VStack {
-            Picker("Select item", selection: $selectedTab) {
+        if hasTabs {
+            TabView(selection: $selectedTab) {
                 ForEach(Tab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
+                    tabContent(for: tab)
+                        .padding()
+                        .tag(tab)
+                        .tabItem {
+                            Text(tab.rawValue)
+                        }
                 }
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
+            .tabViewStyle(.tabBarOnly)
+            .navigationTitle("Account")
+        } else {
+            tabContent(for: selectedTab)
+                .padding()
+                .navigationTitle("Account")
+        }
+        #else
+        VStack {
+            if hasTabs {
+                Picker("Select item", selection: $selectedTab) {
+                    ForEach(Tab.allCases, id: \.self) { tab in
+                        Text(tab.rawValue).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+            }
 
             tabContent(for: selectedTab)
         }
