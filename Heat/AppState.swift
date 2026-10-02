@@ -141,6 +141,49 @@ final class AppState {
         // notably "New Conversation" — expect the default instruction files to
         // exist, so create any that are missing before we're considered ready.
         try await seedDefaultInstructionsIfNeeded()
+        try await seedDefaultServicesIfNeeded()
+    }
+
+    /// Brings a config written by an earlier version up to the services this
+    /// one ships, without touching anything somebody has set.
+    ///
+    /// `Config.init()` copies `Defaults.services` once, when a config is
+    /// first created, and nothing merged into it afterwards. So a service
+    /// added to Heat later never appeared for anybody who already had a
+    /// config — there is no way to add one from the UI, so it was simply
+    /// absent — and a default address corrected later never reached them
+    /// either. Mistral's address was blank here for exactly that reason.
+    ///
+    /// Two rules, and the second is the careful one:
+    ///
+    /// - A kind Heat ships and the config lacks is added at its defaults.
+    /// - A **blank** address is filled in. A non-empty one is never touched,
+    ///   because that may be somebody deliberately pointing at a proxy or a
+    ///   compatible service of their own, and overwriting that would be
+    ///   taking a decision off them.
+    ///
+    /// Tokens, model preferences and the model list are left alone in every
+    /// case — this only adds what's missing.
+    private func seedDefaultServicesIfNeeded() async throws {
+        var config = API.shared.config
+        var changed = false
+
+        for shipped in Defaults.services {
+            guard let index = config.services.firstIndex(where: { $0.kind == shipped.kind }) else {
+                config.services.append(shipped)
+                changed = true
+                logger.info("added \(shipped.name) to the services this config was missing")
+                continue
+            }
+            if config.services[index].host.isEmpty, !shipped.host.isEmpty {
+                config.services[index].host = shipped.host
+                changed = true
+                logger.info("filled in \(shipped.name)'s address, which was blank")
+            }
+        }
+
+        guard changed else { return }
+        try await API.shared.configUpdate(config)
     }
 
     /// Creates any missing default instruction files. Safe to call repeatedly:

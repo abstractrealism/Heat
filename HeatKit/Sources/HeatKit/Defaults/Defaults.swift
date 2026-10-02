@@ -13,6 +13,7 @@ public struct Defaults {
         mistral,
         ollama,
         openAI,
+        openRouter,
     ]
 
     public static let instructions: [(id: String, name: String, object: Instruction)] = [

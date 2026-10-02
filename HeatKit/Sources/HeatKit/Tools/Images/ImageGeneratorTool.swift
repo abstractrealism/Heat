@@ -52,7 +52,11 @@ extension ImageGeneratorTool {
                 contents: contents + [.text(args.prompts.joined(separator: "\n\n"))],
                 toolCallID: toolCall.id,
                 name: toolCall.function?.name,
-                metadata: ["label": args.prompts.count == 1 ? "Generating an image" : .string("Generating \(args.prompts.count) images")]
+                // Past tense: the row is read after the work, not during
+                // it. The labels only became visible when the tool row
+                // started showing them, and this was written for a
+                // progress line that never existed.
+                metadata: ["label": args.prompts.count == 1 ? "Generated an image" : .string("Generated \(args.prompts.count) images")]
             )]
         } catch {
             return [.init(
