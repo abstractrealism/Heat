@@ -254,7 +254,20 @@ public actor WebSearchSession {
             // model nothing. An outage of our own connection falls through
             // too and fails twice, which costs one request and is worth it
             // for not having to tell those cases apart.
-            logger.notice("← search failed after \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s: \(error, privacy: .public): \(query, privacy: .public)")
+            // One line. Interpolating the error itself printed the whole of
+            // an `NSError`'s userInfo — about fifteen lines of dictionary per
+            // failure — which buried the turn it happened in. The sentence is
+            // the part worth reading.
+            //
+            // Said as "failed" rather than "refused", deliberately: this
+            // branch is everything that *isn't* a bot challenge, and a
+            // parser that has stopped matching or a connection that never
+            // opened shouldn't be read as a rate limit. The refusal and the
+            // hold have their own lines, and they say so.
+            logger.notice(
+                "← search failed (not refused) after \(Self.seconds(Date.now.timeIntervalSince(sentAt)), privacy: .public)s: \(error.localizedDescription, privacy: .public): \(query, privacy: .public)"
+            )
+            logger.debug("← the failure in full: \(error, privacy: .public)")
             return try await asking(elsewhere: query, because: error)
         }
     }

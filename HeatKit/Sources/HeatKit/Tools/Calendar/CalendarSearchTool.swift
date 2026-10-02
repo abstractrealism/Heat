@@ -65,7 +65,9 @@ extension CalendarSearchTool {
                 content: events.map { $0.title }.joined(separator: "\n"),
                 toolCallID: toolCall.id,
                 name: toolCall.function?.name,
-                metadata: ["label": .string("Found \(events.count) calendar items.")]
+                // No full stop: it was the only label with one, and
+                // these are titles on a row rather than sentences.
+                metadata: ["label": .string(events.count == 1 ? "Found 1 calendar item" : "Found \(events.count) calendar items")]
             )]
         } catch {
             return [.init(
@@ -73,7 +75,10 @@ extension CalendarSearchTool {
                 content: "You do not have calendar access. Tell the user to open Preferences and navigate to Permissions to enable calendar access.",
                 toolCallID: toolCall.id,
                 name: toolCall.function?.name,
-                metadata: ["label": .string("Error accessing calendar")]
+                // Said as something that happened, like every other
+                // label. "Error accessing calendar" names a category of
+                // fault where the rest of them report an outcome.
+                metadata: ["label": .string("Couldn't read the calendar")]
             )]
         }
     }

@@ -32,6 +32,21 @@ extension Defaults {
             host: "https://fal.run/fal-ai"
         )
 
+    /// A gateway rather than a maker of models: one key and one
+    /// OpenAI-shaped endpoint fronting hundreds of models from everybody
+    /// else, with one bill. Worth having for the models there's no separate
+    /// key for, and for trying one without opening an account first.
+    ///
+    /// It was the only kind gen-kit knows how to talk to that had no entry
+    /// here, so it couldn't be configured at all — not a stale-config
+    /// problem but a missing default.
+    public static let openRouter =
+        Service(
+            kind: .openRouter,
+            name: "OpenRouter",
+            host: "https://openrouter.ai/api/v1"
+        )
+
     public static let grok =
         Service(
             kind: .grok,
