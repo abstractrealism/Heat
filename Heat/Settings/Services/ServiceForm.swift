@@ -654,15 +654,98 @@ struct ServiceForm: View {
             let client = service.modelService(session: nil)
             let models = try await client.models()
             guard !Task.isCancelled else { return }
-            service.models = models
+            service.models = carryingKnownReasoningLevels(onto: models)
             manager.update(service: service)
             modelLoad = .loaded(found: models.count, withdrawn: 0)
             await hideWithdrawnModels(among: models)
+            await learnReasoningLevels()
         } catch {
             guard !Task.isCancelled else { return }
             state.log(error: error)
             modelLoad = .failed(failureMessage(for: error))
         }
+    }
+
+    /// Keeps what a previous load worked out, so it is worked out once.
+    ///
+    /// A freshly fetched model carries only what the service reports, and
+    /// most services report no reasoning levels at all. Where a previous load
+    /// learned them by asking, that answer is carried onto the new list
+    /// rather than asked for again.
+    ///
+    /// Three states, and the empty list is the one that earns its keep:
+    ///
+    /// - `nil` — never asked.
+    /// - `[]` — asked, and the service named nothing. Don't ask again.
+    /// - `[…]` — known, whether reported or learned.
+    private func carryingKnownReasoningLevels(onto fetched: [Model]) -> [Model] {
+        let known = Dictionary(
+            service.models.map { ($0.id, $0.reasoning) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return fetched.map { model in
+            guard model.reasoning?.levels == nil,
+                  let remembered = known[model.id] ?? nil,
+                  remembered.levels != nil
+            else {
+                return model
+            }
+            var model = model
+            model.reasoning = remembered
+            return model
+        }
+    }
+
+    /// Asks the service what its reasoning models accept, for the ones whose
+    /// answer isn't known yet.
+    ///
+    /// Only models that say they reason and haven't been asked: a service
+    /// that reports its levels needs no asking, and one that reports none
+    /// needs asking once. So a first load asks a handful of times and every
+    /// load after it asks nothing, which is what makes this affordable to do
+    /// on a button people press.
+    ///
+    /// Sequential rather than concurrent. The whole point is that these are
+    /// refusals, and a burst of deliberately bad requests is the shape that
+    /// gets an address rate-limited — we spent a week on what that costs with
+    /// DuckDuckGo. There are only ever a few.
+    private func learnReasoningLevels() async {
+        let asking = service.models.filter {
+            $0.capabilities?.contains(.thinking) == true && $0.reasoning?.levels == nil
+        }
+        guard !asking.isEmpty else { return }
+
+        var learned: [String: [String]] = [:]
+        for model in asking {
+            guard !Task.isCancelled else { return }
+            switch await service.probeReasoningLevels(modelID: model.id) {
+            case .levels(let levels):
+                learned[model.id] = levels
+            case .refusedWithoutSaying:
+                // Remembered as "asked, nothing to show", so the next load
+                // leaves it alone.
+                learned[model.id] = []
+            case .failed:
+                // Nothing was established, so nothing is remembered and the
+                // next load asks again.
+                break
+            }
+        }
+
+        guard !Task.isCancelled, !learned.isEmpty else { return }
+
+        service.models = service.models.map { model in
+            guard let levels = learned[model.id] else { return model }
+            var model = model
+            model.reasoning = .init(
+                levels: levels,
+                defaultLevel: model.reasoning?.defaultLevel,
+                modes: model.reasoning?.modes
+            )
+            return model
+        }
+        manager.update(service: service)
+        logger.info("learned reasoning levels for \(learned.count) \(service.name) model(s)")
     }
 
     /// Hides the models known to be withdrawn that nothing else catches.
