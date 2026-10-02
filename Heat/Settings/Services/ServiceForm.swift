@@ -666,6 +666,14 @@ struct ServiceForm: View {
         }
     }
 
+    /// How many models one Load Models will ask about.
+    ///
+    /// Enough that a service of ordinary size finishes in one press, small
+    /// enough that a service fronting hundreds doesn't become a burst of
+    /// hundreds of refusals. They are free and they are spaced, but a press
+    /// of a button shouldn't turn into a minute of traffic either.
+    private static let modelsAskedPerLoad = 25
+
     /// Keeps what a previous load worked out, so it is worked out once.
     ///
     /// A freshly fetched model carries only what the service reports, and
@@ -710,8 +718,39 @@ struct ServiceForm: View {
     /// gets an address rate-limited — we spent a week on what that costs with
     /// DuckDuckGo. There are only ever a few.
     private func learnReasoningLevels() async {
-        let asking = service.models.filter {
-            $0.capabilities?.contains(.thinking) == true && $0.reasoning?.levels == nil
+        guard service.canProbeReasoningLevels else { return }
+
+        // Whether this service talks about reasoning at all.
+        //
+        // The gate used to be "the model says it reasons", which trusts a
+        // silence it has no right to trust. A service that reports reasoning
+        // for *some* models is telling us about reasoning, so its silence
+        // about one model means that model doesn't reason. A service that
+        // reports it for *none* is telling us nothing, and its silence means
+        // nothing — so the models have to be asked.
+        let saysAnything = service.models.contains {
+            $0.capabilities?.contains(.thinking) == true || $0.reasoning?.levels != nil
+        }
+
+        let wanting = service.models.filter { model in
+            guard model.reasoning?.levels == nil else { return false }
+            if saysAnything {
+                return model.capabilities?.contains(.thinking) == true
+            }
+            // Nothing is known, so ask anything that could answer. A model
+            // that doesn't reason refuses without naming levels, which is
+            // remembered, so each is asked once and never again.
+            return model.capabilities?.contains(.completion) != false
+        }
+
+        // Capped, because a silent service can be a large one: OpenRouter
+        // fronts hundreds of models, and a first load should not fire
+        // hundreds of deliberately bad requests at it however free they are.
+        // What's left is picked up by the next Load Models, and the ones
+        // already answered are never asked again, so it converges.
+        let asking = Array(wanting.prefix(Self.modelsAskedPerLoad))
+        if wanting.count > asking.count {
+            logger.info("asking \(asking.count) of \(wanting.count) \(service.name) models this time; the rest on the next load")
         }
         guard !asking.isEmpty else { return }
 
